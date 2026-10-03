@@ -14,6 +14,7 @@ import {
   Copy,
   ExternalLink,
   ArrowLeft,
+  ArrowRight,
   ArrowUpRight,
   DollarSign,
   Wallet,
@@ -500,7 +501,7 @@ export const AdminPanelScreen: React.FC = () => {
                     setAdminPin(e.target.value);
                     if (authError) setAuthError('');
                   }}
-                  placeholder="Enter Master Password (e.g. Gagan@123)"
+                  placeholder="Enter Master Password"
                   className="w-full py-3 bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
                   autoFocus
                 />
@@ -531,11 +532,9 @@ export const AdminPanelScreen: React.FC = () => {
           </form>
 
           <div className="mt-6 pt-5 border-t border-slate-800/80 text-center">
-            <p className="text-[11px] text-slate-500">
-              Default password: <span className="text-amber-400 font-mono font-bold">TaskVibe@Admin2026</span> (or <span className="text-slate-400 font-mono">admin123</span>)
-            </p>
-            <p className="text-[10px] text-slate-600 mt-1">
-              You can change this password anytime in Master Settings tab.
+            <p className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-slate-600" />
+              <span>Restricted administrator access only</span>
             </p>
           </div>
         </div>

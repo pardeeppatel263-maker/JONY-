@@ -36,6 +36,13 @@ export interface AdminSettings {
   supportTelegram?: string;
   whatsappInstanceId?: string;
   whatsappApiToken?: string;
+  announcementEnabled?: boolean;
+  announcementTitle?: string;
+  announcementMessage?: string;
+  announcementTag?: string;
+  announcementButtonText?: string;
+  announcementButtonAction?: 'member_plans' | 'referral_earn' | 'wallet' | 'none';
+  announcementDate?: string;
 }
 
 

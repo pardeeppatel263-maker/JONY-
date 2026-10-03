@@ -42,6 +42,8 @@ import {
   Youtube,
   Play,
   Building2,
+  Megaphone,
+  BellRing,
 } from 'lucide-react';
 import { PlanItem, RegisteredUserAccount, PaymentDeposit } from '../types';
 import { compressImage } from '../utils/imageCompressor';
@@ -91,8 +93,21 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<
-    'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'settings' | 'backup'
+    'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'notice' | 'settings' | 'backup'
   >('deposits');
+
+  // Home Notice / Announcement State
+  const [noticeEnabled, setNoticeEnabled] = useState(adminSettings.announcementEnabled ?? true);
+  const [noticeTitle, setNoticeTitle] = useState(adminSettings.announcementTitle || '🎉 Welcome to TaskVibe 2.0 Update!');
+  const [noticeMessage, setNoticeMessage] = useState(
+    adminSettings.announcementMessage ||
+      'Naya TaskVibe update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!'
+  );
+  const [noticeTag, setNoticeTag] = useState(adminSettings.announcementTag || 'NEW UPDATE');
+  const [noticeButtonText, setNoticeButtonText] = useState(adminSettings.announcementButtonText || 'Check VIP Plans ⭐');
+  const [noticeButtonAction, setNoticeButtonAction] = useState<'member_plans' | 'referral_earn' | 'wallet' | 'none'>(
+    adminSettings.announcementButtonAction || 'member_plans'
+  );
 
   // Filters & Search
   const [depositFilter, setDepositFilter] = useState<'all' | 'in_process' | 'approved' | 'rejected'>('in_process');
@@ -180,6 +195,24 @@ export const AdminPanelScreen: React.FC = () => {
     setYoutubeVideoTitleInput(adminSettings.youtubeVideoTitle || 'Official Sponsor Video');
     setSupportWhatsappInput(adminSettings.supportWhatsapp || '');
     setSupportTelegramInput(adminSettings.supportTelegram || '');
+    if (adminSettings.announcementEnabled !== undefined) {
+      setNoticeEnabled(adminSettings.announcementEnabled);
+    }
+    if (adminSettings.announcementTitle) {
+      setNoticeTitle(adminSettings.announcementTitle);
+    }
+    if (adminSettings.announcementMessage) {
+      setNoticeMessage(adminSettings.announcementMessage);
+    }
+    if (adminSettings.announcementTag) {
+      setNoticeTag(adminSettings.announcementTag);
+    }
+    if (adminSettings.announcementButtonText) {
+      setNoticeButtonText(adminSettings.announcementButtonText);
+    }
+    if (adminSettings.announcementButtonAction) {
+      setNoticeButtonAction(adminSettings.announcementButtonAction);
+    }
     if (adminSettings.youtubeVideoUrls && adminSettings.youtubeVideoUrls.length > 0) {
       setYoutubeVideoUrlsList([...adminSettings.youtubeVideoUrls]);
     }
@@ -755,6 +788,21 @@ export const AdminPanelScreen: React.FC = () => {
           >
             <Award className="w-4 h-4" />
             <span>VIP Plans</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notice')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'notice'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-md shadow-orange-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Megaphone className="w-4 h-4" />
+            <span>📢 Home Popup Notice</span>
+            {noticeEnabled && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
           </button>
 
           <button
@@ -1422,6 +1470,198 @@ export const AdminPanelScreen: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 5.5: HOME SCREEN POPUP NOTICE / ANNOUNCEMENT MANAGER */}
+        {/* ========================================================= */}
+        {activeTab === 'notice' && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                    <Megaphone className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h2 className="text-base font-bold text-white">Home Screen Update Popup Manager</h2>
+                    <p className="text-xs text-slate-400">
+                      Broadcast new update announcements, offers, and notices to all users in real-time.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-950 p-1.5 px-3 rounded-2xl border border-slate-800">
+                  <span className="text-xs font-bold text-slate-300">Popup Active:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNoticeEnabled(!noticeEnabled)}
+                    className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
+                      noticeEnabled ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
+                    }`}
+                  >
+                    <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition-transform" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Banner */}
+              <div
+                className={`p-3.5 rounded-2xl border flex items-center gap-3 text-xs ${
+                  noticeEnabled
+                    ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                    : 'bg-slate-950 border-slate-800 text-slate-400'
+                }`}
+              >
+                <BellRing className={`w-5 h-5 shrink-0 ${noticeEnabled ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+                <div>
+                  <div className="font-bold text-sm">
+                    {noticeEnabled ? 'Popup is Currently ACTIVE & LIVE' : 'Popup is Disabled'}
+                  </div>
+                  <p className="text-[11px] opacity-80">
+                    {noticeEnabled
+                      ? 'Users opening the app will see this announcement dialog on their home screen.'
+                      : 'Popup will not be shown to users until enabled.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Notice Content Form */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                      Badge / Tag Text
+                    </label>
+                    <input
+                      type="text"
+                      value={noticeTag}
+                      onChange={(e) => setNoticeTag(e.target.value)}
+                      placeholder="e.g. NEW UPDATE"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                      Announcement Title
+                    </label>
+                    <input
+                      type="text"
+                      value={noticeTitle}
+                      onChange={(e) => setNoticeTitle(e.target.value)}
+                      placeholder="e.g. 🎉 Big Update: VIP Level 8 Now Live!"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400 font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                    Announcement Message / Description (Multi-line)
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={noticeMessage}
+                    onChange={(e) => setNoticeMessage(e.target.value)}
+                    placeholder="Write your update description here..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400 leading-relaxed font-sans"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Tip: You can use emojis and line breaks to make announcements attractive for your members.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                      Action Button Text
+                    </label>
+                    <input
+                      type="text"
+                      value={noticeButtonText}
+                      onChange={(e) => setNoticeButtonText(e.target.value)}
+                      placeholder="e.g. Check VIP Plans ⭐"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                      Button Action / Destination
+                    </label>
+                    <select
+                      value={noticeButtonAction}
+                      onChange={(e) => setNoticeButtonAction(e.target.value as any)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400"
+                    >
+                      <option value="member_plans">Open VIP Member Plans Screen</option>
+                      <option value="referral_earn">Open Referral &amp; Earn Screen</option>
+                      <option value="wallet">Open Wallet Screen</option>
+                      <option value="none">Just Dismiss / Close Dialog</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview of User Popup */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Live Popup Preview (How users will see it):</span>
+                </span>
+
+                <div className="max-w-sm mx-auto bg-slate-950 rounded-3xl border border-white/10 overflow-hidden shadow-xl">
+                  <div className="p-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
+                        {noticeTag || 'NEW UPDATE'}
+                      </span>
+                      <span className="text-[10px] text-blue-200">Today</span>
+                    </div>
+                    <h4 className="text-sm font-black text-white mt-2 leading-tight">
+                      {noticeTitle || 'Announcement Title'}
+                    </h4>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-slate-900 p-3 rounded-xl border border-white/5">
+                      {noticeMessage || 'Your message will appear here.'}
+                    </p>
+                    <div className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs text-center flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/10">
+                      <span>{noticeButtonText || 'Check VIP Plans ⭐'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Save & Broadcast Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await updateAdminSettings({
+                      announcementEnabled: noticeEnabled,
+                      announcementTitle: noticeTitle,
+                      announcementMessage: noticeMessage,
+                      announcementTag: noticeTag,
+                      announcementButtonText: noticeButtonText,
+                      announcementButtonAction: noticeButtonAction,
+                      announcementDate: new Date().toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      }),
+                    });
+                    showToast('🎉 Home popup announcement saved & broadcasted live to all users!');
+                  }}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 font-black text-sm shadow-lg shadow-orange-500/20 hover:brightness-110 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Megaphone className="w-4 h-4" />
+                  <span>Save &amp; Broadcast Announcement Live to All Users</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

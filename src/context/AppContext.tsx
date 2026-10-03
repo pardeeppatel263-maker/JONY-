@@ -478,6 +478,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     supportTelegram: 'https://t.me/TaskVibeSupport',
     whatsappInstanceId: 'instance192672',
     whatsappApiToken: 'zwsvwyr1pqa8ztxa',
+    announcementEnabled: true,
+    announcementTitle: '🎉 Welcome to TaskVibe 2.0 Update!',
+    announcementMessage: 'Naya TaskVibe update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!',
+    announcementTag: 'NEW UPDATE',
+    announcementButtonText: 'Check VIP Plans ⭐',
+    announcementButtonAction: 'member_plans',
+    announcementDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
   };
 
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);

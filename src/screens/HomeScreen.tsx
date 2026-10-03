@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
 import { BottomNav } from '../components/BottomNav';
+import { HomeAnnouncementModal } from '../components/modals/HomeAnnouncementModal';
 import { liveWithdrawalsList } from '../data/liveWithdrawalsData';
 import rewardsHeroImg from '../assets/images/rewards_hero_badge_1790931179815.jpg';
 import {
@@ -23,6 +24,7 @@ import {
   RefreshCw,
   Sparkles,
   AlertTriangle,
+  Megaphone,
 } from 'lucide-react';
 
 export const HomeScreen: React.FC = () => {
@@ -40,6 +42,26 @@ export const HomeScreen: React.FC = () => {
   const freeTrialHoursLeft = app.freeTrialHoursLeft ?? 48;
   const maxDailyVideos = app.maxDailyVideos || 2;
   const todayVideosWatched = app.todayVideosWatched || 0;
+
+  // Home Screen Announcement / Notice Popup state
+  const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(() => {
+    try {
+      if (adminSettings.announcementEnabled === false) return false;
+      const key = `taskvibe_notice_seen_${adminSettings.announcementTitle || 'v2'}`;
+      const seen = sessionStorage.getItem(key);
+      return seen !== 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleDismissNotice = () => {
+    setIsNoticeModalOpen(false);
+    try {
+      const key = `taskvibe_notice_seen_${adminSettings.announcementTitle || 'v2'}`;
+      sessionStorage.setItem(key, 'true');
+    } catch {}
+  };
 
   // Pull / Slide Down to Refresh states
   const [pullDistance, setPullDistance] = useState(0);
@@ -277,6 +299,31 @@ export const HomeScreen: React.FC = () => {
               </button>
             </div>
           ) : null}
+
+          {/* Announcement / Notice Ticker if enabled */}
+          {adminSettings.announcementEnabled && (
+            <div
+              onClick={() => setIsNoticeModalOpen(true)}
+              className="bg-gradient-to-r from-indigo-950 via-purple-950 to-indigo-900 border border-indigo-500/30 text-white p-2.5 rounded-2xl shadow-xs flex items-center justify-between cursor-pointer hover:border-amber-400/50 transition active:scale-98"
+            >
+              <div className="flex items-center gap-2 overflow-hidden flex-1 mr-2">
+                <span className="p-1.5 rounded-xl bg-amber-400 text-slate-950 shrink-0 shadow-2xs">
+                  <Megaphone className="w-3.5 h-3.5" />
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-wider bg-white/20 px-1.5 py-0.2 rounded text-amber-300 shrink-0">
+                  {adminSettings.announcementTag || 'NOTICE'}
+                </span>
+                <span className="text-xs font-bold text-slate-200 truncate">
+                  {adminSettings.announcementTitle || 'Check latest update'}
+                </span>
+              </div>
+              <span className="text-[10px] font-black text-amber-400 hover:underline shrink-0 flex items-center gap-0.5">
+                <span>View</span>
+                <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+          )}
+
           {/* Hero Banner matching Screenshot 4 */}
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white p-4 shadow-md">
             {/* Background design elements */}
@@ -514,6 +561,12 @@ export const HomeScreen: React.FC = () => {
       <div className="shrink-0 z-30">
         <BottomNav />
       </div>
+
+      {/* ANNOUNCEMENT POPUP MODAL CONTROLLED BY ADMIN */}
+      <HomeAnnouncementModal
+        isOpen={isNoticeModalOpen}
+        onClose={handleDismissNotice}
+      />
     </div>
   );
 };

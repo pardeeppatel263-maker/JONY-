@@ -154,6 +154,10 @@ interface AppContextType {
   adminUpdateUser: (mobile: string, updates: Partial<RegisteredUserAccount>) => void;
   adminDeleteUser: (mobile: string) => void;
   updatePlan: (planId: string, updates: Partial<PlanItem>) => void;
+  addVIPPlan: (newPlan: PlanItem) => Promise<boolean>;
+  updateVIPPlan: (planId: string, updates: Partial<PlanItem>) => Promise<boolean>;
+  deleteVIPPlan: (planId: string) => Promise<boolean>;
+  resetUserDailyTasks: (mobile: string) => Promise<void>;
   exportCompleteDatabase: () => string;
   importCompleteDatabase: (jsonStr: string) => boolean;
 }
@@ -796,7 +800,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   }, []);
 
-  // Real-time listener: sync active user profile, balance & transactions from Firestore
+  // Real-time listener: sync VIP Plans from Firestore across all devices
+  useEffect(() => {
+    try {
+      const plansCol = collection(db, 'vip_plans');
+      const unsubscribe = onSnapshot(
+        plansCol,
+        async (snapshot) => {
+          if (snapshot.empty) {
+            // First time bootstrap: Seed initialPlans to Firestore vip_plans collection
+            try {
+              for (const p of initialPlans) {
+                await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
+              }
+            } catch (err) {
+              console.warn('Initial plans bootstrap error:', err);
+            }
+          } else {
+            const cloudPlans: PlanItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data() as PlanItem;
+              if (data && data.id) {
+                cloudPlans.push(data);
+              }
+            });
+            if (cloudPlans.length > 0) {
+              cloudPlans.sort((a, b) => (a.level || 0) - (b.level || 0));
+              setPlans(cloudPlans);
+              try {
+                localStorage.setItem('taskvibe_plans', JSON.stringify(cloudPlans));
+              } catch (e) {
+                console.warn(e);
+              }
+            }
+          }
+        },
+        (error) => {
+          console.warn('Firestore vip_plans onSnapshot error:', error);
+        }
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('Could not attach Firestore vip_plans listener:', err);
+    }
+  }, []);
+
+  // Real-time listener: sync active user profile, balance, tasks quota & transactions from Firestore
   useEffect(() => {
     if (!isLoggedIn || !user.mobile) return;
     const cleanMobile = normalizeMobile(user.mobile);
@@ -810,17 +859,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (docSnap.exists()) {
             const cloudData = docSnap.data() as RegisteredUserAccount;
             setUser((curr) => {
-              if (
-                curr.balance !== cloudData.balance ||
-                curr.vipLevel !== cloudData.vipLevel ||
-                curr.name !== cloudData.name ||
-                curr.totalEarned !== cloudData.totalEarned ||
-                curr.withdrawn !== cloudData.withdrawn
-              ) {
-                return { ...curr, ...cloudData };
-              }
-              return curr;
+              // Always sync full cloud state including todayVideosWatched, lastVideoWatchDate, balance, etc.
+              return { ...curr, ...cloudData };
             });
+            try {
+              localStorage.setItem('taskvibe_user', JSON.stringify({ ...user, ...cloudData }));
+            } catch {}
             if (cloudData.transactions && Array.isArray(cloudData.transactions)) {
               setTransactions(cloudData.transactions);
             }
@@ -2542,12 +2586,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       navigate('member_plans');
       return;
     }
-    if (!canWatchMoreVideos) {
-      showToast(`❌ Today's video quota is completed (${todayVideosWatched}/${maxDailyVideos})! Upgrade your VIP plan for more tasks.`);
-      navigate('member_plans');
+    if (!canWatchMoreVideos || todayVideosWatched >= maxDailyVideos) {
+      showToast(`❌ Aaj ka video task quota pura ho chuka hai (${todayVideosWatched}/${maxDailyVideos})! Naye tasks kal milenge ya aur task pane ke liye VIP upgrade karein.`);
       return;
     }
     const chosenNum = taskNum || Math.min(maxDailyVideos, todayVideosWatched + 1);
+    if (chosenNum <= todayVideosWatched) {
+      showToast(`✓ Task #${chosenNum} pehle hi complete ho chuka hai! Agla pending task dekhein.`);
+      return;
+    }
     setCurrentPlayingTaskNum(chosenNum);
     setIsWatchingVideo(true);
   };
@@ -2555,13 +2602,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const submitYouTubeVideoTask = (videoTitle?: string, videoUrl?: string) => {
     setIsWatchingVideo(false);
 
-    // Enforce mission daily limit
-    if (!canWatchMoreVideos) {
-      showToast(`❌ Today's video quota is completed (${todayVideosWatched}/${maxDailyVideos})!`);
+    // Strictly enforce mission daily limit
+    if (!canWatchMoreVideos || todayVideosWatched >= maxDailyVideos) {
+      showToast(`❌ Aaj ka video task quota complete ho chuka hai (${todayVideosWatched}/${maxDailyVideos})! Aur task dekhne ke liye VIP upgrade karein.`);
       return;
     }
 
     const nextCount = todayVideosWatched + 1;
+    if (nextCount > maxDailyVideos) {
+      showToast(`❌ Aaj ka video task quota complete ho chuka hai (${todayVideosWatched}/${maxDailyVideos})!`);
+      return;
+    }
+
     const taskNumToRecord = currentPlayingTaskNum || nextCount;
     const completedTaskDef =
       userDailyVideoMissions.find((m) => m.index === taskNumToRecord) ||
@@ -2640,6 +2692,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: `30-second YouTube Video task completed (${nextCount}/${maxDailyVideos}). ₹${reward} credited to wallet!`,
     };
     setTransactions((prev) => [newTx, ...prev]);
+
+    // IMMEDIATELY sync directly to Firestore across all devices!
+    const cleanMobile = normalizeMobile(user.mobile);
+    if (cleanMobile && cleanMobile.length >= 10) {
+      try {
+        setDoc(
+          doc(db, 'users', cleanMobile),
+          {
+            balance: user.balance + reward,
+            totalEarned: user.totalEarned + reward,
+            todayVideosWatched: nextCount,
+            lastVideoWatchDate: todayDateStr,
+            transactions: [newTx, ...transactions],
+          },
+          { merge: true }
+        ).catch((err) => console.warn('Firestore user task sync warning:', err));
+      } catch (err) {
+        console.warn('Direct task sync to Firestore failed:', err);
+      }
+    }
 
     // Update tasks state: mark video task as completed
     setTasks((prev) =>
@@ -3107,17 +3179,99 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('User deleted from database.');
   };
 
+  const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {
+    try {
+      await setDoc(doc(db, 'vip_plans', newPlan.id), newPlan, { merge: true });
+      setPlans((prev) => {
+        const filtered = prev.filter((p) => p.id !== newPlan.id);
+        const next = [...filtered, newPlan].sort((a, b) => (a.level || 0) - (b.level || 0));
+        try {
+          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      showToast(`✓ VIP Plan "${newPlan.title}" added to cloud!`);
+      return true;
+    } catch (err) {
+      console.error('Failed to add VIP plan to Firestore', err);
+      showToast('❌ Failed to add VIP plan');
+      return false;
+    }
+  };
+
+  const updateVIPPlan = async (planId: string, updates: Partial<PlanItem>): Promise<boolean> => {
+    try {
+      await setDoc(doc(db, 'vip_plans', planId), updates, { merge: true });
+      setPlans((prev) => {
+        const next = prev.map((p) => (p.id === planId ? { ...p, ...updates } : p));
+        try {
+          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      showToast('✓ VIP Plan updated in cloud database!');
+      return true;
+    } catch (err) {
+      console.error('Failed to update VIP plan in Firestore', err);
+      showToast('❌ Failed to update VIP plan');
+      return false;
+    }
+  };
+
+  const deleteVIPPlan = async (planId: string): Promise<boolean> => {
+    try {
+      await deleteDoc(doc(db, 'vip_plans', planId));
+      setPlans((prev) => {
+        const next = prev.filter((p) => p.id !== planId);
+        try {
+          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      showToast('✓ VIP Plan deleted from cloud database.');
+      return true;
+    } catch (err) {
+      console.error('Failed to delete VIP plan from Firestore', err);
+      showToast('❌ Failed to delete VIP plan');
+      return false;
+    }
+  };
+
   const updatePlan = (planId: string, updates: Partial<PlanItem>) => {
-    setPlans((prev) => {
-      const next = prev.map((p) => (p.id === planId ? { ...p, ...updates } : p));
-      try {
-        localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-      } catch (e) {
-        console.warn(e);
+    updateVIPPlan(planId, updates);
+  };
+
+  const resetUserDailyTasks = async (mobile: string) => {
+    const clean = normalizeMobile(mobile);
+    try {
+      const todayStr = new Date().toDateString();
+      await setDoc(
+        doc(db, 'users', clean),
+        {
+          todayVideosWatched: 0,
+          lastVideoWatchDate: todayStr,
+        },
+        { merge: true }
+      );
+      setRegisteredUsers((prev) =>
+        prev.map((u) =>
+          normalizeMobile(u.mobile) === clean
+            ? { ...u, todayVideosWatched: 0, lastVideoWatchDate: todayStr }
+            : u
+        )
+      );
+      if (normalizeMobile(user.mobile) === clean) {
+        setUser((u) => ({
+          ...u,
+          todayVideosWatched: 0,
+          lastVideoWatchDate: todayStr,
+        }));
       }
-      return next;
-    });
-    showToast('VIP Plan updated successfully!');
+      showToast(`✓ User ${clean} daily tasks count reset to 0!`);
+    } catch (err) {
+      console.error('Failed to reset user daily tasks:', err);
+      showToast('❌ Failed to reset daily tasks');
+    }
   };
 
   const exportCompleteDatabase = () => {
@@ -3297,6 +3451,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminUpdateUser,
         adminDeleteUser,
         updatePlan,
+        addVIPPlan,
+        updateVIPPlan,
+        deleteVIPPlan,
+        resetUserDailyTasks,
         exportCompleteDatabase,
         importCompleteDatabase,
       }}

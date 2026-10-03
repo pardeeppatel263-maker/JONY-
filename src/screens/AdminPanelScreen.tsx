@@ -71,6 +71,10 @@ export const AdminPanelScreen: React.FC = () => {
     adminUpdateUser,
     adminDeleteUser,
     updatePlan,
+    addVIPPlan,
+    updateVIPPlan,
+    deleteVIPPlan,
+    resetUserDailyTasks,
     exportCompleteDatabase,
     importCompleteDatabase,
     navigate,
@@ -95,6 +99,19 @@ export const AdminPanelScreen: React.FC = () => {
   const [depositSearch, setDepositSearch] = useState('');
   const [withdrawalFilter, setWithdrawalFilter] = useState<'all' | 'pending' | 'verified' | 'failed'>('pending');
   const [userSearch, setUserSearch] = useState('');
+
+  // Add VIP Plan Modal State
+  const [isAddPlanModalOpen, setIsAddPlanModalOpen] = useState(false);
+  const [newPlanLevel, setNewPlanLevel] = useState<number>(4);
+  const [newPlanTitle, setNewPlanTitle] = useState('VIP 4 Platinum');
+  const [newPlanPrice, setNewPlanPrice] = useState<number>(5000);
+  const [newPlanDailyIncome, setNewPlanDailyIncome] = useState<number>(250);
+  const [newPlanDailyMissions, setNewPlanDailyMissions] = useState<number>(5);
+  const [newPlanValidity, setNewPlanValidity] = useState('365 days');
+  const [newPlanBonus, setNewPlanBonus] = useState<number>(500);
+  const [newPlanBadge, setNewPlanBadge] = useState('LV 4');
+  const [newPlanTheme, setNewPlanTheme] = useState('cyan');
+  const [newPlanRecommended, setNewPlanRecommended] = useState(false);
 
   // Selected screenshot preview modal
   const [viewScreenshotDeposit, setViewScreenshotDeposit] = useState<PaymentDeposit | null>(null);
@@ -1185,6 +1202,26 @@ export const AdminPanelScreen: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Today's Tasks Progress Info */}
+                    <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <span>🎬 Today Tasks:</span>
+                        <b className="text-amber-300 font-mono">
+                          {u.lastVideoWatchDate === new Date().toDateString()
+                            ? `${u.todayVideosWatched || 0} Watched`
+                            : '0 (Not started today)'}
+                        </b>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => resetUserDailyTasks(u.mobile)}
+                        className="text-[10px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/50 hover:bg-sky-900/50 px-2 py-0.5 rounded border border-sky-800/50 transition active:scale-95"
+                        title="Reset daily task counter so user can watch again"
+                      >
+                        Reset Tasks
+                      </button>
+                    </div>
+
                     <div className="text-[11px] text-slate-400 flex items-center justify-between">
                       <span>Ref Code: <b className="text-slate-300 font-mono">{u.referralCode}</b></span>
                       <span>Pass: <b className="text-amber-400 font-mono">{u.password || '******'}</b></span>
@@ -1278,35 +1315,111 @@ export const AdminPanelScreen: React.FC = () => {
         {/* ========================================================= */}
         {activeTab === 'plans' && (
           <div className="space-y-4">
-            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-              <h2 className="text-sm font-bold text-white mb-1">VIP Membership Plans</h2>
-              <p className="text-xs text-slate-400">
-                Click any plan to update price, daily income, or daily mission limits.
-              </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-amber-400" />
+                  <h2 className="text-base font-bold text-white">VIP Membership Plans Manager</h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Live Cloud Sync
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Manage VIP tiers, add new plans, adjust prices, daily video task quotas, and rewards. Changes apply instantly to all users!
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextLv = Math.max(...plans.map((p) => p.level), 0) + 1;
+                  setNewPlanLevel(nextLv);
+                  setNewPlanTitle(`VIP ${nextLv} Plan`);
+                  setNewPlanPrice(nextLv * 1000);
+                  setNewPlanDailyIncome(nextLv * 60);
+                  setNewPlanDailyMissions(Math.min(10, nextLv + 1));
+                  setNewPlanValidity('365 days');
+                  setNewPlanBonus(nextLv * 100);
+                  setNewPlanBadge(`LV ${nextLv}`);
+                  setNewPlanTheme('amber');
+                  setNewPlanRecommended(false);
+                  setIsAddPlanModalOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 flex items-center gap-2 transition active:scale-95 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add New VIP Plan</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {plans.map((p) => (
-                <div key={p.id} className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
-                      {p.badge}
-                    </span>
-                    <span className="text-lg font-black text-white">₹{p.price.toLocaleString('en-IN')}</span>
+                <div
+                  key={p.id}
+                  className="bg-slate-900 rounded-2xl p-4 border border-slate-800 hover:border-slate-700 space-y-3 flex flex-col justify-between transition shadow-xs"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                          {p.badge || `LV ${p.level}`}
+                        </span>
+                        {p.recommended && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                            Popular
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-lg font-black text-white font-mono">
+                        ₹{p.price.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="font-bold text-white text-sm">{p.title || p.levelTag}</h3>
+                      <div className="text-xs font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
+                        <span>Daily Income: ₹{p.dailyIncome}</span>
+                        <span className="text-slate-500 font-normal">
+                          (₹{p.perMission || Math.round((p.dailyIncome / (p.dailyMissions || 1)) * 10) / 10} × {p.dailyMissions} tasks)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
+                        <span>Daily Quota: <b className="text-amber-300 font-mono">{p.dailyMissions} Videos</b></span>
+                        <span>Validity: <b className="text-slate-300">{p.validity}</b></span>
+                      </div>
+                      {p.bonus > 0 && (
+                        <div className="text-[10px] text-amber-300/90 mt-0.5">
+                          🎁 Welcome Bonus: ₹{p.bonus}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-white text-sm">{p.levelTag}</h3>
-                    <p className="text-xs text-emerald-400 font-bold mt-1">
-                      Daily Income: ₹{p.dailyIncome} (₹{p.perMission} × {p.dailyMissions} tasks)
-                    </p>
-                    <p className="text-[11px] text-slate-400">Validity: {p.validity}</p>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      onClick={() => setEditingPlan(p)}
+                      className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Edit Plan</span>
+                    </button>
+                    {p.level === 0 ? (
+                      <span className="py-2 bg-slate-950 text-slate-500 font-bold text-[11px] rounded-xl text-center border border-slate-800">
+                        Default Free
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete VIP Plan "${p.title}"? This cannot be undone.`)) {
+                            deleteVIPPlan(p.id);
+                          }
+                        }}
+                        className="py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-red-500/20"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={() => setEditingPlan(p)}
-                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition"
-                  >
-                    Edit Plan Settings
-                  </button>
                 </div>
               ))}
             </div>
@@ -1955,9 +2068,12 @@ export const AdminPanelScreen: React.FC = () => {
       {/* ========================================================= */}
       {editingPlan && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Edit VIP Plan ({editingPlan.badge})</h3>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">Edit VIP Plan ({editingPlan.badge})</h3>
+              </div>
               <button onClick={() => setEditingPlan(null)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
@@ -1965,58 +2081,310 @@ export const AdminPanelScreen: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-slate-400 block mb-1">Price (₹)</label>
+                <label className="text-slate-400 block mb-1 font-bold">Plan Title / Name</label>
                 <input
-                  type="number"
-                  value={editingPlan.price}
-                  onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
+                  type="text"
+                  value={editingPlan.title || editingPlan.levelTag}
+                  onChange={(e) => setEditingPlan({ ...editingPlan, title: e.target.value, levelTag: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-bold"
                 />
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1">Daily Income (₹)</label>
-                <input
-                  type="number"
-                  value={editingPlan.dailyIncome}
-                  onChange={(e) => setEditingPlan({ ...editingPlan, dailyIncome: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Price (₹)</label>
+                  <input
+                    type="number"
+                    value={editingPlan.price}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Welcome Bonus (₹)</label>
+                  <input
+                    type="number"
+                    value={editingPlan.bonus || 0}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, bonus: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1">Daily Tasks Limit</label>
-                <input
-                  type="number"
-                  value={editingPlan.dailyMissions}
-                  onChange={(e) => setEditingPlan({ ...editingPlan, dailyMissions: parseInt(e.target.value) || 1 })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Daily Income (₹)</label>
+                  <input
+                    type="number"
+                    value={editingPlan.dailyIncome}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, dailyIncome: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Daily Video Tasks Limit</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingPlan.dailyMissions}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, dailyMissions: parseInt(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                <span>Per Video Reward:</span>
+                <b className="text-emerald-400 font-mono text-xs">
+                  ₹{Math.round((editingPlan.dailyIncome / Math.max(1, editingPlan.dailyMissions)) * 10) / 10} / task
+                </b>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Validity Period</label>
+                  <input
+                    type="text"
+                    value={editingPlan.validity}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, validity: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Badge Text</label>
+                  <input
+                    type="text"
+                    value={editingPlan.badge}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, badge: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingPlan(null)}
-                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs"
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  updatePlan(editingPlan.id, {
+                onClick={async () => {
+                  const perMission = Math.round((editingPlan.dailyIncome / Math.max(1, editingPlan.dailyMissions)) * 10) / 10;
+                  await updateVIPPlan(editingPlan.id, {
+                    title: editingPlan.title,
+                    levelTag: editingPlan.levelTag || editingPlan.title,
                     price: editingPlan.price,
                     amount: editingPlan.price,
                     dailyIncome: editingPlan.dailyIncome,
                     dailyMissions: editingPlan.dailyMissions,
+                    perMission,
+                    validity: editingPlan.validity,
+                    bonus: editingPlan.bonus,
+                    badge: editingPlan.badge,
+                    benefits: [
+                      `Daily Income: ₹${editingPlan.dailyIncome} (₹${perMission} × ${editingPlan.dailyMissions} tasks)`,
+                      `Daily Missions: ${editingPlan.dailyMissions} Videos`,
+                      `Per-Mission Reward: ₹${perMission}`,
+                      `Validity: ${editingPlan.validity}`,
+                      `Instant Verification & Direct VIP Support`,
+                    ],
                   });
                   setEditingPlan(null);
                 }}
-                className="py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs"
+                className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 transition active:scale-95 flex items-center justify-center gap-1.5"
               >
-                Save Plan
+                <Check className="w-4 h-4" />
+                <span>Save to Cloud</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* ADD NEW VIP PLAN MODAL */}
+      {/* ========================================================= */}
+      {isAddPlanModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">Create New VIP Plan</h3>
+              </div>
+              <button onClick={() => setIsAddPlanModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Plan Level (e.g. 1 to 10)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={newPlanLevel}
+                    onChange={(e) => {
+                      const lv = parseInt(e.target.value) || 1;
+                      setNewPlanLevel(lv);
+                      setNewPlanBadge(`LV ${lv}`);
+                      if (newPlanTitle.startsWith('VIP ')) {
+                        setNewPlanTitle(`VIP ${lv} Plan`);
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Badge Text</label>
+                  <input
+                    type="text"
+                    value={newPlanBadge}
+                    onChange={(e) => setNewPlanBadge(e.target.value)}
+                    placeholder="e.g. LV 4"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1 font-bold">Plan Title / Name</label>
+                <input
+                  type="text"
+                  value={newPlanTitle}
+                  onChange={(e) => setNewPlanTitle(e.target.value)}
+                  placeholder="e.g. VIP 4 Diamond Plan"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Plan Price (₹)</label>
+                  <input
+                    type="number"
+                    value={newPlanPrice}
+                    onChange={(e) => setNewPlanPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Welcome Bonus (₹)</label>
+                  <input
+                    type="number"
+                    value={newPlanBonus}
+                    onChange={(e) => setNewPlanBonus(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Daily Income (₹)</label>
+                  <input
+                    type="number"
+                    value={newPlanDailyIncome}
+                    onChange={(e) => setNewPlanDailyIncome(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Daily Video Tasks Limit</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newPlanDailyMissions}
+                    onChange={(e) => setNewPlanDailyMissions(parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                <span>Calculated Per Video Reward:</span>
+                <b className="text-emerald-400 font-mono text-xs">
+                  ₹{Math.round((newPlanDailyIncome / Math.max(1, newPlanDailyMissions)) * 10) / 10} / task
+                </b>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1 font-bold">Validity Period</label>
+                  <input
+                    type="text"
+                    value={newPlanValidity}
+                    onChange={(e) => setNewPlanValidity(e.target.value)}
+                    placeholder="365 days"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={newPlanRecommended}
+                      onChange={(e) => setNewPlanRecommended(e.target.checked)}
+                      className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700"
+                    />
+                    <span className="font-bold">Mark Popular</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAddPlanModalOpen(false)}
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!newPlanTitle || newPlanPrice <= 0) {
+                    showToast('Please enter valid Plan Title and Price');
+                    return;
+                  }
+                  const perMission = Math.round((newPlanDailyIncome / Math.max(1, newPlanDailyMissions)) * 10) / 10;
+                  const newPlanItem: PlanItem = {
+                    id: `plan_lv${newPlanLevel}_${Date.now()}`,
+                    level: newPlanLevel,
+                    levelTag: newPlanTitle,
+                    tagColor: 'bg-amber-100 text-amber-900 border-amber-300',
+                    badge: newPlanBadge || `LV ${newPlanLevel}`,
+                    price: newPlanPrice,
+                    amount: newPlanPrice,
+                    bonus: newPlanBonus,
+                    dailyIncome: newPlanDailyIncome,
+                    dailyMissions: newPlanDailyMissions,
+                    perMission,
+                    validity: newPlanValidity || '365 days',
+                    title: newPlanTitle,
+                    recommended: newPlanRecommended,
+                    benefits: [
+                      `Daily Income: ₹${newPlanDailyIncome} (₹${perMission} × ${newPlanDailyMissions} tasks)`,
+                      `Daily Missions: ${newPlanDailyMissions} Videos`,
+                      `Per-Mission Reward: ₹${perMission}`,
+                      `Validity: ${newPlanValidity || '365 days'}`,
+                      `Instant Verification & Direct VIP Support`,
+                    ],
+                  };
+                  await addVIPPlan(newPlanItem);
+                  setIsAddPlanModalOpen(false);
+                }}
+                className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 transition active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create &amp; Publish</span>
               </button>
             </div>
           </div>

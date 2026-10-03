@@ -26,6 +26,7 @@ export const VideoTaskModal: React.FC = () => {
     activeUserPlan,
     userDailyVideoMissions,
     currentPlayingTaskNum,
+    navigate,
   } = useApp();
 
   const duration = Math.max(30, adminSettings.youtubeVideoDurationSec || 30);
@@ -137,6 +138,45 @@ export const VideoTaskModal: React.FC = () => {
   }, [isWatchingVideo, isVideoPlaying, isFinished]);
 
   if (!isWatchingVideo) return null;
+
+  // Strict enforcement: If daily quota is reached, do NOT allow video watch!
+  if (todayVideosWatched >= maxDailyVideos) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+        <div className="bg-slate-900 text-white rounded-3xl w-full max-w-sm p-6 text-center space-y-4 shadow-2xl border border-white/10 animate-scaleUp">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center text-3xl">
+            🎬
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-white">Daily Task Limit Reached!</h3>
+            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+              Aapne aaj ke saare <b className="text-amber-400">{maxDailyVideos}/{maxDailyVideos}</b> video tasks complete kar liye hain. Isse jyada video aaj nahi dekh sakte.
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Naye tasks kal unlock honge, ya aur daily tasks pane ke liye VIP Plan upgrade karein!
+            </p>
+          </div>
+          <div className="space-y-2 pt-2">
+            <button
+              onClick={() => {
+                setIsWatchingVideo(false);
+                navigate('member_plans');
+              }}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 hover:brightness-110 active:scale-95 transition"
+            >
+              Upgrade VIP Plan for More Tasks ⭐
+            </button>
+            <button
+              onClick={() => setIsWatchingVideo(false)}
+              className="w-full py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handlePlayCommand = () => {
     try {

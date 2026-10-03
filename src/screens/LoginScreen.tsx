@@ -119,7 +119,11 @@ export const LoginScreen: React.FC = () => {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
+        <form onSubmit={handleSubmit} className="space-y-3.5" autoComplete="off">
+          {/* Hidden inputs to absorb browser password suggestion / autofill */}
+          <input type="text" name="fake_username_remember" className="hidden" tabIndex={-1} autoComplete="off" />
+          <input type="password" name="fake_password_remember" className="hidden" tabIndex={-1} autoComplete="off" />
+
           {/* Mobile Input with +91 */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700">Mobile Number</label>
@@ -130,10 +134,14 @@ export const LoginScreen: React.FC = () => {
               <div className="relative flex-1 flex items-center">
                 <input
                   type="tel"
+                  id="user_mobile_login"
+                  name="user_mobile_login"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value)}
                   placeholder="Enter mobile number"
                   maxLength={10}
+                  autoComplete="off"
+                  data-lpignore="true"
                   className="w-full py-2.5 px-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
                   required
                 />
@@ -141,7 +149,7 @@ export const LoginScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Password Input */}
+          {/* Password Input - Prevents browser password suggestion popups */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700">Password</label>
             <div className="relative flex items-center rounded-xl border border-slate-200 bg-white shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
@@ -150,9 +158,18 @@ export const LoginScreen: React.FC = () => {
               </div>
               <input
                 type={showPassword ? 'text' : 'password'}
+                id="user_pass_field"
+                name="user_pass_field"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 className="w-full py-2.5 px-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400"
                 required
               />

@@ -44,6 +44,7 @@ import {
   Building2,
   Megaphone,
   BellRing,
+  Crown,
 } from 'lucide-react';
 import { PlanItem, RegisteredUserAccount, PaymentDeposit } from '../types';
 import { compressImage } from '../utils/imageCompressor';

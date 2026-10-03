@@ -1609,28 +1609,35 @@ export const AdminPanelScreen: React.FC = () => {
               <div className="space-y-2 pt-2 border-t border-slate-800">
                 <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Live Popup Preview (How users will see it):</span>
+                  <span>Live Popup Preview (How users will see it on Mobile):</span>
                 </span>
 
-                <div className="max-w-sm mx-auto bg-slate-950 rounded-3xl border border-white/10 overflow-hidden shadow-xl">
-                  <div className="p-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
-                        {noticeTag || 'NEW UPDATE'}
+                <div className="max-w-[310px] mx-auto bg-slate-900 rounded-2xl border border-white/10 overflow-hidden shadow-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                        <Megaphone className="w-3.5 h-3.5" />
                       </span>
-                      <span className="text-[10px] text-blue-200">Today</span>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
+                          {noticeTag || 'NEW UPDATE'}
+                        </span>
+                        <h4 className="text-xs font-black text-white mt-0.5 leading-snug line-clamp-1">
+                          {noticeTitle || 'Announcement Title'}
+                        </h4>
+                      </div>
                     </div>
-                    <h4 className="text-sm font-black text-white mt-2 leading-tight">
-                      {noticeTitle || 'Announcement Title'}
-                    </h4>
                   </div>
-                  <div className="p-4 space-y-3">
-                    <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-slate-900 p-3 rounded-xl border border-white/5">
-                      {noticeMessage || 'Your message will appear here.'}
-                    </p>
-                    <div className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs text-center flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/10">
-                      <span>{noticeButtonText || 'Check VIP Plans ⭐'}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[11px] text-slate-300 leading-relaxed max-h-24 overflow-y-auto whitespace-pre-line font-medium">
+                    {noticeMessage || 'Your message will appear here.'}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <div className="py-1.5 px-2 rounded-xl bg-slate-800 text-slate-400 font-bold text-[10px] text-center">
+                      Dismiss
+                    </div>
+                    <div className="py-1.5 px-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-[10px] text-center flex items-center justify-center gap-1">
+                      <span className="truncate">{noticeButtonText || 'Check VIP Plans ⭐'}</span>
+                      <ArrowRight className="w-3 h-3 shrink-0" />
                     </div>
                   </div>
                 </div>

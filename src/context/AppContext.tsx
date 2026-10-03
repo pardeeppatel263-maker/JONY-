@@ -814,32 +814,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const unsubscribe = onSnapshot(
         plansCol,
         async (snapshot) => {
-          if (snapshot.empty) {
-            // First time bootstrap: Seed initialPlans to Firestore vip_plans collection
-            try {
-              for (const p of initialPlans) {
+          const cloudPlans: PlanItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as PlanItem;
+            if (data && data.id) {
+              cloudPlans.push(data);
+            }
+          });
+
+          // Ensure all base plans (Level 0 through Level 7) are ALWAYS preserved!
+          // Admin edits or new additions (e.g. Level 8+) in cloudPlans take precedence.
+          const planMap = new Map<string, PlanItem>();
+          initialPlans.forEach((p) => planMap.set(p.id, p));
+          cloudPlans.forEach((p) => planMap.set(p.id, p));
+          const mergedPlans = Array.from(planMap.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
+
+          setPlans(mergedPlans);
+          try {
+            localStorage.setItem('taskvibe_plans', JSON.stringify(mergedPlans));
+          } catch (e) {
+            console.warn(e);
+          }
+
+          // If any base plan was missing in Firestore, seed it in background
+          try {
+            for (const p of initialPlans) {
+              if (!cloudPlans.some((cp) => cp.id === p.id)) {
                 await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
               }
-            } catch (err) {
-              console.warn('Initial plans bootstrap error:', err);
             }
-          } else {
-            const cloudPlans: PlanItem[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as PlanItem;
-              if (data && data.id) {
-                cloudPlans.push(data);
-              }
-            });
-            if (cloudPlans.length > 0) {
-              cloudPlans.sort((a, b) => (a.level || 0) - (b.level || 0));
-              setPlans(cloudPlans);
-              try {
-                localStorage.setItem('taskvibe_plans', JSON.stringify(cloudPlans));
-              } catch (e) {
-                console.warn(e);
-              }
-            }
+          } catch (seedErr) {
+            console.warn('Syncing base plans to Firestore:', seedErr);
           }
         },
         (error) => {

@@ -86,6 +86,7 @@ interface AppContextType {
   switchTab: (tab: BottomTabType) => void;
   login: (mobile: string, pass: string) => Promise<boolean>;
   register: (name: string, mobile: string, email: string, pass: string, refCode?: string) => Promise<boolean>;
+  resetUserPassword: (mobile: string, newPass: string) => Promise<boolean>;
   checkPhoneExistsInFirestore: (mobile: string) => Promise<boolean>;
   logout: () => void;
   addMoneyInitiate: (amount: number, bonus: number) => void;
@@ -1271,6 +1272,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
+    return true;
+  };
+
+  const resetUserPassword = async (mobile: string, newPass: string): Promise<boolean> => {
+    const cleanMobile = normalizeMobile(mobile);
+    const trimmedPass = newPass.trim();
+    if (!cleanMobile || cleanMobile.length < 10 || !trimmedPass) {
+      showToast('Please enter a valid 10-digit mobile number and new password');
+      return false;
+    }
+
+    try {
+      const userRef = doc(db, 'users', cleanMobile);
+      const snap = await getDoc(userRef);
+      const localMatch = registeredUsers.find((u) => normalizeMobile(u.mobile) === cleanMobile);
+
+      if (!snap.exists() && !localMatch) {
+        showToast(`❌ Mobile number (+91 ${cleanMobile}) is not registered!`);
+        return false;
+      }
+
+      await setDoc(userRef, { password: trimmedPass }, { merge: true });
+    } catch (err) {
+      console.warn('Firestore password reset update warning:', err);
+    }
+
+    setRegisteredUsers((prev) => {
+      const next = prev.map((u) =>
+        normalizeMobile(u.mobile) === cleanMobile ? { ...u, password: trimmedPass } : u
+      );
+      try {
+        localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+      } catch (e) {
+        console.warn(e);
+      }
+      return next;
+    });
+
+    if (normalizeMobile(user.mobile) === cleanMobile) {
+      setUser((prev) => ({ ...prev, password: trimmedPass }));
+    }
+
+    triggerConfetti();
+    showToast('✓ Password changed successfully! Please login with your new password.');
     return true;
   };
 
@@ -3407,6 +3452,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         switchTab,
         login,
         register,
+        resetUserPassword,
         logout,
         addMoneyInitiate,
         submitUPIPaymentProof,

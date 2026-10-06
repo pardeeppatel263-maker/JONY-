@@ -17,7 +17,9 @@ import {
   Smartphone,
   AlertCircle,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
+import { downloadApkToDevice } from '../utils/apkDownloader';
 
 export const RegisterScreen: React.FC = () => {
   const {
@@ -215,16 +217,29 @@ export const RegisterScreen: React.FC = () => {
     <div className="h-full w-full min-h-0 overflow-y-auto overscroll-contain bg-slate-50 text-slate-800 flex flex-col p-4 sm:p-5 pb-28 touch-pan-y scroll-smooth">
       {/* Top Header */}
       <div className="w-full max-w-sm mx-auto shrink-0">
-        <div className="flex items-center gap-3 pt-2 pb-4">
+        <div className="flex items-center justify-between pt-2 pb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={goBack}
+              className="p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-full hover:bg-slate-200/50 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+            </button>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Registration &bull; OTP Verified
+            </span>
+          </div>
           <button
-            onClick={goBack}
-            className="p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-full hover:bg-slate-200/50 transition-colors"
+            type="button"
+            onClick={() => {
+              downloadApkToDevice('ZoroTask-Official.apk');
+              showToast('✓ ZoroTask Official APK download started!');
+            }}
+            className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
           >
-            <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Download App</span>
           </button>
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Registration &bull; OTP Verified
-          </span>
         </div>
 
         {/* Title */}

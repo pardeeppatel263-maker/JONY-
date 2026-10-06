@@ -4,6 +4,7 @@ import { AppHeader } from '../components/AppHeader';
 import { BottomNav } from '../components/BottomNav';
 import { HomeAnnouncementModal } from '../components/modals/HomeAnnouncementModal';
 import { liveWithdrawalsList } from '../data/liveWithdrawalsData';
+import { downloadApkToDevice } from '../utils/apkDownloader';
 import rewardsHeroImg from '../assets/images/rewards_hero_badge_1790931179815.jpg';
 import {
   Wallet,
@@ -137,21 +138,10 @@ export const HomeScreen: React.FC = () => {
   }, [liveWithdrawals.length]);
 
   const handleDownloadApp = () => {
-    try {
-      const readme = `ZoroTask Mobile Official App v2.5.0\nSaved in your Mobile Device's Downloads.\nUse the web app or add to Home Screen.`;
-      const blob = new Blob([readme], { type: 'application/vnd.android.package-archive' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'ZoroTask-Earning-v2.5.apk';
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }, 2000);
-      showToast('✓ APK download started!');
-    } catch {
+    const ok = downloadApkToDevice('ZoroTask-Official.apk');
+    if (ok) {
+      showToast('✓ ZoroTask Official APK download started!');
+    } else {
       showToast('Downloading ZoroTask APK...');
     }
   };

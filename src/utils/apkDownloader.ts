@@ -1,33 +1,19 @@
 /**
- * Utility to generate and trigger APK download for the user.
+ * Utility to trigger direct download of the compiled ZoroTask Official Android APK (.apk).
  */
-export function downloadApkToDevice(appName = 'ZoroTask-Earning-v2.5.apk'): boolean {
+export function downloadApkToDevice(appName = 'ZoroTask-Official.apk'): boolean {
   try {
-    const readmeContent = `ZoroTask Mobile Official App v2.5.0
------------------------------------------
-Official ZoroTask Android Installation Package.
-Features:
-- Daily Survey & Mission Earnings
-- Direct UPI QR & UTR Balance Add
-- Fast Wallet Cashout
-- 100% Mobile Optimized Fluid Screen
-`;
-
-    const blob = new Blob([readmeContent], {
-      type: 'application/vnd.android.package-archive',
-    });
-
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = appName;
+    link.href = '/ZoroTask-Official.apk';
+    link.setAttribute('download', appName);
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
 
     setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
     }, 3000);
 
     return true;

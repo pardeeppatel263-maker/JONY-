@@ -672,17 +672,6 @@ export const AdminPanelScreen: React.FC = () => {
 
         <div className="flex items-center gap-2 sm:gap-3">
           <button
-            type="button"
-            onClick={() =>
-              downloadZoroTaskIconHD(() => showToast('✓ ZoroTask HD App Logo downloaded!'))
-            }
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 rounded-xl transition border border-amber-500/30 cursor-pointer"
-            title="Download Official ZoroTask HD Logo"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Download Logo</span>
-          </button>
-          <button
             onClick={() => navigate('home')}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition border border-slate-700"
           >

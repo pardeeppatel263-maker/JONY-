@@ -13,14 +13,7 @@ import {
   Mail,
   Copy,
   Headphones,
-  Download,
-  Sparkles,
 } from 'lucide-react';
-import {
-  ZOROTASK_LOGO_PATH,
-  downloadZoroTaskIconHD,
-  downloadZoroTaskBrandBannerHD,
-} from '../utils/logoDownloader';
 
 export const ProfileScreen: React.FC = () => {
   const {
@@ -93,57 +86,6 @@ export const ProfileScreen: React.FC = () => {
             >
               Open Wallet
             </button>
-          </div>
-
-          {/* Official ZoroTask HD Logo Download Card */}
-          <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-4 border border-amber-400/30 shadow-md space-y-3">
-            <div className="flex items-center gap-3.5">
-              <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-amber-400/60 shadow-lg shadow-amber-500/20 shrink-0 bg-slate-950">
-                <img
-                  src={ZOROTASK_LOGO_PATH}
-                  alt="ZoroTask Official Logo"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 mb-1">
-                  <Sparkles className="w-3 h-3" />
-                  <span>Official Brand Kit</span>
-                </div>
-                <h3 className="text-sm font-black text-white leading-tight">
-                  Zoro<span className="text-amber-400">Task</span> 3D App Logo
-                </h3>
-                <p className="text-[11px] text-blue-200/80 mt-0.5">
-                  Download high-resolution PNG icon &amp; banner for WhatsApp, Telegram or APK
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() =>
-                  downloadZoroTaskIconHD(() => showToast('✓ ZoroTask HD App Logo downloaded!'))
-                }
-                className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-105 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-[0.98] transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download Icon</span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  downloadZoroTaskBrandBannerHD(() =>
-                    showToast('✓ ZoroTask Full Brand Banner downloaded!')
-                  )
-                }
-                className="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/20 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-[0.98] transition cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5 text-amber-300" />
-                <span>Full Banner</span>
-              </button>
-            </div>
           </div>
 
           {/* Menu Items List matching Screenshot 15 */}

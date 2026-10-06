@@ -275,7 +275,7 @@ export const initialNotifications: AppNotification[] = [
   },
   {
     id: 'notif_2',
-    title: 'Welcome to TaskVibe!',
+    title: 'Welcome to ZoroTask!',
     message: 'Start completing daily surveys to earn continuous rewards.',
     time: '2h ago',
     read: false,
@@ -309,7 +309,7 @@ export const surveyQuestions = [
   },
   {
     id: 3,
-    question: 'Would you recommend TaskVibe to your friends and family members for daily earnings?',
+    question: 'Would you recommend ZoroTask to your friends and family members for daily earnings?',
     options: [
       'Definitely Yes (10/10)',
       'Very Likely',
@@ -319,7 +319,7 @@ export const surveyQuestions = [
   },
   {
     id: 4,
-    question: 'How would you rate the overall interface and speed of the TaskVibe app?',
+    question: 'How would you rate the overall interface and speed of the ZoroTask app?',
     options: [
       '⭐⭐⭐⭐⭐ Outstanding',
       '⭐⭐⭐⭐ Very Good',

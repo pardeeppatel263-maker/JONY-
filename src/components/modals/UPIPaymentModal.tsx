@@ -42,14 +42,14 @@ export const UPIPaymentModal: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Active admin UPI ID & merchant from backend / settings
-  const adminUpiId = adminSettings.adminUpiId || 'taskvibe.pay@icici';
-  const adminMerchantName = adminSettings.adminMerchantName || 'TaskVibe Pay';
+  const adminUpiId = adminSettings.adminUpiId || 'zorotask.pay@icici';
+  const adminMerchantName = adminSettings.adminMerchantName || 'ZoroTask Pay';
 
   // Standard UPI URI format
   const upiIntentUri = `upi://pay?pa=${encodeURIComponent(adminUpiId)}&pn=${encodeURIComponent(
     adminMerchantName
   )}&am=${encodeURIComponent(pendingUPIAmount)}&cu=INR&tn=${encodeURIComponent(
-    pendingDepositType === 'plan_purchase' ? `VIP Level ${pendingPlanForUPI?.level || 1} Plan` : 'TaskVibe Deposit'
+    pendingDepositType === 'plan_purchase' ? `VIP Level ${pendingPlanForUPI?.level || 1} Plan` : 'ZoroTask Deposit'
   )}`;
 
   // Dynamic QR Code: use custom Admin QR image if configured, otherwise generate from UPI ID

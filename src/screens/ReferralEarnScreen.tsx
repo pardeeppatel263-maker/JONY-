@@ -19,11 +19,11 @@ import {
 
 export const ReferralEarnScreen: React.FC = () => {
   const { user, copyText, showToast, registeredUsers, setIsTeamModalOpen } = useApp();
-  const referralCode = user.referralCode || 'TV982143';
+  const referralCode = user.referralCode || 'ZT982143';
   const referralLink =
     typeof window !== 'undefined'
       ? `${window.location.origin}${window.location.pathname}?invite=${referralCode}`
-      : `https://taskvibe.app/?invite=${referralCode}`;
+      : `https://zorotask.app/?invite=${referralCode}`;
 
   // Calculate live team numbers
   const directTeam = registeredUsers.filter((u) => u.referredBy === referralCode);
@@ -32,12 +32,12 @@ export const ReferralEarnScreen: React.FC = () => {
   const totalTeamCount = directTeam.length + tier2Team.length;
 
   const handleShare = () => {
-    const shareMessage = `Join TaskVibe and earn daily rewards! 🎁\n\nClick my invite link to open the registration page directly with code ${referralCode} pre-filled. You get ₹100 welcome bonus immediately!\n\nLink: ${referralLink}`;
+    const shareMessage = `Join ZoroTask and earn daily rewards! 🎁\n\nClick my invite link to open the registration page directly with code ${referralCode} pre-filled. You get ₹100 welcome bonus immediately!\n\nLink: ${referralLink}`;
 
     if (navigator.share) {
       navigator
         .share({
-          title: 'Join TaskVibe and Earn Daily Rewards!',
+          title: 'Join ZoroTask and Earn Daily Rewards!',
           text: shareMessage,
           url: referralLink,
         })

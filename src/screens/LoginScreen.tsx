@@ -126,7 +126,7 @@ export const LoginScreen: React.FC = () => {
       setIsResetOtpVerified(false);
       setResetResendTimer(30);
 
-      const messageBody = `*TaskVibe Password Reset Verification*\n\nYour OTP to reset your password is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- TaskVibe Security Team`;
+      const messageBody = `*ZoroTask Password Reset Verification*\n\nYour OTP to reset your password is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
       const waUrl = `https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageBody)}`;
       setWhatsappFallbackLink(waUrl);
 
@@ -244,7 +244,7 @@ export const LoginScreen: React.FC = () => {
     setDownloadCompleted(false);
 
     // Trigger real APK download directly to device File Manager / Downloads
-    const success = downloadApkToDevice('TaskVibe-Earning-v2.5.apk');
+    const success = downloadApkToDevice('ZoroTask-Earning-v2.5.apk');
 
     const interval = setInterval(() => {
       setDownloadProgress((prev) => {
@@ -428,7 +428,7 @@ export const LoginScreen: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <h4 className="text-xs font-black uppercase tracking-wide">
-                  Download TaskVibe App
+                  Download ZoroTask App
                 </h4>
                 <span className="text-[9px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full">
                   APK
@@ -451,7 +451,7 @@ export const LoginScreen: React.FC = () => {
             <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-5 h-5 text-emerald-200" />
-                <h3 className="text-xs font-bold">Download TaskVibe Android App</h3>
+                <h3 className="text-xs font-bold">Download ZoroTask Android App</h3>
               </div>
               <button
                 onClick={() => setIsDownloadModalOpen(false)}
@@ -469,7 +469,7 @@ export const LoginScreen: React.FC = () => {
 
               <div>
                 <h4 className="text-base font-black text-slate-900">
-                  TaskVibe Mobile APK
+                  ZoroTask Mobile APK
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Version 2.5.0 &bull; 8.4 MB &bull; Android 8.0+
@@ -500,7 +500,7 @@ export const LoginScreen: React.FC = () => {
                     <span>Download completed in File Manager!</span>
                   </div>
                   <p className="text-[11px] text-emerald-700 leading-tight">
-                    The file has been saved to your <strong className="font-bold underline">File Manager &gt; Downloads</strong> folder as <strong>TaskVibe-Earning-v2.5.apk</strong>.
+                    The file has been saved to your <strong className="font-bold underline">File Manager &gt; Downloads</strong> folder as <strong>ZoroTask-Earning-v2.5.apk</strong>.
                   </p>
                   <p className="text-[10px] text-emerald-600">
                     Tap on the APK file in Downloads to install the app.
@@ -518,7 +518,7 @@ export const LoginScreen: React.FC = () => {
                     />
                   </div>
                   <span className="text-[10px] text-slate-500 font-semibold">
-                    Downloading TaskVibe-Earning-v2.5.apk ({downloadProgress}%)
+                    Downloading ZoroTask-Earning-v2.5.apk ({downloadProgress}%)
                   </span>
                 </div>
               )}

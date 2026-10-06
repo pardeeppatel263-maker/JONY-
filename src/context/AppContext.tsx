@@ -183,8 +183,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const defaultAcc: RegisteredUserAccount = {
         name: 'Pardeep Patel',
         mobile: '+91 9876543210',
-        email: 'pardeep@taskvibe.in',
-        referralCode: 'TV982143',
+        email: 'pardeep@zorotask.in',
+        referralCode: 'ZT982143',
         balance: 500,
         totalEarned: 500,
         withdrawn: 0,
@@ -457,8 +457,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const defaultAdminSettings: AdminSettings = {
-    adminUpiId: 'taskvibe.pay@icici',
-    adminMerchantName: 'TaskVibe Digital Rewards',
+    adminUpiId: 'zorotask.pay@icici',
+    adminMerchantName: 'ZoroTask Digital Rewards',
     adminPassword: 'Gagan@123',
     adminQrCodeUrl: '',
     minWithdrawal: 1000,
@@ -472,16 +472,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'https://www.youtube.com/watch?v=JGwWNGJdvx8',
       'https://www.youtube.com/watch?v=fJ9rUzIMcZQ',
     ],
-    youtubeVideoTitle: 'TaskVibe Official YouTube Partner Video',
+    youtubeVideoTitle: 'ZoroTask Official YouTube Partner Video',
     youtubeVideoReward: 50,
     youtubeVideoDurationSec: 30,
     supportWhatsapp: '+91 9876543210',
-    supportTelegram: 'https://t.me/TaskVibeSupport',
+    supportTelegram: 'https://t.me/ZoroTaskSupport',
     whatsappInstanceId: 'instance192672',
     whatsappApiToken: 'zwsvwyr1pqa8ztxa',
     announcementEnabled: true,
-    announcementTitle: '🎉 Welcome to TaskVibe 2.0 Update!',
-    announcementMessage: 'Naya TaskVibe update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!',
+    announcementTitle: '🎉 Welcome to ZoroTask 2.0 Update!',
+    announcementMessage: 'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!',
     announcementTag: 'NEW UPDATE',
     announcementButtonText: 'Check VIP Plans ⭐',
     announcementButtonAction: 'member_plans',
@@ -503,6 +503,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...defaultAdminSettings,
           ...parsed,
           adminPassword: activePassword,
+          adminMerchantName: (parsed.adminMerchantName || defaultAdminSettings.adminMerchantName).replace(/TaskVibe/gi, 'ZoroTask'),
+          announcementTitle: (parsed.announcementTitle || defaultAdminSettings.announcementTitle).replace(/TaskVibe/gi, 'ZoroTask'),
+          announcementMessage: (parsed.announcementMessage || defaultAdminSettings.announcementMessage).replace(/TaskVibe/gi, 'ZoroTask'),
           youtubeVideoId: parsed.youtubeVideoId || defaultAdminSettings.youtubeVideoId,
           youtubeVideoUrls: parsed.youtubeVideoUrls || defaultAdminSettings.youtubeVideoUrls,
           youtubeVideoTitle: parsed.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle,
@@ -741,6 +744,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const mergedSettings = {
               ...cloudSettings,
               adminPassword: activePassword,
+              adminMerchantName: (cloudSettings.adminMerchantName || defaultAdminSettings.adminMerchantName).replace(/TaskVibe/gi, 'ZoroTask'),
+              announcementTitle: (cloudSettings.announcementTitle || defaultAdminSettings.announcementTitle).replace(/TaskVibe/gi, 'ZoroTask'),
+              announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage).replace(/TaskVibe/gi, 'ZoroTask'),
+              youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle).replace(/TaskVibe/gi, 'ZoroTask'),
             };
             setAdminSettings((prev) => ({
               ...prev,
@@ -1391,7 +1398,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Allow master referral codes as valid default fallback
-      const isMasterCode = cleanRefCode === 'TV982143' || cleanRefCode === 'TASKVIBE123';
+      const isMasterCode =
+        cleanRefCode === 'ZT982143' ||
+        cleanRefCode === 'ZOROTASK123' ||
+        cleanRefCode === 'TV982143' ||
+        cleanRefCode === 'TASKVIBE123';
       if (!matchedReferrer && !isMasterCode) {
         showToast(`❌ Invalid invite code "${cleanRefCode}"! Please enter a valid candidate invite code or leave it blank.`);
         return false;
@@ -1399,9 +1410,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Generate unique referral code for this new user
-    let newReferralCode = `TV${Math.floor(100000 + Math.random() * 900000)}`;
+    let newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
     while (registeredUsers.some((u) => u.referralCode === newReferralCode)) {
-      newReferralCode = `TV${Math.floor(100000 + Math.random() * 900000)}`;
+      newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
     const initialBonus = cleanRefCode ? 100 : 0;
@@ -1423,7 +1434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newUser: RegisteredUserAccount = {
       name: name.trim(),
       mobile: `+91 ${cleanMobile}`,
-      email: email ? email.trim() : `${cleanMobile}@taskvibe.in`,
+      email: email ? email.trim() : `${cleanMobile}@zorotask.in`,
       referralCode: newReferralCode,
       referredBy: matchedReferrer
         ? matchedReferrer.referralCode
@@ -1590,8 +1601,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const validateReferralCode = (code: string): { isValid: boolean; referrerName?: string } => {
     if (!code || !code.trim()) return { isValid: false };
     const clean = code.trim().toUpperCase();
-    if (clean === 'TV982143' || clean === 'TASKVIBE123') {
-      return { isValid: true, referrerName: 'TaskVibe Official' };
+    if (
+      clean === 'ZT982143' ||
+      clean === 'ZOROTASK123' ||
+      clean === 'TV982143' ||
+      clean === 'TASKVIBE123'
+    ) {
+      return { isValid: true, referrerName: 'ZoroTask Official' };
     }
     const match = registeredUsers.find((u) => u.referralCode && u.referralCode.toUpperCase() === clean);
     if (match) {
@@ -2597,7 +2613,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const activePassword = (!cloudSettings.adminPassword || legacyPasswords.includes(cloudSettings.adminPassword))
             ? 'Gagan@123'
             : cloudSettings.adminPassword;
-          const merged = { ...cloudSettings, adminPassword: activePassword };
+          const merged = {
+            ...cloudSettings,
+            adminPassword: activePassword,
+            adminMerchantName: (cloudSettings.adminMerchantName || defaultAdminSettings.adminMerchantName).replace(/TaskVibe/gi, 'ZoroTask'),
+            announcementTitle: (cloudSettings.announcementTitle || defaultAdminSettings.announcementTitle).replace(/TaskVibe/gi, 'ZoroTask'),
+            announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage).replace(/TaskVibe/gi, 'ZoroTask'),
+            youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle).replace(/TaskVibe/gi, 'ZoroTask'),
+          };
           setAdminSettings(merged);
           localStorage.setItem('taskvibe_admin_settings', JSON.stringify(merged));
         }

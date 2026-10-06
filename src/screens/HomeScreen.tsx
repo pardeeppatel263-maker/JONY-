@@ -138,12 +138,12 @@ export const HomeScreen: React.FC = () => {
 
   const handleDownloadApp = () => {
     try {
-      const readme = `TaskVibe Mobile Official App v2.5.0\nSaved in your Mobile Device's Downloads.\nUse the web app or add to Home Screen.`;
+      const readme = `ZoroTask Mobile Official App v2.5.0\nSaved in your Mobile Device's Downloads.\nUse the web app or add to Home Screen.`;
       const blob = new Blob([readme], { type: 'application/vnd.android.package-archive' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'TaskVibe-Earning-v2.5.apk';
+      link.download = 'ZoroTask-Earning-v2.5.apk';
       document.body.appendChild(link);
       link.click();
       setTimeout(() => {
@@ -152,7 +152,7 @@ export const HomeScreen: React.FC = () => {
       }, 2000);
       showToast('✓ APK download started!');
     } catch {
-      showToast('Downloading TaskVibe APK...');
+      showToast('Downloading ZoroTask APK...');
     }
   };
 
@@ -337,7 +337,7 @@ export const HomeScreen: React.FC = () => {
                 </span>
                 <h2 className="text-lg font-black leading-tight text-white">
                   Welcome to <br />
-                  <span className="text-amber-300">TaskVibe</span>
+                  <span className="text-amber-300">ZoroTask</span>
                 </h2>
                 <p className="text-[11px] text-blue-100/90 leading-snug">
                   Complete Tasks, Share Views &amp; Earn Rewards
@@ -364,7 +364,7 @@ export const HomeScreen: React.FC = () => {
                   <div className="w-full h-full rounded-[14px] overflow-hidden relative bg-slate-900 border border-amber-300/40 flex flex-col items-center justify-between">
                     <img
                       src={rewardsHeroImg}
-                      alt="TaskVibe Daily Rewards"
+                      alt="ZoroTask Daily Rewards"
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     />
 
@@ -541,7 +541,7 @@ export const HomeScreen: React.FC = () => {
               <div>
                 <div className="flex items-center gap-1.5">
                   <h4 className="text-xs font-black uppercase tracking-wide">
-                    Download TaskVibe APK
+                    Download ZoroTask APK
                   </h4>
                   <span className="text-[9px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full">
                     Direct File

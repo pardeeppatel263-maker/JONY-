@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('TaskVibe Caught Error:', error, errorInfo);
+    console.error('ZoroTask Caught Error:', error, errorInfo);
   }
 
   private handleReload = () => {
@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </h2>
 
             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-              TaskVibe encountered an unexpected issue while loading this view. You can reload the app or reset cached data to recover immediately.
+              ZoroTask encountered an unexpected issue while loading this view. You can reload the app or reset cached data to recover immediately.
             </p>
 
             {this.state.error && (

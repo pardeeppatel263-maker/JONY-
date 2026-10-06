@@ -177,11 +177,11 @@ export const HelpCenterScreen: React.FC = () => {
 
                 {/* Email Support */}
                 <button
-                  onClick={() => showToast('Email support: help@taskvibe.in')}
+                  onClick={() => showToast('Email support: help@zorotask.in')}
                   className="w-full p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-800 transition-colors"
                 >
                   <Mail className="w-4 h-4 text-slate-600" />
-                  <span>Email: support@taskvibe.in</span>
+                  <span>Email: support@zorotask.in</span>
                 </button>
 
                 <p className="text-[10px] text-slate-400 text-center pt-1">
@@ -263,7 +263,7 @@ export const HelpCenterScreen: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-slate-800">About Us</h3>
-                  <p className="text-[10px] text-slate-400">Know more about TaskVibe</p>
+                  <p className="text-[10px] text-slate-400">Know more about ZoroTask</p>
                 </div>
               </div>
               {expandedSection === 'about' ? (
@@ -275,7 +275,7 @@ export const HelpCenterScreen: React.FC = () => {
 
             {expandedSection === 'about' && (
               <div className="p-4 border-t border-slate-100 text-xs text-slate-600 space-y-2">
-                <p className="font-semibold text-slate-800">TaskVibe (Version 2.5)</p>
+                <p className="font-semibold text-slate-800">ZoroTask (Version 2.5)</p>
                 <p>India's leading opinion rewards and task fulfillment network. Empowering individuals to monetize their free time with daily surveys and peer referrals.</p>
               </div>
             )}

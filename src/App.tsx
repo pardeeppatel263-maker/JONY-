@@ -127,9 +127,9 @@ const MainApp: React.FC = () => {
 
 export function App() {
   return (
-    <ErrorBoundary fallbackTitle="TaskVibe Initialization Issue">
+    <ErrorBoundary fallbackTitle="ZoroTask Initialization Issue">
       <AppProvider>
-        <ErrorBoundary fallbackTitle="TaskVibe View Error">
+        <ErrorBoundary fallbackTitle="ZoroTask View Error">
           <MainApp />
         </ErrorBoundary>
       </AppProvider>

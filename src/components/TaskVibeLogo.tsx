@@ -51,7 +51,7 @@ export const TaskVibeLogo: React.FC<TaskVibeLogoProps> = ({
         >
           <img
             src="/app-icon.png"
-            alt="TaskVibe Icon"
+            alt="ZoroTask Icon"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
             onError={(e) => {
@@ -74,7 +74,7 @@ export const TaskVibeLogo: React.FC<TaskVibeLogoProps> = ({
                   : 'text-xl'
               } ${textColor}`}
             >
-              Task<span className="text-amber-400">Vibe</span>
+              Zoro<span className="text-amber-400">Task</span>
             </span>
             {showSubtitle && (
               <span

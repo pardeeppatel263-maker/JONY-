@@ -40,7 +40,7 @@ export const SplashScreen: React.FC = () => {
 
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-black tracking-tight text-white">
-            Task<span className="text-amber-400">Vibe</span>
+            Zoro<span className="text-amber-400">Task</span>
           </h1>
           <p className="text-xs text-blue-200/80 font-medium">
             Daily Tasks &bull; Instant UPI &bull; VIP Earnings

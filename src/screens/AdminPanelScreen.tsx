@@ -100,10 +100,14 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Home Notice / Announcement State
   const [noticeEnabled, setNoticeEnabled] = useState(adminSettings.announcementEnabled ?? true);
-  const [noticeTitle, setNoticeTitle] = useState(adminSettings.announcementTitle || '🎉 Welcome to TaskVibe 2.0 Update!');
+  const [noticeTitle, setNoticeTitle] = useState(
+    (adminSettings.announcementTitle || '🎉 Welcome to ZoroTask 2.0 Update!').replace(/TaskVibe/gi, 'ZoroTask')
+  );
   const [noticeMessage, setNoticeMessage] = useState(
-    adminSettings.announcementMessage ||
-      'Naya TaskVibe update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!'
+    (
+      adminSettings.announcementMessage ||
+      'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!'
+    ).replace(/TaskVibe/gi, 'ZoroTask')
   );
   const [noticeTag, setNoticeTag] = useState(adminSettings.announcementTag || 'NEW UPDATE');
   const [noticeButtonText, setNoticeButtonText] = useState(adminSettings.announcementButtonText || 'Check VIP Plans ⭐');
@@ -339,7 +343,7 @@ export const AdminPanelScreen: React.FC = () => {
     if (entered === currentPassword || entered === 'Gagan@123') {
       setIsAdminAuthenticated(true);
       setAuthError('');
-      showToast('👑 Welcome to TaskVibe Master Admin Console!');
+      showToast('👑 Welcome to ZoroTask Master Admin Console!');
     } else {
       setAuthError('❌ Incorrect Password! Please enter the correct admin password.');
       showToast('❌ Incorrect Admin Password! Access Denied.');
@@ -371,8 +375,8 @@ export const AdminPanelScreen: React.FC = () => {
     e.preventDefault();
     const primaryId = youtubeVideoUrlsList.length > 0 ? extractYouTubeId(youtubeVideoUrlsList[0]) : 'dQw4w9WgXcQ';
     const updates: Partial<typeof adminSettings> = {
-      adminUpiId: upiIdInput.trim() || 'taskvibe.pay@icici',
-      adminMerchantName: merchantNameInput.trim() || 'TaskVibe Digital Rewards',
+      adminUpiId: upiIdInput.trim() || 'zorotask.pay@icici',
+      adminMerchantName: merchantNameInput.trim() || 'ZoroTask Digital Rewards',
       adminQrCodeUrl: qrCodeUrlInput.trim(),
       youtubeVideoId: primaryId,
       youtubeVideoUrls: youtubeVideoUrlsList,
@@ -417,9 +421,9 @@ export const AdminPanelScreen: React.FC = () => {
   const handleDownloadSourceCode = () => {
     const a = document.createElement('a');
     a.href = '/taskvibe-source-code.zip';
-    a.download = 'taskvibe-source-code.zip';
+    a.download = 'zorotask-source-code.zip';
     a.click();
-    showToast('TaskVibe source code downloaded! 🚀');
+    showToast('ZoroTask source code downloaded! 🚀');
   };
 
   // Export JSON Backup
@@ -429,7 +433,7 @@ export const AdminPanelScreen: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `taskvibe_backup_${Date.now()}.json`;
+    a.download = `zorotask_backup_${Date.now()}.json`;
     a.click();
     showToast('Complete Database exported successfully! 💾');
   };
@@ -540,7 +544,7 @@ export const AdminPanelScreen: React.FC = () => {
         </div>
 
         <div className="text-center text-[11px] text-slate-600">
-          TaskVibe Enterprise • Zero-Trust Cloud Data Synchronization Active
+          ZoroTask Enterprise • Zero-Trust Cloud Data Synchronization Active
         </div>
       </div>
     );
@@ -555,12 +559,12 @@ export const AdminPanelScreen: React.FC = () => {
       <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-red-600 text-white flex items-center justify-center font-black shadow-md shadow-orange-500/20">
-            TV
+            ZT
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
-                TaskVibe Master Console
+                ZoroTask Master Console
               </h1>
               <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 rounded-md border border-amber-500/20">
                 Super Admin
@@ -1710,7 +1714,7 @@ export const AdminPanelScreen: React.FC = () => {
                   type="text"
                   value={merchantNameInput}
                   onChange={(e) => setMerchantNameInput(e.target.value)}
-                  placeholder="e.g. TaskVibe Official"
+                  placeholder="e.g. ZoroTask Official"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400 transition"
                 />
               </div>

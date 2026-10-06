@@ -85,7 +85,7 @@ export const RegisterScreen: React.FC = () => {
     setOtpError('');
 
     if (channel === 'whatsapp') {
-      const messageBody = `*TaskVibe Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- TaskVibe Security Team`;
+      const messageBody = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
 
       const instId = adminSettings?.whatsappInstanceId?.trim() || 'instance192672';
       const token = adminSettings?.whatsappApiToken?.trim() || 'zwsvwyr1pqa8ztxa';
@@ -512,7 +512,7 @@ export const RegisterScreen: React.FC = () => {
               type="text"
               value={referralCode}
               onChange={(e) => setReferralCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
-              placeholder="Enter unique invite code (e.g. TV982143)"
+              placeholder="Enter unique invite code (e.g. ZT982143)"
               className="w-full py-2.5 px-3 text-sm font-bold text-amber-900 outline-none placeholder:text-slate-400 tracking-wider"
             />
             {referralCode.trim().length > 0 && (() => {

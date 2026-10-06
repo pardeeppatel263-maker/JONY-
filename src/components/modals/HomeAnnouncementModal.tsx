@@ -15,7 +15,7 @@ export const HomeAnnouncementModal: React.FC<HomeAnnouncementModalProps> = ({ is
   const title = adminSettings.announcementTitle || 'System Announcement';
   const message =
     adminSettings.announcementMessage ||
-    'Welcome to the updated TaskVibe application! Complete your daily video tasks to earn real rewards.';
+    'Welcome to the updated ZoroTask application! Complete your daily video tasks to earn real rewards.';
   const tag = adminSettings.announcementTag || 'NEW UPDATE';
   const buttonText = adminSettings.announcementButtonText || 'Check VIP Plans ⭐';
   const action = adminSettings.announcementButtonAction || 'member_plans';

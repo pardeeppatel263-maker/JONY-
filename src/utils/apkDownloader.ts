@@ -1,11 +1,11 @@
 /**
  * Utility to generate and trigger APK download for the user.
  */
-export function downloadApkToDevice(appName = 'TaskVibe-Earning-v2.5.apk'): boolean {
+export function downloadApkToDevice(appName = 'ZoroTask-Earning-v2.5.apk'): boolean {
   try {
-    const readmeContent = `TaskVibe Mobile Official App v2.5.0
+    const readmeContent = `ZoroTask Mobile Official App v2.5.0
 -----------------------------------------
-Official TaskVibe Android Installation Package.
+Official ZoroTask Android Installation Package.
 Features:
 - Daily Survey & Mission Earnings
 - Direct UPI QR & UTR Balance Add

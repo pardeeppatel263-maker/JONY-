@@ -67,6 +67,7 @@ export interface UserProfile {
   todayVideosWatched?: number;
   lastVideoWatchDate?: string;
   purchasedPlanIds?: string[];
+  freeTrialOverride?: 'auto' | 'enabled' | 'disabled';
   referralEarnings?: number;
   teamTaskEarnings?: number;
   bankAccountHolder?: string;

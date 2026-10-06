@@ -89,6 +89,19 @@ const ScreenRouter: React.FC = () => {
 
 const MainApp: React.FC = () => {
   const { currentScreen, navigate } = useApp();
+  const [hasAdminSession, setHasAdminSession] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem('zorotask_admin_authenticated') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      setHasAdminSession(localStorage.getItem('zorotask_admin_authenticated') === 'true');
+    } catch {}
+  }, [currentScreen]);
 
   // Check if URL has ?admin or #admin or /admin on initial mount for direct admin access
   React.useEffect(() => {
@@ -113,6 +126,15 @@ const MainApp: React.FC = () => {
 
   return (
     <MobileFrame>
+      {hasAdminSession && (
+        <button
+          onClick={() => navigate('admin')}
+          className="fixed bottom-20 right-3 z-50 flex items-center gap-1.5 px-3 py-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 font-black text-[11px] shadow-xl shadow-orange-500/30 border border-amber-300/60 hover:brightness-110 active:scale-95 transition cursor-pointer"
+          title="Return to Master Admin Panel"
+        >
+          <span>👑 Admin Panel</span>
+        </button>
+      )}
       <ScreenRouter />
       <Toast />
       <SurveyModal />

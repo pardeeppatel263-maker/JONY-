@@ -87,16 +87,41 @@ export const AdminPanelScreen: React.FC = () => {
     copyText,
   } = useApp();
 
-  // Authentication State - STRICT: never bypass with sessionStorage automatically
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  // Authentication State - Persisted so Admin Panel is never lost on app reload or code changes!
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('zorotask_admin_authenticated') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [adminPin, setAdminPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // Active Tab
+  // Active Tab - Persisted across reloads so admin never loses their place
   const [activeTab, setActiveTab] = useState<
     'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'notice' | 'settings' | 'backup'
-  >('deposits');
+  >(() => {
+    try {
+      const savedTab = localStorage.getItem('zorotask_admin_active_tab') as any;
+      if (
+        savedTab &&
+        ['deposits', 'withdrawals', 'users', 'submissions', 'plans', 'notice', 'settings', 'backup'].includes(savedTab)
+      ) {
+        return savedTab;
+      }
+      return 'deposits';
+    } catch {
+      return 'deposits';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('zorotask_admin_active_tab', activeTab);
+    } catch {}
+  }, [activeTab]);
 
   // Home Notice / Announcement State
   const [noticeEnabled, setNoticeEnabled] = useState(adminSettings.announcementEnabled ?? true);
@@ -243,7 +268,12 @@ export const AdminPanelScreen: React.FC = () => {
     const updated = [...youtubeVideoUrlsList, formattedUrl];
     setYoutubeVideoUrlsList(updated);
     setNewVideoUrlInput('');
-    showToast('✓ YouTube video link added! Click Save Settings to persist.');
+    const primaryId = extractYouTubeId(updated[0]) || 'dQw4w9WgXcQ';
+    updateAdminSettings({
+      youtubeVideoUrls: updated,
+      youtubeVideoId: primaryId,
+    });
+    showToast('✓ YouTube video link added & saved to Cloud!');
   };
 
   const handleRemoveVideoUrl = (index: number) => {
@@ -253,7 +283,49 @@ export const AdminPanelScreen: React.FC = () => {
     }
     const updated = youtubeVideoUrlsList.filter((_, i) => i !== index);
     setYoutubeVideoUrlsList(updated);
-    showToast('Video link removed successfully');
+    const primaryId = extractYouTubeId(updated[0]) || 'dQw4w9WgXcQ';
+    updateAdminSettings({
+      youtubeVideoUrls: updated,
+      youtubeVideoId: primaryId,
+    });
+    showToast('✓ Video link removed & saved to Cloud!');
+  };
+
+  // Helper to compute active plans for any user in the directory
+  const getUserActivePlansList = (u: RegisteredUserAccount): PlanItem[] => {
+    const hasExplicitList = Array.isArray(u.purchasedPlanIds);
+    const purchasedIds = u.purchasedPlanIds || [];
+    const validPurchased = plans.filter((p) => p.level > 0 && purchasedIds.includes(p.id));
+
+    if (!hasExplicitList && typeof u.vipLevel === 'number' && u.vipLevel > 0) {
+      const legacyMatch = plans.find((p) => p.level === u.vipLevel);
+      if (legacyMatch && !validPurchased.some((vp) => vp.id === legacyMatch.id)) {
+        validPurchased.push(legacyMatch);
+      }
+    } else if (hasExplicitList && typeof u.vipLevel === 'number' && u.vipLevel > 0 && validPurchased.length === 0) {
+      const fallbackMatch = plans.find((p) => p.level === u.vipLevel);
+      if (fallbackMatch) {
+        validPurchased.push(fallbackMatch);
+      }
+    }
+
+    const sortedPurchased = validPurchased.sort((a, b) => a.level - b.level);
+    const level0FreePlan = plans.find((p) => p.level === 0) || plans[0];
+
+    const now = Date.now();
+    let joinedMs = u.joinedTimestamp || now;
+    const autoFreeActive = now - joinedMs <= 2 * 24 * 60 * 60 * 1000;
+    const isFreeActive =
+      u.freeTrialOverride === 'enabled'
+        ? true
+        : u.freeTrialOverride === 'disabled'
+        ? false
+        : autoFreeActive || (hasExplicitList && purchasedIds.includes(level0FreePlan?.id || 'plan_lv0'));
+
+    if (isFreeActive && level0FreePlan && u.freeTrialOverride !== 'disabled') {
+      return [level0FreePlan, ...sortedPurchased];
+    }
+    return sortedPurchased;
   };
 
   // Derived KPI calculations
@@ -342,6 +414,9 @@ export const AdminPanelScreen: React.FC = () => {
     // STRICT: Only the exact configured password (defaults to Gagan@123) is accepted!
     if (entered === currentPassword || entered === 'Gagan@123') {
       setIsAdminAuthenticated(true);
+      try {
+        localStorage.setItem('zorotask_admin_authenticated', 'true');
+      } catch {}
       setAuthError('');
       showToast('👑 Welcome to ZoroTask Master Admin Console!');
     } else {
@@ -353,6 +428,9 @@ export const AdminPanelScreen: React.FC = () => {
   const handleAdminLogout = () => {
     setIsAdminAuthenticated(false);
     setAdminPin('');
+    try {
+      localStorage.removeItem('zorotask_admin_authenticated');
+    } catch {}
     showToast('Admin logged out successfully.');
   };
 
@@ -402,7 +480,7 @@ export const AdminPanelScreen: React.FC = () => {
     setNewAdminPasswordInput('');
   };
 
-  // Handle Custom QR Code Image Upload
+  // Handle Custom QR Code Image Upload (Auto-saves to Cloud immediately!)
   const handleQrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -410,7 +488,8 @@ export const AdminPanelScreen: React.FC = () => {
       showToast('Processing QR image...');
       const compressed = await compressImage(file, 600, 600, 0.8);
       setQrCodeUrlInput(compressed);
-      showToast('✓ Custom QR Image loaded! Click Save Settings to apply.');
+      updateAdminSettings({ adminQrCodeUrl: compressed });
+      showToast('✓ Custom QR Image uploaded & saved to Cloud!');
     } catch (err) {
       console.warn(err);
       showToast('Failed to process image');
@@ -1223,82 +1302,149 @@ export const AdminPanelScreen: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredUsers.map((u) => (
-                <div
-                  key={u.mobile}
-                  className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="font-bold text-white text-sm">{u.name || 'Member'}</div>
-                        <div className="font-mono text-xs text-slate-400">{u.mobile}</div>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                        {u.vipTag || `LV ${u.vipLevel || 0}`}
-                      </span>
-                    </div>
+              {filteredUsers.map((u) => {
+                const userActivePlans = getUserActivePlansList(u);
+                const userDailyVideos = userActivePlans.reduce((acc, p) => acc + (p.dailyMissions || 2), 0);
+                const userDailyEarning = userActivePlans.reduce(
+                  (acc, p) => acc + (p.dailyIncome || (p.dailyMissions || 2) * (p.perMission || 50)),
+                  0
+                );
 
-                    <div className="grid grid-cols-2 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
-                      <div>
-                        <div className="text-[10px] text-slate-500">Wallet Balance</div>
-                        <div className="font-black text-emerald-400 text-base">
-                          ₹{(u.balance || 0).toLocaleString('en-IN')}
+                return (
+                  <div
+                    key={u.mobile}
+                    className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3 flex flex-col justify-between"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-white text-sm">{u.name || 'Member'}</div>
+                          <div className="font-mono text-xs text-slate-400">{u.mobile}</div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+                          {u.vipTag || `LV ${u.vipLevel || 0}`}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
+                        <div>
+                          <div className="text-[10px] text-slate-500">Wallet Balance</div>
+                          <div className="font-black text-emerald-400 text-base">
+                            ₹{(u.balance || 0).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-500">Total Earned</div>
+                          <div className="font-black text-slate-200 text-base">
+                            ₹{(u.totalEarned || 0).toLocaleString('en-IN')}
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-500">Total Earned</div>
-                        <div className="font-black text-slate-200 text-base">
-                          ₹{(u.totalEarned || 0).toLocaleString('en-IN')}
+
+                      {/* Active VIP Plans Summary Box */}
+                      <div className="bg-slate-950/90 p-2.5 rounded-xl border border-amber-500/20 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-amber-400 flex items-center gap-1">
+                            <Crown className="w-3.5 h-3.5" />
+                            <span>Active VIP Plans ({userActivePlans.length})</span>
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-emerald-400">
+                            {userDailyVideos} Videos • ₹{userDailyEarning}/day
+                          </span>
                         </div>
+                        <div className="flex flex-wrap gap-1">
+                          {userActivePlans.length > 0 ? (
+                            userActivePlans.map((p) => (
+                              <span
+                                key={p.id}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                  p.level === 0
+                                    ? 'bg-slate-800 text-slate-300 border-slate-700'
+                                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                }`}
+                              >
+                                {p.badge || `LV ${p.level}`}: {p.levelTag || p.title}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">No active plans</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Today's Tasks Progress Info */}
+                      <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <span>🎬 Today Tasks:</span>
+                          <b className="text-amber-300 font-mono">
+                            {u.lastVideoWatchDate === new Date().toDateString()
+                              ? `${u.todayVideosWatched || 0} / ${userDailyVideos} Watched`
+                              : `0 / ${userDailyVideos} Watched`}
+                          </b>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => resetUserDailyTasks(u.mobile)}
+                          className="text-[10px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/50 hover:bg-sky-900/50 px-2 py-0.5 rounded border border-sky-800/50 transition active:scale-95 cursor-pointer"
+                          title="Reset daily task counter so user can watch again"
+                        >
+                          Reset Tasks
+                        </button>
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                        <span>Ref Code: <b className="text-slate-300 font-mono">{u.referralCode}</b></span>
+                        <span>Pass: <b className="text-amber-400 font-mono">{u.password || '******'}</b></span>
                       </div>
                     </div>
 
-                    {/* Today's Tasks Progress Info */}
-                    <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <span>🎬 Today Tasks:</span>
-                        <b className="text-amber-300 font-mono">
-                          {u.lastVideoWatchDate === new Date().toDateString()
-                            ? `${u.todayVideosWatched || 0} Watched`
-                            : '0 (Not started today)'}
-                        </b>
-                      </span>
+                    <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-800">
                       <button
                         type="button"
-                        onClick={() => resetUserDailyTasks(u.mobile)}
-                        className="text-[10px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/50 hover:bg-sky-900/50 px-2 py-0.5 rounded border border-sky-800/50 transition active:scale-95"
-                        title="Reset daily task counter so user can watch again"
+                        onClick={() => {
+                          setAdjustingUserMobile(u.mobile);
+                          setIsCredit(true);
+                        }}
+                        className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[11px] border border-emerald-500/30 flex items-center justify-center gap-1 cursor-pointer"
                       >
-                        Reset Tasks
+                        <Plus className="w-3 h-3" /> Balance
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentPlans = getUserActivePlansList(u);
+                          const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
+                          const hasLv0 = currentPlans.some((p) => p.level === 0);
+                          setEditingUser({
+                            ...u,
+                            purchasedPlanIds: currentPaidIds,
+                            freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
+                          });
+                        }}
+                        className="py-1.5 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[11px] border border-amber-500/30 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Crown className="w-3 h-3" /> VIP Plans
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentPlans = getUserActivePlansList(u);
+                          const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
+                          const hasLv0 = currentPlans.some((p) => p.level === 0);
+                          setEditingUser({
+                            ...u,
+                            purchasedPlanIds: currentPaidIds,
+                            freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
+                          });
+                        }}
+                        className="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" /> Edit
                       </button>
                     </div>
-
-                    <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                      <span>Ref Code: <b className="text-slate-300 font-mono">{u.referralCode}</b></span>
-                      <span>Pass: <b className="text-amber-400 font-mono">{u.password || '******'}</b></span>
-                    </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-                    <button
-                      onClick={() => {
-                        setAdjustingUserMobile(u.mobile);
-                        setIsCredit(true);
-                      }}
-                      className="py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs border border-emerald-500/30 flex items-center justify-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Balance (+/-)
-                    </button>
-                    <button
-                      onClick={() => setEditingUser(u)}
-                      className="py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" /> Edit User
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2242,72 +2388,268 @@ export const AdminPanelScreen: React.FC = () => {
       )}
 
       {/* ========================================================= */}
-      {/* EDIT USER MODAL */}
+      {/* EDIT USER & VIP PLANS MANAGER MODAL */}
       {/* ========================================================= */}
       {editingUser && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Edit User Profile</h3>
-              <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-white">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="text-base font-bold text-white leading-tight">
+                    Manage User &amp; VIP Plans
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">{editingUser.mobile}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-400 block mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={editingUser.name}
-                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
-                />
+            <div className="space-y-4 text-xs">
+              {/* Basic Profile Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={editingUser.name}
+                    onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">Login Password</label>
+                  <input
+                    type="text"
+                    value={editingUser.password}
+                    onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-amber-300 font-mono outline-none focus:border-amber-400"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1">Password</label>
-                <input
-                  type="text"
-                  value={editingUser.password}
-                  onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
-                />
-              </div>
+              {/* Per-User VIP Plan Control Section */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                    <Crown className="w-4 h-4" />
+                    <span>Activate / Deactivate VIP Plans</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingUser({
+                        ...editingUser,
+                        purchasedPlanIds: [],
+                        vipLevel: 0,
+                        vipTag: 'Free Starter',
+                      })
+                    }
+                    className="text-[10px] font-bold text-rose-400 hover:underline cursor-pointer"
+                  >
+                    Clear Paid VIPs
+                  </button>
+                </div>
 
-              <div>
-                <label className="text-slate-400 block mb-1">VIP Level (0 to 10)</label>
-                <input
-                  type="number"
-                  value={editingUser.vipLevel || 0}
-                  onChange={(e) => setEditingUser({ ...editingUser, vipLevel: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none"
-                />
+                {/* Level 0 Free Starter Toggle */}
+                {(() => {
+                  const lv0Plan = plans.find((p) => p.level === 0) || plans[0];
+                  const isLv0Enabled = editingUser.freeTrialOverride !== 'disabled';
+                  return (
+                    <div
+                      onClick={() =>
+                        setEditingUser({
+                          ...editingUser,
+                          freeTrialOverride: isLv0Enabled ? 'disabled' : 'enabled',
+                        })
+                      }
+                      className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                        isLv0Enabled
+                          ? 'bg-emerald-500/10 border-emerald-500/40 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border ${
+                            isLv0Enabled
+                              ? 'bg-emerald-500 border-emerald-400 text-slate-950'
+                              : 'border-slate-700 bg-slate-900'
+                          }`}
+                        >
+                          {isLv0Enabled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <div>
+                          <div className="font-bold text-xs flex items-center gap-1.5">
+                            <span>LV 0: Free Starter Plan</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                              Free Trial
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {lv0Plan?.dailyMissions || 2} Videos/day • ₹{lv0Plan?.dailyIncome || 100} Daily Income
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                          isLv0Enabled
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-slate-800 text-slate-500'
+                        }`}
+                      >
+                        {isLv0Enabled ? 'ACTIVE' : 'OFF'}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                {/* Paid VIP Plans Checklist (LV 1 to LV 7+) */}
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {plans
+                    .filter((p) => p.level > 0)
+                    .sort((a, b) => a.level - b.level)
+                    .map((plan) => {
+                      const selectedIds = editingUser.purchasedPlanIds || [];
+                      const isSelected = selectedIds.includes(plan.id);
+                      return (
+                        <div
+                          key={plan.id}
+                          onClick={() => {
+                            const currentIds = editingUser.purchasedPlanIds || [];
+                            const nextIds = isSelected
+                              ? currentIds.filter((id) => id !== plan.id)
+                              : [...currentIds, plan.id];
+                            const activePaidPlans = plans
+                              .filter((p) => p.level > 0 && nextIds.includes(p.id))
+                              .sort((a, b) => a.level - b.level);
+                            const highestPlan =
+                              activePaidPlans.length > 0
+                                ? activePaidPlans[activePaidPlans.length - 1]
+                                : null;
+                            setEditingUser({
+                              ...editingUser,
+                              purchasedPlanIds: nextIds,
+                              vipLevel: highestPlan ? highestPlan.level : 0,
+                              vipTag: highestPlan
+                                ? activePaidPlans.length > 1
+                                  ? `${highestPlan.levelTag} (+${activePaidPlans.length - 1} more)`
+                                  : highestPlan.levelTag
+                                : 'Free Starter',
+                            });
+                          }}
+                          className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-amber-500/15 border-amber-500/50 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={`w-5 h-5 rounded-md flex items-center justify-center border ${
+                                isSelected
+                                  ? 'bg-amber-400 border-amber-300 text-slate-950'
+                                  : 'border-slate-700 bg-slate-900'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </div>
+                            <div>
+                              <div className="font-bold text-xs flex items-center gap-1.5">
+                                <span className="text-amber-400">{plan.badge || `LV ${plan.level}`}:</span>
+                                <span>{plan.levelTag || plan.title}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                Price: ₹{plan.price} • {plan.dailyMissions} Videos/day • ₹{plan.dailyIncome}/day
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                              isSelected
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-slate-800 text-slate-500'
+                            }`}
+                          >
+                            {isSelected ? 'ACTIVE' : 'OFF'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Live Summary of Selected Plans for this User */}
+                {(() => {
+                  const previewPlans = getUserActivePlansList(editingUser);
+                  const totalVideos = previewPlans.reduce((acc, p) => acc + (p.dailyMissions || 2), 0);
+                  const totalDaily = previewPlans.reduce(
+                    (acc, p) => acc + (p.dailyIncome || (p.dailyMissions || 2) * (p.perMission || 50)),
+                    0
+                  );
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">User Daily Quota</span>
+                        <b className="text-white font-mono">{totalVideos} Video Tasks / Day</b>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 block text-[10px]">Total Daily Income</span>
+                        <b className="text-emerald-400 font-mono text-sm">₹{totalDaily} / Day</b>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setEditingUser(null)}
-                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs"
+                className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  adminUpdateUser(editingUser.mobile, {
+                onClick={async () => {
+                  const selectedIds = editingUser.purchasedPlanIds || [];
+                  const activePaidPlans = plans
+                    .filter((p) => p.level > 0 && selectedIds.includes(p.id))
+                    .sort((a, b) => a.level - b.level);
+                  const highestPlan =
+                    activePaidPlans.length > 0 ? activePaidPlans[activePaidPlans.length - 1] : null;
+                  const computedLevel = highestPlan ? highestPlan.level : 0;
+                  const computedTag = highestPlan
+                    ? activePaidPlans.length > 1
+                      ? `${highestPlan.levelTag} (+${activePaidPlans.length - 1} VIP)`
+                      : highestPlan.levelTag
+                    : editingUser.freeTrialOverride === 'disabled'
+                    ? 'No Active Plan'
+                    : 'Free Starter';
+
+                  await adminUpdateUser(editingUser.mobile, {
                     name: editingUser.name,
                     password: editingUser.password,
-                    vipLevel: editingUser.vipLevel,
-                    vipTag: plans.find((p) => p.level === editingUser.vipLevel)?.levelTag || `LV ${editingUser.vipLevel}`,
+                    purchasedPlanIds: selectedIds,
+                    vipLevel: computedLevel,
+                    vipTag: computedTag,
+                    freeTrialOverride: editingUser.freeTrialOverride || 'enabled',
                   });
                   setEditingUser(null);
                 }}
-                className="py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs"
+                className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Save Changes
+                <Check className="w-4 h-4" />
+                <span>Save User &amp; VIP Plans</span>
               </button>
             </div>
           </div>

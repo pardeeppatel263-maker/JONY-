@@ -242,6 +242,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(() => {
     try {
       if (typeof window !== 'undefined') {
+        const isSpecialAdminUrl =
+          window.location.search.includes('admin') ||
+          window.location.hash.includes('admin') ||
+          window.location.pathname.endsWith('/admin');
+        if (isSpecialAdminUrl) {
+          localStorage.setItem('taskvibe_screen', 'admin');
+          return 'admin';
+        }
         const urlParams = new URLSearchParams(window.location.search);
         const inviteCode = urlParams.get('invite') || urlParams.get('ref');
         const savedAuth = localStorage.getItem('taskvibe_auth');
@@ -251,6 +259,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       const savedAuth = localStorage.getItem('taskvibe_auth');
       const savedScreen = localStorage.getItem('taskvibe_screen') as ScreenType;
+      // Always preserve Admin Panel screen across reloads/updates so Admin Panel is never lost!
+      if (savedScreen === 'admin') {
+        return 'admin';
+      }
       if (savedAuth === 'true') {
         if (savedScreen && savedScreen !== 'login' && savedScreen !== 'register' && savedScreen !== 'splash') {
           return savedScreen;
@@ -299,8 +311,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [frameMode, setFrameMode] = useState<'mobile' | 'responsive'>('mobile');
 
-  // Persist currentScreen whenever it changes
+  // Persist currentScreen whenever it changes (always persist 'admin' even if regular user is not logged in)
   useEffect(() => {
+    if (currentScreen === 'admin') {
+      try {
+        localStorage.setItem('taskvibe_screen', 'admin');
+      } catch (err) {
+        console.warn(err);
+      }
+      return;
+    }
     if (isLoggedIn && currentScreen !== 'login' && currentScreen !== 'register' && currentScreen !== 'splash') {
       try {
         localStorage.setItem('taskvibe_screen', currentScreen);
@@ -634,10 +654,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const cleanActive = normalizeMobile(activeMob);
                 const cloudSelf = cloudUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
                 if (cloudSelf) {
-                  setUser((curr) => ({
-                    ...curr,
-                    ...cloudSelf,
-                  }));
+                  hasInitialUserCloudSyncRef.current = true;
+                  skipNextFirestorePushRef.current = true;
+                  setUser((curr) => {
+                    const mergedSelf = {
+                      ...curr,
+                      ...cloudSelf,
+                    };
+                    try {
+                      localStorage.setItem('taskvibe_user', JSON.stringify(mergedSelf));
+                    } catch {}
+                    return mergedSelf;
+                  });
                   if (cloudSelf.transactions && Array.isArray(cloudSelf.transactions)) {
                     setTransactions(cloudSelf.transactions);
                     try {
@@ -830,10 +858,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           });
 
-          // Ensure all base plans (Level 0 through Level 7) are ALWAYS preserved!
-          // Admin edits or new additions (e.g. Level 8+) in cloudPlans take precedence.
+          // Ensure all base plans + locally saved admin plans + cloud plans are preserved!
           const planMap = new Map<string, PlanItem>();
           initialPlans.forEach((p) => planMap.set(p.id, p));
+          try {
+            const localSaved = localStorage.getItem('taskvibe_plans');
+            if (localSaved) {
+              const parsedLocal: PlanItem[] = JSON.parse(localSaved);
+              if (Array.isArray(parsedLocal)) {
+                parsedLocal.forEach((p) => {
+                  if (p && p.id) planMap.set(p.id, p);
+                });
+              }
+            }
+          } catch {}
           cloudPlans.forEach((p) => planMap.set(p.id, p));
           const mergedPlans = Array.from(planMap.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
 
@@ -865,6 +903,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  const hasInitialUserCloudSyncRef = useRef<boolean>(false);
+  const skipNextFirestorePushRef = useRef<boolean>(false);
+
   // Real-time listener: sync active user profile, balance, tasks quota & transactions from Firestore
   useEffect(() => {
     if (!isLoggedIn || !user.mobile) return;
@@ -876,15 +917,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const unsubscribe = onSnapshot(
         userDocRef,
         (docSnap) => {
+          hasInitialUserCloudSyncRef.current = true;
           if (docSnap.exists()) {
             const cloudData = docSnap.data() as RegisteredUserAccount;
+            skipNextFirestorePushRef.current = true;
             setUser((curr) => {
-              // Always sync full cloud state including todayVideosWatched, lastVideoWatchDate, balance, etc.
-              return { ...curr, ...cloudData };
+              // Always sync full cloud state including VIP plans, todayVideosWatched, lastVideoWatchDate, balance, etc.
+              const merged = { ...curr, ...cloudData };
+              try {
+                localStorage.setItem('taskvibe_user', JSON.stringify(merged));
+              } catch {}
+              return merged;
             });
-            try {
-              localStorage.setItem('taskvibe_user', JSON.stringify({ ...user, ...cloudData }));
-            } catch {}
             if (cloudData.transactions && Array.isArray(cloudData.transactions)) {
               setTransactions(cloudData.transactions);
             }
@@ -905,7 +949,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isLoggedIn && user && user.mobile) {
       const cleanMobile = user.mobile.replace(/\D/g, '');
       if (cleanMobile.length >= 10) {
-        syncUserToFirestore(user, transactions);
+        if (skipNextFirestorePushRef.current) {
+          skipNextFirestorePushRef.current = false;
+        } else if (hasInitialUserCloudSyncRef.current) {
+          syncUserToFirestore(user, transactions);
+        }
         setRegisteredUsers((prev) => {
           const idx = prev.findIndex((u) => u.mobile.replace(/\D/g, '') === cleanMobile);
           if (idx >= 0) {
@@ -1102,9 +1150,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isLoggedIn && (targetScreen === 'login' || targetScreen === 'register' || targetScreen === 'splash')) {
       targetScreen = 'home';
     }
+    if (!isLoggedIn && targetScreen === 'home') {
+      targetScreen = 'login';
+    }
 
-    // Push state into browser history so phone back button works
     try {
+      localStorage.setItem('taskvibe_screen', targetScreen);
       window.history.pushState({ taskvibe: true, screen: targetScreen, planId: plan?.id }, '', window.location.pathname);
     } catch {
       // ignore
@@ -2501,36 +2552,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const elapsed = now - joinedMs;
     const remainingMs = Math.max(0, twoDaysMs - elapsed);
     const hoursLeft = Math.ceil(remainingMs / (60 * 60 * 1000));
+    const autoActive = elapsed <= twoDaysMs;
+    const effectiveFreeActive =
+      user.freeTrialOverride === 'enabled'
+        ? true
+        : user.freeTrialOverride === 'disabled'
+        ? false
+        : autoActive;
     return {
-      isFreeTrialActive: elapsed <= twoDaysMs,
-      freeTrialHoursLeft: hoursLeft,
+      isFreeTrialActive: effectiveFreeActive,
+      freeTrialHoursLeft: user.freeTrialOverride === 'enabled' ? Math.max(hoursLeft, 48) : hoursLeft,
     };
-  }, [user.joinedTimestamp, user.joinedDate]);
+  }, [user.joinedTimestamp, user.joinedDate, user.freeTrialOverride]);
 
   // Multi-Plan System:
-  // If user is within their 2-day free trial, they get 2 Free Videos from Level 0!
-  // Plus, any VIP levels they purchased (Level 1, Level 2, etc.) are active simultaneously!
+  // If user is within their 2-day free trial (or Admin enabled it), they get 2 Free Videos from Level 0!
+  // Plus, any VIP levels they purchased or Admin assigned (Level 1, Level 2, etc.) are active simultaneously!
   const activeUserPlans: PlanItem[] = React.useMemo(() => {
+    const hasExplicitList = Array.isArray(user.purchasedPlanIds);
     const purchasedIds = user.purchasedPlanIds || [];
     const validPurchased = plans.filter((p) => p.level > 0 && purchasedIds.includes(p.id));
+
+    // If legacy account has vipLevel > 0 and no explicit purchasedPlanIds array yet, include matching level plan
+    if (!hasExplicitList && typeof user.vipLevel === 'number' && user.vipLevel > 0) {
+      const legacyMatch = plans.find((p) => p.level === user.vipLevel);
+      if (legacyMatch && !validPurchased.some((vp) => vp.id === legacyMatch.id)) {
+        validPurchased.push(legacyMatch);
+      }
+    } else if (hasExplicitList && typeof user.vipLevel === 'number' && user.vipLevel > 0 && validPurchased.length === 0) {
+      const fallbackMatch = plans.find((p) => p.level === user.vipLevel);
+      if (fallbackMatch) {
+        validPurchased.push(fallbackMatch);
+      }
+    }
+
     const sortedPurchased = validPurchased.sort((a, b) => a.level - b.level);
     const level0FreePlan = plans.find((p) => p.level === 0) || plans[0];
+    const includeLevel0 =
+      isFreeTrialActive || (hasExplicitList && purchasedIds.includes(level0FreePlan?.id || 'plan_lv0'));
 
-    if (isFreeTrialActive) {
-      // Free 2-day trial is active! Include Level 0 Free Plan (2 videos) + any purchased VIP plans
+    if (includeLevel0 && level0FreePlan && user.freeTrialOverride !== 'disabled') {
       return [level0FreePlan, ...sortedPurchased];
     } else {
-      // 2-day free trial expired!
-      if (sortedPurchased.length > 0) {
-        return sortedPurchased;
-      }
-      if (typeof user.vipLevel === 'number' && user.vipLevel > 0) {
-        const match = plans.find((p) => p.level === user.vipLevel);
-        if (match) return [match];
-      }
-      return [];
+      return sortedPurchased;
     }
-  }, [plans, user.vipLevel, user.purchasedPlanIds, isFreeTrialActive]);
+  }, [plans, user.vipLevel, user.purchasedPlanIds, user.freeTrialOverride, isFreeTrialActive]);
 
   // Highest active plan (for badge and display fallback)
   const activeUserPlan: PlanItem = React.useMemo(() => {
@@ -3210,12 +3276,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`User balance adjusted by ${isCredit ? '+' : '-'}₹${amount}`);
   };
 
-  const adminUpdateUser = (mobile: string, updates: Partial<RegisteredUserAccount>) => {
+  const adminUpdateUser = async (mobile: string, updates: Partial<RegisteredUserAccount>) => {
     const clean = normalizeMobile(mobile);
-    try {
-      setDoc(doc(db, 'users', clean), updates, { merge: true });
-    } catch (e) {
-      console.warn('Firestore update failed', e);
+    if (!clean) return;
+
+    if (normalizeMobile(user.mobile) === clean) {
+      setUser((prev) => {
+        const nextUser = { ...prev, ...updates };
+        try {
+          localStorage.setItem('taskvibe_user', JSON.stringify(nextUser));
+        } catch {}
+        return nextUser;
+      });
     }
 
     setRegisteredUsers((prev) => {
@@ -3233,10 +3305,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
 
-    if (normalizeMobile(user.mobile) === clean) {
-      setUser((prev) => ({ ...prev, ...updates }));
+    try {
+      await setDoc(doc(db, 'users', clean), updates, { merge: true });
+    } catch (e) {
+      console.warn('Firestore update failed', e);
     }
-    showToast('User record updated successfully!');
+
+    showToast('✓ User profile & VIP plans updated in Cloud!');
   };
 
   const adminDeleteUser = (mobile: string) => {

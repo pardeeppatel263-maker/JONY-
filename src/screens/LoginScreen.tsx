@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { TaskVibeLogo } from '../components/TaskVibeLogo';
 import { downloadApkToDevice } from '../utils/apkDownloader';
+import { downloadZoroTaskIconHD } from '../utils/logoDownloader';
 import {
   Lock,
   Eye,
@@ -269,13 +270,20 @@ export const LoginScreen: React.FC = () => {
       {/* Top Header with TaskVibe Logo & Download App Quick Link */}
       <div className="shrink-0 pt-1 pb-2 flex flex-col items-center">
         <div className="flex items-center justify-between w-full max-w-sm mb-2.5">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            Official Portal
-          </span>
+          <button
+            type="button"
+            onClick={() =>
+              downloadZoroTaskIconHD(() => showToast('✓ ZoroTask HD App Logo downloaded!'))
+            }
+            className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-600" />
+            <span>Download Logo</span>
+          </button>
           <button
             type="button"
             onClick={() => setIsDownloadModalOpen(true)}
-            className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all"
+            className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
             <span>Download App</span>

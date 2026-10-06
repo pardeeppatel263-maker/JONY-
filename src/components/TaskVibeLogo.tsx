@@ -47,15 +47,15 @@ export const TaskVibeLogo: React.FC<TaskVibeLogoProps> = ({
       <div className="flex items-center gap-2.5">
         {/* 3D App Icon Badge */}
         <div
-          className={`relative flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 border border-amber-300/30 bg-slate-900 ${iconContainerClass}`}
+          className={`relative flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 border border-amber-300/40 bg-slate-900 ${iconContainerClass}`}
         >
           <img
-            src="/app-icon.png"
+            src="/src/assets/images/zorotask_app_logo_1791266560583.jpg"
             alt="ZoroTask Icon"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
             onError={(e) => {
-              e.currentTarget.src = '/src/assets/images/taskvibe_app_icon_1790861613994.jpg';
+              e.currentTarget.src = '/app-icon.png';
             }}
           />
         </div>

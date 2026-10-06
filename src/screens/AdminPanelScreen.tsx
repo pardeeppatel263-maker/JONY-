@@ -50,6 +50,11 @@ import {
 import { PlanItem, RegisteredUserAccount, PaymentDeposit } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { extractYouTubeId } from '../components/modals/VideoTaskModal';
+import {
+  ZOROTASK_LOGO_PATH,
+  downloadZoroTaskIconHD,
+  downloadZoroTaskBrandBannerHD,
+} from '../utils/logoDownloader';
 
 export const AdminPanelScreen: React.FC = () => {
   const {
@@ -637,8 +642,13 @@ export const AdminPanelScreen: React.FC = () => {
       {/* Top Executive Header */}
       <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-red-600 text-white flex items-center justify-center font-black shadow-md shadow-orange-500/20">
-            ZT
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-amber-400/50 shadow-md shadow-orange-500/20 bg-slate-950 shrink-0">
+            <img
+              src={ZOROTASK_LOGO_PATH}
+              alt="ZoroTask Logo"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -661,6 +671,17 @@ export const AdminPanelScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              downloadZoroTaskIconHD(() => showToast('✓ ZoroTask HD App Logo downloaded!'))
+            }
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 rounded-xl transition border border-amber-500/30 cursor-pointer"
+            title="Download Official ZoroTask HD Logo"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Download Logo</span>
+          </button>
           <button
             onClick={() => navigate('home')}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition border border-slate-700"
@@ -2154,13 +2175,35 @@ export const AdminPanelScreen: React.FC = () => {
               </button>
             </div>
 
-            <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
               <button
                 onClick={handleDownloadSourceCode}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 flex items-center gap-2 transition"
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 flex items-center gap-2 transition cursor-pointer"
               >
                 <Download className="w-4 h-4" /> Download Complete ZIP
               </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadZoroTaskIconHD(() => showToast('✓ ZoroTask HD App Logo downloaded!'))
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-xs font-black flex items-center gap-2 transition hover:brightness-110 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Download HD App Logo
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadZoroTaskBrandBannerHD(() =>
+                      showToast('✓ ZoroTask Full Brand Banner downloaded!')
+                    )
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Download Brand Banner
+                </button>
+              </div>
             </div>
           </div>
         )}

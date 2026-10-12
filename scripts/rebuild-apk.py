@@ -12,24 +12,31 @@ def sha256_b64(data: bytes) -> str:
 def main():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     apk_path = os.path.join(root_dir, 'public', 'ZoroTask-Official.apk')
+    base_apk_path = os.path.join(root_dir, 'scripts', 'ZoroTask-base.apk')
     dist_dir = os.path.join(root_dir, 'dist')
     temp_dir = os.path.join(root_dir, '.tmp_apk')
 
-    if not os.path.exists(apk_path):
-        print(f"Error: {apk_path} not found.")
+    # Save a pristine base APK copy if not already stored
+    if not os.path.exists(base_apk_path) and os.path.exists(apk_path):
+        shutil.copy2(apk_path, base_apk_path)
+
+    source_apk = base_apk_path if os.path.exists(base_apk_path) else apk_path
+
+    if not os.path.exists(source_apk):
+        print(f"Error: {source_apk} not found.")
         sys.exit(1)
 
     if not os.path.exists(dist_dir):
         print(f"Error: {dist_dir} not found. Run npm run build first.")
         sys.exit(1)
 
-    print("Step 1: Extracting base Android files from APK...")
+    print(f"Step 1: Extracting base Android files from {os.path.basename(source_apk)}...")
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
 
     extracted_files = {}
-    with zipfile.ZipFile(apk_path, 'r') as z:
+    with zipfile.ZipFile(source_apk, 'r') as z:
         for item in z.infolist():
             # Skip META-INF signature files and old web assets in assets/public
             if item.filename.startswith('META-INF/'):

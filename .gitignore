@@ -4,5 +4,6 @@ dist/
 coverage/
 .DS_Store
 *.log
+scripts/ZoroTask-base.apk
 .env*
 !.env.example

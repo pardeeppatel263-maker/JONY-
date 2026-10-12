@@ -76,6 +76,14 @@ export interface AdminSettings {
   apkDownloadUrl?: string;
   forceUpdateEnabled?: boolean;
   updateChangelog?: string;
+  // Add Money Extra Bonus & Tiers
+  addMoneyTiers?: AddMoneyTier[];
+}
+
+export interface AddMoneyTier {
+  amount: number;
+  bonus: number;
+  popular?: boolean;
 }
 
 

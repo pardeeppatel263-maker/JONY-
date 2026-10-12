@@ -11,12 +11,12 @@ interface AmountOption {
 }
 
 export const AddMoneyScreen: React.FC = () => {
-  const { addMoneyInitiate, paymentDeposits, navigate } = useApp();
+  const { addMoneyInitiate, paymentDeposits, navigate, adminSettings } = useApp();
   const pendingDeposit = paymentDeposits.find(
     (d) => d.status === 'in_process' && d.depositType === 'add_money'
   );
 
-  const options: AmountOption[] = [
+  const defaultOptions: AmountOption[] = [
     { amount: 100, bonus: 15 },
     { amount: 200, bonus: 30 },
     { amount: 500, bonus: 75 },
@@ -29,7 +29,13 @@ export const AddMoneyScreen: React.FC = () => {
     { amount: 30000, bonus: 850 },
   ];
 
-  const [selectedOption, setSelectedOption] = useState<AmountOption>(options[3]); // ₹1000
+  const options: AmountOption[] =
+    adminSettings?.addMoneyTiers && adminSettings.addMoneyTiers.length > 0
+      ? adminSettings.addMoneyTiers
+      : defaultOptions;
+
+  const defaultSelected = options.find((o) => o.popular) || options[0] || defaultOptions[3];
+  const [selectedOption, setSelectedOption] = useState<AmountOption>(defaultSelected);
   const [selectedUPIApp, setSelectedUPIApp] = useState<'phonepe' | 'gpay' | 'paytm' | 'bhim'>('phonepe');
 
   const upiApps = [

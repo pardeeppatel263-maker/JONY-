@@ -244,7 +244,7 @@ export const LoginScreen: React.FC = () => {
     setDownloadCompleted(false);
 
     // Trigger real APK download directly to device File Manager / Downloads
-    const success = downloadApkToDevice('ZoroTask-Earning-v2.5.apk');
+    const success = downloadApkToDevice('ZoroTask-Official-v2.6.apk');
 
     const interval = setInterval(() => {
       setDownloadProgress((prev) => {
@@ -253,9 +253,9 @@ export const LoginScreen: React.FC = () => {
           setIsDownloading(false);
           setDownloadCompleted(true);
           if (success) {
-            showToast('✓ APK downloaded! Check your mobile File Manager > Downloads.');
+            showToast('✓ ZoroTask v2.6 APK downloaded! Check your mobile File Manager > Downloads.');
           } else {
-            showToast('✓ APK download started. Check File Manager > Downloads.');
+            showToast('✓ ZoroTask v2.6 APK download started. Check File Manager > Downloads.');
           }
           return 100;
         }
@@ -472,7 +472,7 @@ export const LoginScreen: React.FC = () => {
                   ZoroTask Mobile APK
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Version 2.5.0 &bull; 8.4 MB &bull; Android 8.0+
+                  Version 2.6.0 &bull; 12.1 MB &bull; Android 8.0+
                 </p>
               </div>
 
@@ -500,10 +500,10 @@ export const LoginScreen: React.FC = () => {
                     <span>Download completed in File Manager!</span>
                   </div>
                   <p className="text-[11px] text-emerald-700 leading-tight">
-                    The file has been saved to your <strong className="font-bold underline">File Manager &gt; Downloads</strong> folder as <strong>ZoroTask-Earning-v2.5.apk</strong>.
+                    The file has been saved to your <strong className="font-bold underline">File Manager &gt; Downloads</strong> folder as <strong>ZoroTask-Official-v2.6.apk</strong>.
                   </p>
                   <p className="text-[10px] text-emerald-600">
-                    Tap on the APK file in Downloads to install the app.
+                    Tap on the APK file in Downloads to install the latest app.
                   </p>
                 </div>
               )}
@@ -518,7 +518,7 @@ export const LoginScreen: React.FC = () => {
                     />
                   </div>
                   <span className="text-[10px] text-slate-500 font-semibold">
-                    Downloading ZoroTask-Earning-v2.5.apk ({downloadProgress}%)
+                    Downloading ZoroTask-Official-v2.6.apk ({downloadProgress}%)
                   </span>
                 </div>
               )}

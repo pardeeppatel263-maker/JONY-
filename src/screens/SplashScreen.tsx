@@ -22,7 +22,7 @@ export const SplashScreen: React.FC = () => {
     <div className="flex flex-col items-center justify-between h-full bg-gradient-to-b from-blue-900 via-indigo-950 to-slate-950 text-white p-8 select-none">
       <div className="w-full flex justify-end pt-4">
         <span className="text-[10px] uppercase tracking-widest text-blue-300 font-bold bg-white/10 px-2.5 py-1 rounded-full">
-          v2.5 Official
+          v2.6 Official
         </span>
       </div>
 

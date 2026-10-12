@@ -1,10 +1,16 @@
 /**
- * Utility to trigger direct download of the compiled ZoroTask Official Android APK (.apk).
+ * Utility to trigger direct download of the latest compiled ZoroTask Official Android APK (.apk).
+ * Uses cache-busting timestamp so the user's browser/device always downloads the newest version.
  */
-export function downloadApkToDevice(appName = 'ZoroTask-Official.apk'): boolean {
+export function downloadApkToDevice(appName = 'ZoroTask-Official-v2.6.apk', customUrl?: string): boolean {
   try {
+    const rawUrl = customUrl || '/ZoroTask-Official.apk';
+    // Append timestamp query parameter to bypass aggressive browser/CDN caching
+    const separator = rawUrl.includes('?') ? '&' : '?';
+    const freshUrl = `${rawUrl}${separator}t=${Date.now()}`;
+
     const link = document.createElement('a');
-    link.href = '/ZoroTask-Official.apk';
+    link.href = freshUrl;
     link.setAttribute('download', appName);
     link.style.display = 'none';
     document.body.appendChild(link);

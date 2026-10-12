@@ -210,23 +210,25 @@ const MainApp: React.FC = () => {
 
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">
-                Version {adminSettings.appVersion || '1.0.4'} Available
+                Version {adminSettings.appVersion || '2.6.0'} Available
               </span>
               <h3 className="text-base font-black text-white">Update ZoroTask App</h3>
               <p className="text-[11px] text-slate-300 leading-snug">
                 {adminSettings.updateChangelog ||
-                  'New version includes faster YouTube video task streaming, UPI QR proof auto-scanner, and bug fixes.'}
+                  'New version includes faster YouTube video task streaming, UPI QR proof auto-scanner, live wallet sync, and bug fixes.'}
               </p>
             </div>
 
             <div className="space-y-2 pt-1">
               <a
-                href={adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}
-                download="ZoroTask-Official.apk"
+                href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
+                  (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
+                }t=${Date.now()}`}
+                download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 active:scale-98 transition block"
               >
                 <Download className="w-4 h-4" />
-                <span>Download Official APK (8.4MB)</span>
+                <span>Download Official APK (v{adminSettings.appVersion || '2.6.0'} - 12.1MB)</span>
               </a>
 
               <button

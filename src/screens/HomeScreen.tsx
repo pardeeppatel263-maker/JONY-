@@ -139,11 +139,11 @@ export const HomeScreen: React.FC = () => {
   }, [liveWithdrawals.length]);
 
   const handleDownloadApp = () => {
-    const ok = downloadApkToDevice('ZoroTask-Official.apk');
+    const ok = downloadApkToDevice('ZoroTask-Official-v2.6.apk');
     if (ok) {
-      showToast('✓ ZoroTask Official APK download started!');
+      showToast('✓ ZoroTask Official v2.6 APK download started!');
     } else {
-      showToast('Downloading ZoroTask APK...');
+      showToast('Downloading ZoroTask v2.6 APK...');
     }
   };
 

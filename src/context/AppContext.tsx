@@ -617,10 +617,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
     maintenanceMode: false,
     maintenanceMessage: 'ZoroTask platform is currently undergoing scheduled system maintenance. All user balances and active VIP plans are safe. We will be back online shortly!',
-    appVersion: '2.1.0',
+    appVersion: '2.6.0',
     apkDownloadUrl: '/ZoroTask-Official.apk',
     forceUpdateEnabled: false,
     updateChangelog: 'High-speed video playback, automated payment gateway integration, faster withdrawals, and enhanced security!',
+    addMoneyTiers: [
+      { amount: 100, bonus: 15 },
+      { amount: 200, bonus: 30 },
+      { amount: 500, bonus: 75 },
+      { amount: 1000, bonus: 150, popular: true },
+      { amount: 2000, bonus: 250 },
+      { amount: 5000, bonus: 350 },
+      { amount: 7000, bonus: 400 },
+      { amount: 10000, bonus: 500 },
+      { amount: 20000, bonus: 650 },
+      { amount: 30000, bonus: 850 },
+    ],
   };
 
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);

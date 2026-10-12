@@ -56,7 +56,7 @@ import {
   Ticket,
   Send,
 } from 'lucide-react';
-import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode } from '../types';
+import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode, AddMoneyTier } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { extractYouTubeId } from '../components/modals/VideoTaskModal';
 import {
@@ -298,13 +298,35 @@ export const AdminPanelScreen: React.FC = () => {
       'ZoroTask is undergoing scheduled maintenance to upgrade system servers. All user funds and earnings are 100% safe. We will be back online shortly!'
   );
 
+  // Add Money Extra Bonus & Tiers State
+  const defaultAddMoneyTiers: AddMoneyTier[] = [
+    { amount: 100, bonus: 15 },
+    { amount: 200, bonus: 30 },
+    { amount: 500, bonus: 75 },
+    { amount: 1000, bonus: 150, popular: true },
+    { amount: 2000, bonus: 250 },
+    { amount: 5000, bonus: 350 },
+    { amount: 7000, bonus: 400 },
+    { amount: 10000, bonus: 500 },
+    { amount: 20000, bonus: 650 },
+    { amount: 30000, bonus: 850 },
+  ];
+  const [addMoneyTiersInput, setAddMoneyTiersInput] = useState<AddMoneyTier[]>(
+    adminSettings.addMoneyTiers && adminSettings.addMoneyTiers.length > 0
+      ? adminSettings.addMoneyTiers
+      : defaultAddMoneyTiers
+  );
+  const [newTierAmount, setNewTierAmount] = useState('');
+  const [newTierBonus, setNewTierBonus] = useState('');
+  const [newTierPopular, setNewTierPopular] = useState(false);
+
   // App Version & Force Update State
-  const [appVersionInput, setAppVersionInput] = useState(adminSettings.appVersion || '1.0.4');
+  const [appVersionInput, setAppVersionInput] = useState(adminSettings.appVersion || '2.6.0');
   const [apkDownloadUrlInput, setApkDownloadUrlInput] = useState(adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk');
   const [forceUpdateEnabledInput, setForceUpdateEnabledInput] = useState(adminSettings.forceUpdateEnabled ?? false);
   const [updateChangelogInput, setUpdateChangelogInput] = useState(
     adminSettings.updateChangelog ||
-      'Version 1.0.4 brings faster video task buffering, instant QR UPI proof auto-verification, and enhanced 3D UI performance.'
+      'Version 2.6.0 brings faster video task buffering, instant QR UPI proof auto-verification, and enhanced 3D UI performance.'
   );
 
   // Tickets State
@@ -407,6 +429,9 @@ export const AdminPanelScreen: React.FC = () => {
     if (adminSettings.apkDownloadUrl) setApkDownloadUrlInput(adminSettings.apkDownloadUrl);
     if (adminSettings.forceUpdateEnabled !== undefined) setForceUpdateEnabledInput(adminSettings.forceUpdateEnabled);
     if (adminSettings.updateChangelog) setUpdateChangelogInput(adminSettings.updateChangelog);
+    if (adminSettings.addMoneyTiers && adminSettings.addMoneyTiers.length > 0) {
+      setAddMoneyTiersInput([...adminSettings.addMoneyTiers]);
+    }
     if (adminSettings.announcementEnabled !== undefined) {
       setNoticeEnabled(adminSettings.announcementEnabled);
     }
@@ -680,10 +705,11 @@ export const AdminPanelScreen: React.FC = () => {
       withdrawalDaysNotice: withdrawalDaysNoticeInput.trim() || 'Mon - Sat (10:00 AM - 06:00 PM)',
       maintenanceMode: maintenanceModeInput,
       maintenanceMessage: maintenanceMessageInput.trim(),
-      appVersion: appVersionInput.trim() || '1.0.4',
+      appVersion: appVersionInput.trim() || '2.6.0',
       apkDownloadUrl: apkDownloadUrlInput.trim() || '/ZoroTask-Official.apk',
       forceUpdateEnabled: forceUpdateEnabledInput,
       updateChangelog: updateChangelogInput.trim(),
+      addMoneyTiers: addMoneyTiersInput,
     };
 
     if (newAdminPasswordInput.trim()) {
@@ -2622,6 +2648,173 @@ export const AdminPanelScreen: React.FC = () => {
                 )}
               </div>
 
+              {/* Add Money Extra Bonus & Tiers Manager */}
+              <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-emerald-500/30">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <label className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4" />
+                      <span>Add Money Extra Bonus &amp; Tiers Manager</span>
+                    </label>
+                    <p className="text-[10px] text-slate-400">
+                      Control kitna extra bonus har deposit amount par users ko milega. Yahan se bonus change karein ya new tiers add karein.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddMoneyTiersInput(defaultAddMoneyTiers);
+                      showToast('Reset to 10 standard tiers. Click Save All Settings below.');
+                    }}
+                    className="text-[10px] font-bold text-slate-400 hover:text-white bg-slate-900 px-2 py-1 rounded-lg border border-slate-700 transition"
+                  >
+                    Reset Defaults
+                  </button>
+                </div>
+
+                {/* Tiers List Grid */}
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {addMoneyTiersInput.map((tier, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold text-[10px] flex items-center justify-center shrink-0">
+                          #{idx + 1}
+                        </span>
+                        <div className="grid grid-cols-2 gap-2 flex-1">
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-slate-400 uppercase font-bold block">
+                              Deposit (₹)
+                            </label>
+                            <input
+                              type="number"
+                              value={tier.amount}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setAddMoneyTiersInput((prev) =>
+                                  prev.map((t, i) => (i === idx ? { ...t, amount: val } : t))
+                                );
+                              }}
+                              className="w-full px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-bold outline-none focus:border-emerald-400"
+                            />
+                          </div>
+                          <div className="space-y-0.5">
+                            <label className="text-[9px] text-emerald-400 uppercase font-bold block">
+                              Bonus (₹)
+                            </label>
+                            <input
+                              type="number"
+                              value={tier.bonus}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setAddMoneyTiersInput((prev) =>
+                                  prev.map((t, i) => (i === idx ? { ...t, bonus: val } : t))
+                                );
+                              }}
+                              className="w-full px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-emerald-400 font-bold outline-none focus:border-emerald-400"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddMoneyTiersInput((prev) =>
+                              prev.map((t, i) => (i === idx ? { ...t, popular: !t.popular } : t))
+                            );
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition ${
+                            tier.popular
+                              ? 'bg-amber-400/20 text-amber-300 border-amber-400/50'
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                          }`}
+                          title="Toggle Popular Badge"
+                        >
+                          {tier.popular ? '★ Popular' : 'Normal'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddMoneyTiersInput((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400"
+                          title="Delete Tier"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add New Tier Form */}
+                <div className="p-2.5 rounded-xl bg-slate-900/80 border border-dashed border-slate-700 space-y-2">
+                  <span className="text-[10px] font-bold text-slate-300 block">
+                    + Add New Amount Tier with Extra Bonus:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder="Amount (e.g. 1500)"
+                      value={newTierAmount}
+                      onChange={(e) => setNewTierAmount(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Bonus (e.g. 200)"
+                      value={newTierBonus}
+                      onChange={(e) => setNewTierBonus(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-emerald-400 outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewTierPopular(!newTierPopular)}
+                      className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition shrink-0 ${
+                        newTierPopular
+                          ? 'bg-amber-400/20 text-amber-300 border-amber-400/50'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                    >
+                      {newTierPopular ? '★ Popular' : 'Regular'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = parseFloat(newTierAmount);
+                        const bon = parseFloat(newTierBonus) || 0;
+                        if (!amt || amt <= 0) {
+                          showToast('Please enter a valid amount');
+                          return;
+                        }
+                        if (addMoneyTiersInput.some((t) => t.amount === amt)) {
+                          showToast(`Tier for ₹${amt} already exists`);
+                          return;
+                        }
+                        const newTier: AddMoneyTier = {
+                          amount: amt,
+                          bonus: bon,
+                          popular: newTierPopular,
+                        };
+                        const updated = [...addMoneyTiersInput, newTier].sort((a, b) => a.amount - b.amount);
+                        setAddMoneyTiersInput(updated);
+                        setNewTierAmount('');
+                        setNewTierBonus('');
+                        setNewTierPopular(false);
+                        showToast(`✓ Added ₹${amt} with ₹${bon} bonus! Remember to click Save All Settings.`);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 transition"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Force App Update & Official APK Manager */}
               <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-sky-500/30">
                 <div className="flex items-center justify-between">
@@ -2656,7 +2849,7 @@ export const AdminPanelScreen: React.FC = () => {
                       type="text"
                       value={appVersionInput}
                       onChange={(e) => setAppVersionInput(e.target.value)}
-                      placeholder="1.0.4"
+                      placeholder="2.6.0"
                       className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-sky-400"
                     />
                   </div>

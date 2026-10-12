@@ -475,7 +475,7 @@ export const HelpCenterScreen: React.FC = () => {
 
             {expandedSection === 'about' && (
               <div className="p-4 border-t border-slate-100 text-xs text-slate-600 space-y-2">
-                <p className="font-semibold text-slate-800">ZoroTask (Version 2.5)</p>
+                <p className="font-semibold text-slate-800">ZoroTask (Version 2.6)</p>
                 <p>India's leading opinion rewards and task fulfillment network. Empowering individuals to monetize their free time with daily surveys and peer referrals.</p>
               </div>
             )}

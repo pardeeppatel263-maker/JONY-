@@ -232,8 +232,8 @@ export const RegisterScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              downloadApkToDevice('ZoroTask-Official.apk');
-              showToast('✓ ZoroTask Official APK download started!');
+              downloadApkToDevice('ZoroTask-Official-v2.6.apk');
+              showToast('✓ ZoroTask Official v2.6 APK download started!');
             }}
             className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
           >

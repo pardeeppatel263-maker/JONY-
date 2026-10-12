@@ -177,8 +177,8 @@ export const ProfileScreen: React.FC = () => {
             {/* Download Official Android APK */}
             <button
               onClick={() => {
-                downloadApkToDevice('ZoroTask-Official.apk');
-                showToast('✓ ZoroTask Official APK download started!');
+                downloadApkToDevice('ZoroTask-Official-v2.6.apk');
+                showToast('✓ ZoroTask Official v2.6 APK download started!');
               }}
               className="w-full p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/50 transition-colors"
             >
@@ -188,7 +188,7 @@ export const ProfileScreen: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-bold text-slate-800 block leading-tight">Download Android App (.APK)</span>
-                  <span className="text-[10px] text-emerald-600 font-semibold">Official ZoroTask v2.5 Installer</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Official ZoroTask v2.6 Installer (Latest)</span>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />

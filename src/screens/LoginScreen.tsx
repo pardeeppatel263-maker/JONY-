@@ -464,7 +464,7 @@ export const LoginScreen: React.FC = () => {
                   ZoroTask Mobile APK
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Version 2.6.0 &bull; Fast 4.0 MB &bull; Android 8.0+
+                  Version 2.6.0 &bull; 9.0 MB &bull; Android 8.0+
                 </p>
               </div>
 

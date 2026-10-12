@@ -1462,25 +1462,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    let matched: RegisteredUserAccount | null = null;
+    // 1. Instant local cache lookup for zero-delay login!
+    const localMatch =
+      registeredUsers.find(
+        (u) => normalizeMobile(u.mobile) === cleanMobile
+      ) || null;
 
-    // 1. Fetch directly from Firestore cloud database so any device can log in!
+    let matched: RegisteredUserAccount | null = localMatch;
+
+    // If already in local memory and password is correct, log in INSTANTLY (0ms delay!)
+    if (matched && matched.password === pass.trim()) {
+      setUser(matched);
+      setTransactions(matched.transactions || []);
+      setIsLoggedIn(true);
+      setCurrentScreen('home');
+      setActiveTab('home');
+      setHistoryStack(['home']);
+
+      try {
+        localStorage.setItem('taskvibe_auth', 'true');
+        localStorage.setItem('taskvibe_active_mobile', cleanMobile);
+        localStorage.setItem('taskvibe_user', JSON.stringify(matched));
+        localStorage.setItem('taskvibe_txs', JSON.stringify(matched.transactions || []));
+        localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
+        window.history.replaceState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+      } catch (e) {
+        console.warn(e);
+      }
+
+      showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
+
+      // Background cloud sync without delaying the user
+      (async () => {
+        try {
+          const userRef = doc(db, 'users', cleanMobile);
+          const snap = await getDoc(userRef);
+          if (snap.exists()) {
+            const cloudData = snap.data() as RegisteredUserAccount;
+            setUser((curr) => (curr && curr.mobile === cloudData.mobile ? { ...curr, ...cloudData } : curr));
+          } else if (matched) {
+            await setDoc(userRef, matched, { merge: true });
+          }
+        } catch (e) {
+          console.warn('Background user cloud sync:', e);
+        }
+      })();
+
+      return true;
+    }
+
+    // 2. If not matched locally or password changed elsewhere, check Firestore with timeout guard
     try {
       const userRef = doc(db, 'users', cleanMobile);
-      const snap = await getDoc(userRef);
-      if (snap.exists()) {
+      const snap = await Promise.race([
+        getDoc(userRef),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+      ]);
+      if (snap && snap.exists()) {
         matched = snap.data() as RegisteredUserAccount;
       }
     } catch (err) {
       console.warn('Firestore fetch failed, checking local state', err);
-    }
-
-    // 2. Fallback to locally synced registeredUsers
-    if (!matched) {
-      matched =
-        registeredUsers.find(
-          (u) => normalizeMobile(u.mobile) === cleanMobile
-        ) || null;
     }
 
     if (!matched) {
@@ -1493,15 +1535,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Sync account to Firestore if not already there
-    try {
-      const userRef = doc(db, 'users', cleanMobile);
-      await setDoc(userRef, matched, { merge: true });
-    } catch (e) {
-      console.warn(e);
-    }
-
-    // Successful login - load user's real balance, details, and transactions
+    // Successful login - load user's real balance, details, and transactions immediately
     setUser(matched);
     setTransactions(matched.transactions || []);
     setIsLoggedIn(true);
@@ -1521,6 +1555,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
+
+    // Non-blocking background sync
+    (async () => {
+      try {
+        if (matched) {
+          const userRef = doc(db, 'users', cleanMobile);
+          await setDoc(userRef, matched, { merge: true });
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    })();
+
     return true;
   };
 

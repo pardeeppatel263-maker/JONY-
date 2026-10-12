@@ -228,7 +228,7 @@ const MainApp: React.FC = () => {
                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 active:scale-98 transition block"
               >
                 <Download className="w-4 h-4" />
-                <span>Download Official APK (v{adminSettings.appVersion || '2.6.0'} - Fast 4.0MB)</span>
+                <span>Download Official APK (v{adminSettings.appVersion || '2.6.0'} - 9.0MB)</span>
               </a>
 
               <button

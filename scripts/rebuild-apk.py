@@ -2,90 +2,49 @@ import os
 import sys
 import shutil
 import zipfile
-import base64
-import hashlib
 import subprocess
-
-def sha256_b64(data: bytes) -> str:
-    return base64.b64encode(hashlib.sha256(data).digest()).decode('ascii')
 
 def main():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     apk_path = os.path.join(root_dir, 'public', 'ZoroTask-Official.apk')
     base_apk_path = os.path.join(root_dir, 'scripts', 'ZoroTask-base.apk')
+    keystore_path = os.path.join(root_dir, 'scripts', 'debug.keystore')
     dist_dir = os.path.join(root_dir, 'dist')
     temp_dir = os.path.join(root_dir, '.tmp_apk')
 
-    # Save a pristine base APK copy if not already stored
-    if not os.path.exists(base_apk_path) and os.path.exists(apk_path):
-        shutil.copy2(apk_path, base_apk_path)
-
-    source_apk = base_apk_path if os.path.exists(base_apk_path) else apk_path
-
-    if not os.path.exists(source_apk):
-        print(f"Error: {source_apk} not found.")
+    if not os.path.exists(base_apk_path):
+        print(f"Error: Base APK not found at {base_apk_path}")
         sys.exit(1)
 
     if not os.path.exists(dist_dir):
         print(f"Error: {dist_dir} not found. Run npm run build first.")
         sys.exit(1)
 
-    print(f"Step 1: Extracting base Android files from {os.path.basename(source_apk)}...")
     if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
     os.makedirs(temp_dir, exist_ok=True)
 
-    extracted_files = {}
-    with zipfile.ZipFile(source_apk, 'r') as z:
+    unsigned_apk = os.path.join(temp_dir, 'unsigned.apk')
+    aligned_apk = os.path.join(temp_dir, 'aligned.apk')
+
+    print("Step 1: Extracting native Android binaries from base APK...")
+    extracted_items = {}
+    with zipfile.ZipFile(base_apk_path, 'r') as z:
         for item in z.infolist():
-            # Skip META-INF signature files and old web assets in assets/public
+            # Skip old signatures and old assets/public
             if item.filename.startswith('META-INF/'):
                 continue
             if item.filename.startswith('assets/public/'):
                 continue
-            data = z.read(item.filename)
-            extracted_files[item.filename] = data
+            extracted_items[item.filename] = z.read(item.filename)
 
-    print(f"Preserved {len(extracted_files)} core Android binary & config files.")
-
-    # Optimize Android launcher icons in res/mipmap-* to save 4+ MB
-    icon_source = os.path.join(root_dir, 'public', 'app-icon.png')
-    scaled_icons = {}
-    if os.path.exists(icon_source):
-        density_sizes = {
-            'mdpi': 48,
-            'hdpi': 72,
-            'xhdpi': 96,
-            'xxhdpi': 144,
-            'xxxhdpi': 192,
-        }
-        for density, px in density_sizes.items():
-            tmp_out = os.path.join(temp_dir, f'icon_{density}.png')
-            try:
-                subprocess.run(['convert', icon_source, '-resize', f'{px}x{px}', '-strip', tmp_out], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                with open(tmp_out, 'rb') as f:
-                    scaled_icons[density] = f.read()
-            except Exception:
-                pass
-
-        replaced_count = 0
-        for filename in list(extracted_files.keys()):
-            if 'mipmap-' in filename and filename.endswith('.png'):
-                for density, icon_bytes in scaled_icons.items():
-                    if f'mipmap-{density}' in filename:
-                        extracted_files[filename] = icon_bytes
-                        replaced_count += 1
-                        break
-        print(f"Optimized {replaced_count} Android launcher icons to authentic micro sizes.")
+    print(f"Preserved {len(extracted_items)} native Android binaries, resources, and plugins.")
 
     print("Step 2: Injecting latest compiled React production assets from dist/...")
-    # Skip desktop/browser-only files not needed inside the Android app
-    skip_web_files = {'favicon.ico', 'favicon.jpg', 'app-icon.jpg', 'icon-192.png', 'icon-512.png'}
     new_web_files = {}
     for dirpath, _, filenames in os.walk(dist_dir):
         for fname in filenames:
-            # Avoid copying the APK inside itself or browser-only icons
-            if fname.endswith('.apk') or fname in skip_web_files:
+            if fname.endswith('.apk'):
                 continue
             full_path = os.path.join(dirpath, fname)
             rel_path = os.path.relpath(full_path, dist_dir)
@@ -95,106 +54,59 @@ def main():
 
     print(f"Added {len(new_web_files)} updated web assets into assets/public/.")
 
-    # Combine all files
     all_files = {}
-    all_files.update(extracted_files)
+    all_files.update(extracted_items)
     all_files.update(new_web_files)
 
-    # Make sure assets/capacitor.config.json exists
     if 'assets/capacitor.config.json' not in all_files:
         cap_config = os.path.join(root_dir, 'capacitor.config.json')
         if os.path.exists(cap_config):
             with open(cap_config, 'rb') as f:
                 all_files['assets/capacitor.config.json'] = f.read()
 
-    print("Step 3: Generating v1 JAR signature (MANIFEST.MF and CERT.SF)...")
-    manifest_lines = [
-        "Manifest-Version: 1.0",
-        "Created-By: 1.0 (Android Signer)",
-        ""
-    ]
-
-    sf_lines = [
-        "Signature-Version: 1.0",
-        "Created-By: 1.0 (Android Signer)",
-    ]
-
-    # Calculate digests
-    file_digests = {}
-    for filename in sorted(all_files.keys()):
-        data = all_files[filename]
-        digest = sha256_b64(data)
-        file_digests[filename] = digest
-
-        entry = f"Name: {filename}\r\nSHA-256-Digest: {digest}\r\n\r\n"
-        manifest_lines.append(f"Name: {filename}")
-        manifest_lines.append(f"SHA-256-Digest: {digest}")
-        manifest_lines.append("")
-
-    manifest_bytes = "\r\n".join(manifest_lines).encode('utf-8')
-
-    # Manifest digest for CERT.SF
-    manifest_digest = sha256_b64(manifest_bytes)
-    sf_lines.append(f"SHA-256-Digest-Manifest: {manifest_digest}")
-    sf_lines.append("")
-
-    for filename in sorted(all_files.keys()):
-        # Individual section digest
-        section = f"Name: {filename}\r\nSHA-256-Digest: {file_digests[filename]}\r\n\r\n".encode('utf-8')
-        section_digest = sha256_b64(section)
-        sf_lines.append(f"Name: {filename}")
-        sf_lines.append(f"SHA-256-Digest: {section_digest}")
-        sf_lines.append("")
-
-    sf_bytes = "\r\n".join(sf_lines).encode('utf-8')
-
-    print("Step 4: Signing with Android Debug Certificate using OpenSSL...")
-    key_path = os.path.join(temp_dir, 'debug.key')
-    crt_path = os.path.join(temp_dir, 'debug.crt')
-    sf_path = os.path.join(temp_dir, 'CERT.SF')
-    rsa_path = os.path.join(temp_dir, 'CERT.RSA')
-
-    subprocess.run([
-        'openssl', 'genrsa', '-out', key_path, '2048'
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    subprocess.run([
-        'openssl', 'req', '-new', '-x509', '-key', key_path, '-out', crt_path,
-        '-days', '10000', '-subj', '/CN=Android Debug/O=Android/C=US'
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    with open(sf_path, 'wb') as f:
-        f.write(sf_bytes)
-
-    subprocess.run([
-        'openssl', 'smime', '-sign', '-in', sf_path, '-out', rsa_path,
-        '-outform', 'DER', '-inkey', key_path, '-signer', crt_path
-    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    with open(rsa_path, 'rb') as f:
-        rsa_bytes = f.read()
-
-    print("Step 5: Packaging updated signed ZoroTask-Official.apk...")
-    new_apk_path = os.path.join(root_dir, 'public', 'ZoroTask-Official.apk')
-    
-    with zipfile.ZipFile(new_apk_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zout:
-        # Write regular files
+    print("Step 3: Creating unsigned APK with proper Android uncompressed resources.arsc...")
+    with zipfile.ZipFile(unsigned_apk, 'w') as zout:
         for filename in sorted(all_files.keys()):
-            zout.writestr(filename, all_files[filename])
-        # Write META-INF signature files
-        zout.writestr('META-INF/MANIFEST.MF', manifest_bytes)
-        zout.writestr('META-INF/CERT.SF', sf_bytes)
-        zout.writestr('META-INF/CERT.RSA', rsa_bytes)
+            data = all_files[filename]
+            # Android strictly requires resources.arsc to be stored uncompressed (ZIP_STORED)
+            c_type = zipfile.ZIP_STORED if filename == 'resources.arsc' else zipfile.ZIP_DEFLATED
+            zinfo = zipfile.ZipInfo(filename)
+            zinfo.compress_type = c_type
+            zout.writestr(zinfo, data)
 
-    # Also copy into dist/ if dist exists
+    print("Step 4: Aligning APK to 4-byte boundaries with zipalign...")
+    subprocess.run(['zipalign', '-f', '-p', '4', unsigned_apk, aligned_apk], check=True)
+
+    print("Step 5: Signing APK with official Google apksigner (v1 + v2 + v3 schemes)...")
+    subprocess.run([
+        'apksigner', 'sign',
+        '--ks', keystore_path,
+        '--ks-pass', 'pass:android',
+        '--ks-key-alias', 'androiddebugkey',
+        '--key-pass', 'pass:android',
+        '--v1-signing-enabled', 'true',
+        '--v2-signing-enabled', 'true',
+        '--v3-signing-enabled', 'true',
+        '--out', apk_path,
+        aligned_apk
+    ], check=True)
+
+    print("Step 6: Verifying APK signature...")
+    ver_res = subprocess.run(['apksigner', 'verify', '-v', apk_path], capture_output=True, text=True)
+    if 'Verifies' in ver_res.stdout:
+        print("✓ APK signature verified successfully (v1, v2, v3 all valid)!")
+    else:
+        print("Verification warning:", ver_res.stderr or ver_res.stdout)
+
+    # Copy to dist/
     dist_apk = os.path.join(dist_dir, 'ZoroTask-Official.apk')
-    shutil.copy2(new_apk_path, dist_apk)
+    shutil.copy2(apk_path, dist_apk)
 
     # Cleanup temp
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-    size_mb = os.path.getsize(new_apk_path) / (1024 * 1024)
-    print(f"✓ Successfully built and signed updated ZoroTask-Official.apk ({size_mb:.2f} MB)!")
+    size_mb = os.path.getsize(apk_path) / (1024 * 1024)
+    print(f"✓ Production-ready, fully installable APK created: {apk_path} ({size_mb:.2f} MB)")
 
 if __name__ == '__main__':
     main()

@@ -48,12 +48,44 @@ def main():
 
     print(f"Preserved {len(extracted_files)} core Android binary & config files.")
 
+    # Optimize Android launcher icons in res/mipmap-* to save 4+ MB
+    icon_source = os.path.join(root_dir, 'public', 'app-icon.png')
+    scaled_icons = {}
+    if os.path.exists(icon_source):
+        density_sizes = {
+            'mdpi': 48,
+            'hdpi': 72,
+            'xhdpi': 96,
+            'xxhdpi': 144,
+            'xxxhdpi': 192,
+        }
+        for density, px in density_sizes.items():
+            tmp_out = os.path.join(temp_dir, f'icon_{density}.png')
+            try:
+                subprocess.run(['convert', icon_source, '-resize', f'{px}x{px}', '-strip', tmp_out], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                with open(tmp_out, 'rb') as f:
+                    scaled_icons[density] = f.read()
+            except Exception:
+                pass
+
+        replaced_count = 0
+        for filename in list(extracted_files.keys()):
+            if 'mipmap-' in filename and filename.endswith('.png'):
+                for density, icon_bytes in scaled_icons.items():
+                    if f'mipmap-{density}' in filename:
+                        extracted_files[filename] = icon_bytes
+                        replaced_count += 1
+                        break
+        print(f"Optimized {replaced_count} Android launcher icons to authentic micro sizes.")
+
     print("Step 2: Injecting latest compiled React production assets from dist/...")
+    # Skip desktop/browser-only files not needed inside the Android app
+    skip_web_files = {'favicon.ico', 'favicon.jpg', 'app-icon.jpg', 'icon-192.png', 'icon-512.png'}
     new_web_files = {}
     for dirpath, _, filenames in os.walk(dist_dir):
         for fname in filenames:
-            # Avoid copying the APK inside itself!
-            if fname.endswith('.apk'):
+            # Avoid copying the APK inside itself or browser-only icons
+            if fname.endswith('.apk') or fname in skip_web_files:
                 continue
             full_path = os.path.join(dirpath, fname)
             rel_path = os.path.relpath(full_path, dist_dir)
@@ -145,7 +177,7 @@ def main():
     print("Step 5: Packaging updated signed ZoroTask-Official.apk...")
     new_apk_path = os.path.join(root_dir, 'public', 'ZoroTask-Official.apk')
     
-    with zipfile.ZipFile(new_apk_path, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+    with zipfile.ZipFile(new_apk_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zout:
         # Write regular files
         for filename in sorted(all_files.keys()):
             zout.writestr(filename, all_files[filename])

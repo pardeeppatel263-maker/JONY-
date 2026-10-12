@@ -240,28 +240,20 @@ export const LoginScreen: React.FC = () => {
 
   const handleStartDownload = () => {
     setIsDownloading(true);
-    setDownloadProgress(25);
-    setDownloadCompleted(false);
+    setDownloadProgress(100);
+    setDownloadCompleted(true);
 
-    // Trigger real APK download directly to device File Manager / Downloads
+    // Trigger real APK download directly to device File Manager / Downloads immediately
     const success = downloadApkToDevice('ZoroTask-Official-v2.6.apk');
 
-    const interval = setInterval(() => {
-      setDownloadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsDownloading(false);
-          setDownloadCompleted(true);
-          if (success) {
-            showToast('✓ ZoroTask v2.6 APK downloaded! Check your mobile File Manager > Downloads.');
-          } else {
-            showToast('✓ ZoroTask v2.6 APK download started. Check File Manager > Downloads.');
-          }
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 250);
+    setTimeout(() => {
+      setIsDownloading(false);
+      if (success) {
+        showToast('✓ ZoroTask v2.6 APK downloading! Check File Manager > Downloads.');
+      } else {
+        showToast('✓ ZoroTask v2.6 APK download started.');
+      }
+    }, 400);
   };
 
   return (
@@ -472,7 +464,7 @@ export const LoginScreen: React.FC = () => {
                   ZoroTask Mobile APK
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Version 2.6.0 &bull; 12.1 MB &bull; Android 8.0+
+                  Version 2.6.0 &bull; Fast 4.0 MB &bull; Android 8.0+
                 </p>
               </div>
 

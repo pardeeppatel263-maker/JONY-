@@ -74,20 +74,38 @@ function whatsappOtpServerPlugin(): Plugin {
                   respJson = null;
                 }
 
+                const statusStr = String(respJson?.status || '').toUpperCase();
+                const msgStr = String(respJson?.message || respText || '');
+                const isExplicitlyFailed =
+                  statusStr === 'FAILED' ||
+                  statusStr === 'ERROR' ||
+                  msgStr.toUpperCase().includes('FAILED') ||
+                  msgStr.toUpperCase().includes('UNAVAILABLE') ||
+                  msgStr.toUpperCase().includes('INVALID') ||
+                  msgStr.toUpperCase().includes('NO API KEY');
+
                 const isSuccess =
-                  apiRes.ok ||
-                  (respJson && (respJson.status === 'SUCCESS' || respJson.status === 'success' || respJson.status === 200 || respJson.success === true)) ||
-                  (respText && (respText.includes('SUCCESS') || respText.includes('success') || respText.includes('"sent":true')));
+                  apiRes.ok &&
+                  !isExplicitlyFailed &&
+                  (statusStr === 'SUCCESS' ||
+                    respJson?.success === true ||
+                    respJson?.status === 200 ||
+                    msgStr.toUpperCase().includes('SUCCESS') ||
+                    msgStr.toUpperCase().includes('"SENT":TRUE'));
+
+                const failureReason = isSuccess
+                  ? undefined
+                  : (respJson?.message || respText || 'Renflair gateway reported failure');
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(
                   JSON.stringify({
-                    success: !!isSuccess || apiRes.ok,
+                    success: isSuccess,
                     status: apiRes.status,
                     provider: 'renflair',
                     rawResponse: respText || JSON.stringify(respJson),
                     json: respJson,
-                    error: isSuccess ? undefined : (respJson?.message || respText || 'API returned failed status'),
+                    error: failureReason,
                     fallbackLink: `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(textMessage)}`,
                   })
                 );

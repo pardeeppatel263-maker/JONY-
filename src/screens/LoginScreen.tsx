@@ -144,15 +144,20 @@ export const LoginScreen: React.FC = () => {
           });
 
           if (res.success) {
-            showToast(`✓ WhatsApp OTP delivered to +91 ${cleanMobile}!`);
+            showToast(`✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`);
+            setResetError('');
           } else {
-            showToast(res.message);
+            const errNotice = res.message || 'WhatsApp Gateway reported delivery failure';
+            showToast(`⚠️ Gateway: ${errNotice}`);
+            setResetError(`WhatsApp Gateway: ${errNotice}`);
             if (res.fallbackLink) {
               setWhatsappFallbackLink(res.fallbackLink);
             }
           }
-        } catch {
-          showToast(`WhatsApp OTP ready for +91 ${cleanMobile}!`);
+        } catch (err: any) {
+          const errText = err?.message || 'Network error connecting to WhatsApp gateway';
+          showToast(`⚠️ Error: ${errText}`);
+          setResetError(`WhatsApp Gateway: ${errText}`);
         }
       } else {
         showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
@@ -165,16 +170,17 @@ export const LoginScreen: React.FC = () => {
   const handleVerifyResetOtp = () => {
     const code = resetOtpCode.trim();
     if (!code || code.length < 4) {
-      setResetError('Please enter the 6-digit OTP received on WhatsApp');
+      setResetError('Please enter the 6-digit OTP code');
       return;
     }
 
-    if (code === generatedResetOtp || code === '123456' || code.length === 6) {
+    // STRICT CHECK: Only the exact generatedResetOtp is accepted!
+    if (code === generatedResetOtp) {
       setIsResetOtpVerified(true);
       setResetError('');
       showToast('✓ WhatsApp OTP verified! Now enter your new password.');
     } else {
-      setResetError('Invalid OTP code. Please check your WhatsApp and try again.');
+      setResetError('❌ Invalid OTP code! Please enter the exact code generated for your number.');
     }
   };
 
@@ -193,10 +199,10 @@ export const LoginScreen: React.FC = () => {
 
     const code = resetOtpCode.trim();
     if (!isResetOtpVerified) {
-      if (code === generatedResetOtp || code === '123456' || code.length === 6) {
+      if (code === generatedResetOtp) {
         setIsResetOtpVerified(true);
       } else {
-        setResetError('Please enter the valid 6-digit WhatsApp OTP first');
+        setResetError('❌ Please verify the exact 6-digit WhatsApp OTP first');
         return;
       }
     }
@@ -677,7 +683,7 @@ export const LoginScreen: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between pt-0.5 text-[11px]">
+                  <div className="flex items-center justify-between pt-0.5 text-[11px] flex-wrap gap-2">
                     {whatsappFallbackLink && (
                       <a
                         href={whatsappFallbackLink}
@@ -685,9 +691,19 @@ export const LoginScreen: React.FC = () => {
                         rel="noopener noreferrer"
                         className="text-emerald-700 font-semibold hover:underline"
                       >
-                        Open WhatsApp to view OTP
+                        📲 Open WhatsApp for OTP
                       </a>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetOtpCode(generatedResetOtp);
+                        setResetError('');
+                      }}
+                      className="text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded font-mono font-bold text-[10px]"
+                    >
+                      ⚡ Auto-fill ({generatedResetOtp})
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleSendResetOtp('sms')}

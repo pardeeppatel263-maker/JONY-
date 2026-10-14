@@ -60,24 +60,30 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
     if (proxyResponse.ok) {
       const data = await proxyResponse.json();
       return {
-        success: data.success,
+        success: !!data.success,
         message: data.success
           ? `✓ WhatsApp OTP delivered directly to +91 ${cleanMobile} via ${provider.toUpperCase()}!`
-          : data.error || (data.simulated ? 'Simulated OTP dispatch' : 'WhatsApp gateway returned response'),
+          : data.error || (data.simulated ? 'Simulated OTP dispatch' : 'WhatsApp gateway returned failed status'),
         provider,
         fallbackLink: data.fallbackLink || fallbackWaLink,
         rawResponse: data,
       };
+    } else {
+      const errJson = await proxyResponse.json().catch(() => null);
+      return {
+        success: false,
+        message: errJson?.error || `Gateway server responded with status ${proxyResponse.status}`,
+        provider,
+        fallbackLink: fallbackWaLink,
+      };
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('API proxy call error:', err);
+    return {
+      success: false,
+      message: err?.message || 'Network error connecting to WhatsApp gateway proxy',
+      provider,
+      fallbackLink: fallbackWaLink,
+    };
   }
-
-  // Direct client fallback
-  return {
-    success: true,
-    message: `WhatsApp OTP prepared for +91 ${cleanMobile}`,
-    provider,
-    fallbackLink: fallbackWaLink,
-  };
 }

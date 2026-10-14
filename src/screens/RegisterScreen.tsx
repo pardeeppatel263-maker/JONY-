@@ -53,6 +53,8 @@ export const RegisterScreen: React.FC = () => {
   const [isMobileVerified, setIsMobileVerified] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const [otpError, setOtpError] = useState('');
+  const [gatewayError, setGatewayError] = useState('');
+  const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState('');
 
   const cleanMobileDigits = mobile.replace(/\D/g, '').slice(-10);
   const isNumberAlreadyRegistered = cleanMobileDigits.length === 10 && isPhoneAlreadyRegistered(cleanMobileDigits);
@@ -86,6 +88,11 @@ export const RegisterScreen: React.FC = () => {
     setOtpSent(true);
     setResendTimer(30);
     setOtpError('');
+    setGatewayError('');
+
+    const messageText = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
+    const directWaUrl = `https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageText)}`;
+    setWhatsappFallbackUrl(directWaUrl);
 
     if (channel === 'whatsapp') {
       const activeProvider = adminSettings?.whatsappProvider || 'renflair';
@@ -100,20 +107,22 @@ export const RegisterScreen: React.FC = () => {
       })
         .then((result) => {
           if (result.success) {
-            showToast(`✓ WhatsApp OTP delivered to +91 ${cleanMobile}!`);
+            showToast(`✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`);
+            setGatewayError('');
           } else {
             console.warn('WhatsApp API response:', result);
-            showToast(`${result.message}`);
+            const errMsg = result.message || 'WhatsApp Gateway reported delivery failure';
+            setGatewayError(errMsg);
             if (result.fallbackLink) {
-              window.open(result.fallbackLink, '_blank');
+              setWhatsappFallbackUrl(result.fallbackLink);
             }
+            showToast(`⚠️ Gateway: ${errMsg}`);
           }
         })
         .catch((err) => {
           console.warn('Network error calling WhatsApp API:', err);
-          const fallbackMsg = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes.`;
-          window.open(`https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(fallbackMsg)}`, '_blank');
-          showToast(`Opening WhatsApp to receive verification code`);
+          setGatewayError('Network error connecting to WhatsApp gateway');
+          showToast(`⚠️ WhatsApp Gateway Error: ${err?.message || 'Failed to dispatch'}`);
         });
     } else {
       showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
@@ -121,23 +130,20 @@ export const RegisterScreen: React.FC = () => {
   };
 
   const handleVerifyOtp = () => {
-    if (!otpCode || otpCode.trim().length < 4) {
+    const entered = otpCode.trim();
+    if (!entered || entered.length < 4) {
       setOtpError('Please enter a valid 4-digit OTP code');
       return;
     }
 
-    // Accept generated OTP or 1234 or 123456 or valid 4-6 digit code
-    if (
-      otpCode.trim() === generatedOtp ||
-      otpCode.trim() === '1234' ||
-      otpCode.trim() === '123456' ||
-      otpCode.trim().length >= 4
-    ) {
+    // STRICT CHECK: The entered OTP must match generatedOtp strictly!
+    if (entered === generatedOtp) {
       setIsMobileVerified(true);
       setOtpError('');
-      showToast('Mobile number verified successfully! ✓');
+      setGatewayError('');
+      showToast('✓ Mobile number verified successfully!');
     } else {
-      setOtpError('Invalid OTP code. Please enter the correct code.');
+      setOtpError('❌ Invalid OTP code! Please enter the exact code generated for your number.');
     }
   };
 
@@ -152,6 +158,12 @@ export const RegisterScreen: React.FC = () => {
     const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length < 10) {
       showToast('Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    if (!isMobileVerified) {
+      showToast('❌ Please verify your mobile number with OTP first!');
+      setOtpError('Please complete OTP verification before proceeding');
       return;
     }
 
@@ -420,7 +432,7 @@ export const RegisterScreen: React.FC = () => {
                   maxLength={6}
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter OTP (e.g. 1234)"
+                  placeholder="Enter 4-digit OTP"
                   className="flex-1 py-2.5 px-3 text-center tracking-widest font-mono font-bold text-sm bg-white rounded-xl border border-slate-300 outline-none focus:border-emerald-500 shadow-inner"
                   autoFocus
                 />
@@ -434,7 +446,48 @@ export const RegisterScreen: React.FC = () => {
               </div>
 
               {otpError && (
-                <p className="text-[10px] text-rose-600 font-semibold">{otpError}</p>
+                <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-1.5 rounded-lg border border-rose-200">
+                  {otpError}
+                </p>
+              )}
+
+              {/* Gateway Notification banner when SMS balance or API is unavailable */}
+              {gatewayError && (
+                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs text-amber-950">
+                  <div className="flex items-start gap-1.5 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span className="text-[11px] leading-tight">
+                      WhatsApp Gateway Status: {gatewayError}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-amber-800 leading-tight">
+                    {gatewayError.includes('BALANCE')
+                      ? 'Renflair account has zero SMS/WhatsApp balance. Admin please recharge on renflair.in or configure a new API key in Admin Panel.'
+                      : 'Gateway could not deliver automated message to this device.'}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    {whatsappFallbackUrl && (
+                      <a
+                        href={whatsappFallbackUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] transition shadow-xs"
+                      >
+                        <span>📲 Open WhatsApp for Code</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOtpCode(generatedOtp);
+                        setOtpError('');
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold text-[10px] transition"
+                    >
+                      <span>⚡ Auto-fill OTP ({generatedOtp})</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}

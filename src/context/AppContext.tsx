@@ -558,7 +558,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [lastPurchase, setLastPurchase] = useState<PurchaseDetails>({
     amount: 1000,
     reward: 150,
-    orderId: '#TV202509231234',
+    orderId: '#ZT202509231234',
     date: '23 Sep 2025, 09:45 AM',
     status: 'verified',
   });

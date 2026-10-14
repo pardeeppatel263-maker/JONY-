@@ -97,3 +97,5 @@ export const TaskVibeLogo: React.FC<TaskVibeLogoProps> = ({
     </div>
   );
 };
+
+export const ZoroTaskLogo = TaskVibeLogo;

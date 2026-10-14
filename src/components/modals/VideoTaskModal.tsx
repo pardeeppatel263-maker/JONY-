@@ -244,7 +244,7 @@ export const VideoTaskModal: React.FC = () => {
         <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
           <iframe
             ref={iframeRef}
-            id="taskvibe-yt-player"
+            id="zorotask-yt-player"
             className="w-full h-full border-0"
             src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&mute=0&rel=0&modestbranding=1&playsinline=1`}
             title={videoTitle}

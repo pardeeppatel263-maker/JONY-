@@ -850,7 +850,7 @@ export const AdminPanelScreen: React.FC = () => {
   // Download complete source code
   const handleDownloadSourceCode = () => {
     const a = document.createElement('a');
-    a.href = '/taskvibe-source-code.zip';
+    a.href = '/zorotask-source-code.zip';
     a.download = 'zorotask-source-code.zip';
     a.click();
     showToast('ZoroTask source code downloaded! 🚀');

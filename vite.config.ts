@@ -29,8 +29,8 @@ function whatsappOtpServerPlugin(): Plugin {
               otp = '',
               message = '',
               apiKey = '',
-              apiUrl = 'https://renflair.in/wp-otp.php',
-              method = 'POST',
+              apiUrl = 'https://whatsapp.renflair.in/V1.php',
+              method = 'GET',
               instanceId = '',
             } = payload;
 
@@ -41,11 +41,13 @@ function whatsappOtpServerPlugin(): Plugin {
             // Renflair WhatsApp OTP Handler
             // Spec: https://whatsapp.renflair.in/V1.php?API=$API&PHONE=$PHONE&OTP=$OTP&COUNTRY=$COUNTRY
             if (provider === 'renflair' || apiUrl.includes('renflair')) {
-              const renflairBase = (apiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
+              const renflairBase = 'https://whatsapp.renflair.in/V1.php';
               const country = '91';
               const otpCode = String(otp || '1234');
 
-              if (!apiKey) {
+              const keyToUse = (apiKey || '417d155c4d7937dc6555a13a71f09ec0').trim();
+
+              if (!keyToUse) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(
                   JSON.stringify({
@@ -60,7 +62,7 @@ function whatsappOtpServerPlugin(): Plugin {
 
               // Build URL: https://whatsapp.renflair.in/V1.php?API=$API&PHONE=$PHONE&OTP=$OTP&COUNTRY=$COUNTRY
               const baseUrl = renflairBase.split('?')[0];
-              const targetUrl = `${baseUrl}?API=${encodeURIComponent(apiKey.trim())}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(otpCode)}&COUNTRY=${encodeURIComponent(country)}`;
+              const targetUrl = `${baseUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(otpCode)}&COUNTRY=${encodeURIComponent(country)}`;
 
               try {
                 const apiRes = await fetch(targetUrl, { method: 'GET' });
@@ -73,6 +75,7 @@ function whatsappOtpServerPlugin(): Plugin {
                 }
 
                 const isSuccess =
+                  apiRes.ok ||
                   (respJson && (respJson.status === 'SUCCESS' || respJson.status === 'success' || respJson.status === 200 || respJson.success === true)) ||
                   (respText && (respText.includes('SUCCESS') || respText.includes('success') || respText.includes('"sent":true')));
 

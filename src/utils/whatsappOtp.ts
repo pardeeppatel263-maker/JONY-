@@ -35,7 +35,7 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
   const fallbackWaLink = `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(messageText)}`;
 
   const provider = adminSettings?.whatsappProvider || 'renflair';
-  const apiKey = (adminSettings?.renflairApiKey || adminSettings?.whatsappApiToken || '').trim();
+  const apiKey = (adminSettings?.renflairApiKey || adminSettings?.whatsappApiToken || '417d155c4d7937dc6555a13a71f09ec0').trim();
   const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
   const method = adminSettings?.renflairMethod || 'GET';
 

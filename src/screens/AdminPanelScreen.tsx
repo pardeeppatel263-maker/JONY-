@@ -359,7 +359,9 @@ export const AdminPanelScreen: React.FC = () => {
   const [whatsappProviderInput, setWhatsappProviderInput] = useState<
     'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'renflair' | 'custom' | 'direct'
   >(adminSettings.whatsappProvider || 'renflair');
-  const [renflairApiKeyInput, setRenflairApiKeyInput] = useState(adminSettings.renflairApiKey || adminSettings.whatsappApiToken || '');
+  const [renflairApiKeyInput, setRenflairApiKeyInput] = useState(
+    adminSettings.renflairApiKey || adminSettings.whatsappApiToken || '417d155c4d7937dc6555a13a71f09ec0'
+  );
   const [renflairApiUrlInput, setRenflairApiUrlInput] = useState(
     adminSettings.renflairApiUrl || 'https://whatsapp.renflair.in/V1.php'
   );

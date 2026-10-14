@@ -16,7 +16,10 @@ export const HomeAnnouncementModal: React.FC<HomeAnnouncementModalProps> = ({ is
   const message =
     adminSettings.announcementMessage ||
     'Welcome to the updated ZoroTask application! Complete your daily video tasks to earn real rewards.';
-  const tag = adminSettings.announcementTag || 'NEW UPDATE';
+  const tag =
+    adminSettings.announcementTag && adminSettings.announcementTag !== 'NEW UPDATE'
+      ? adminSettings.announcementTag
+      : 'NOTICE';
   const buttonText = adminSettings.announcementButtonText || 'Check VIP Plans ⭐';
   const action = adminSettings.announcementButtonAction || 'member_plans';
   const dateStr = adminSettings.announcementDate || new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });

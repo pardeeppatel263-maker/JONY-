@@ -226,7 +226,11 @@ export const AdminPanelScreen: React.FC = () => {
       'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!'
     ).replace(/TaskVibe/gi, 'ZoroTask')
   );
-  const [noticeTag, setNoticeTag] = useState(adminSettings.announcementTag || 'NEW UPDATE');
+  const [noticeTag, setNoticeTag] = useState(
+    adminSettings.announcementTag && adminSettings.announcementTag !== 'NEW UPDATE'
+      ? adminSettings.announcementTag
+      : 'NOTICE'
+  );
   const [noticeButtonText, setNoticeButtonText] = useState(adminSettings.announcementButtonText || 'Check VIP Plans ⭐');
   const [noticeButtonAction, setNoticeButtonAction] = useState<'member_plans' | 'referral_earn' | 'wallet' | 'none'>(
     adminSettings.announcementButtonAction || 'member_plans'
@@ -452,7 +456,7 @@ export const AdminPanelScreen: React.FC = () => {
       setNoticeMessage(adminSettings.announcementMessage);
     }
     if (adminSettings.announcementTag) {
-      setNoticeTag(adminSettings.announcementTag);
+      setNoticeTag(adminSettings.announcementTag === 'NEW UPDATE' ? 'NOTICE' : adminSettings.announcementTag);
     }
     if (adminSettings.announcementButtonText) {
       setNoticeButtonText(adminSettings.announcementButtonText);
@@ -2129,7 +2133,7 @@ export const AdminPanelScreen: React.FC = () => {
                       type="text"
                       value={noticeTag}
                       onChange={(e) => setNoticeTag(e.target.value)}
-                      placeholder="e.g. NEW UPDATE"
+                      placeholder="e.g. NOTICE"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400"
                     />
                   </div>
@@ -2210,7 +2214,7 @@ export const AdminPanelScreen: React.FC = () => {
                       </span>
                       <div>
                         <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-400 text-slate-950">
-                          {noticeTag || 'NEW UPDATE'}
+                          {noticeTag && noticeTag !== 'NEW UPDATE' ? noticeTag : 'NOTICE'}
                         </span>
                         <h4 className="text-xs font-black text-white mt-0.5 leading-snug line-clamp-1">
                           {noticeTitle || 'Announcement Title'}

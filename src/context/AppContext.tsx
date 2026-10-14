@@ -603,7 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     announcementEnabled: true,
     announcementTitle: '🎉 Welcome to ZoroTask 2.0 Update!',
     announcementMessage: 'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!',
-    announcementTag: 'NEW UPDATE',
+    announcementTag: 'NOTICE',
     announcementButtonText: 'Check VIP Plans ⭐',
     announcementButtonAction: 'member_plans',
     announcementDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -657,6 +657,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           adminMerchantName: (parsed.adminMerchantName || defaultAdminSettings.adminMerchantName || '').replace(/TaskVibe/gi, 'ZoroTask'),
           announcementTitle: (parsed.announcementTitle || defaultAdminSettings.announcementTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
           announcementMessage: (parsed.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
+          announcementTag: (parsed.announcementTag && parsed.announcementTag !== 'NEW UPDATE') ? parsed.announcementTag : 'NOTICE',
           youtubeVideoId: parsed.youtubeVideoId || defaultAdminSettings.youtubeVideoId,
           youtubeVideoUrls: parsed.youtubeVideoUrls || defaultAdminSettings.youtubeVideoUrls,
           youtubeVideoTitle: parsed.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle,
@@ -974,6 +975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               adminMerchantName: (cloudSettings.adminMerchantName || defaultAdminSettings.adminMerchantName || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementTitle: (cloudSettings.announcementTitle || defaultAdminSettings.announcementTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
+              announcementTag: (cloudSettings.announcementTag && cloudSettings.announcementTag !== 'NEW UPDATE') ? cloudSettings.announcementTag : 'NOTICE',
               youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
             };
             setAdminSettings((prev) => ({
@@ -2955,6 +2957,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             adminMerchantName: (cloudSettings.adminMerchantName || defaultAdminSettings.adminMerchantName || '').replace(/TaskVibe/gi, 'ZoroTask'),
             announcementTitle: (cloudSettings.announcementTitle || defaultAdminSettings.announcementTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
             announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
+            announcementTag: (cloudSettings.announcementTag && cloudSettings.announcementTag !== 'NEW UPDATE') ? cloudSettings.announcementTag : 'NOTICE',
             youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
           };
           setAdminSettings(merged);

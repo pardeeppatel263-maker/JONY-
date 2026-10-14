@@ -309,7 +309,7 @@ export const HomeScreen: React.FC = () => {
                   <Megaphone className="w-3.5 h-3.5" />
                 </span>
                 <span className="text-[9px] font-black uppercase tracking-wider bg-white/20 px-1.5 py-0.2 rounded text-amber-300 shrink-0">
-                  {adminSettings.announcementTag || 'NOTICE'}
+                  {(adminSettings.announcementTag && adminSettings.announcementTag !== 'NEW UPDATE') ? adminSettings.announcementTag : 'NOTICE'}
                 </span>
                 <span className="text-xs font-bold text-slate-200 truncate">
                   {adminSettings.announcementTitle || 'Check latest update'}

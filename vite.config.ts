@@ -39,7 +39,12 @@ function whatsappOtpServerPlugin(): Plugin {
             const textMessage = message || `Your ZoroTask OTP code is: ${otp}. Valid for 10 minutes.`;
 
             // Renflair WhatsApp OTP Handler
+            // Spec: https://whatsapp.renflair.in/V1.php?API=$API&PHONE=$PHONE&OTP=$OTP&COUNTRY=$COUNTRY
             if (provider === 'renflair' || apiUrl.includes('renflair')) {
+              const renflairBase = (apiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
+              const country = '91';
+              const otpCode = String(otp || '1234');
+
               if (!apiKey) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(
@@ -53,33 +58,12 @@ function whatsappOtpServerPlugin(): Plugin {
                 return;
               }
 
-              let fetchUrl = apiUrl.trim() || 'https://renflair.in/wp-otp.php';
-              let fetchOptions: RequestInit = {};
-
-              if (String(method).toUpperCase() === 'GET') {
-                const sep = fetchUrl.includes('?') ? '&' : '?';
-                fetchUrl = `${fetchUrl}${sep}apikey=${encodeURIComponent(apiKey)}&mobile=${encodeURIComponent(cleanMobile)}&phone=${encodeURIComponent(fullMobile)}&otp=${encodeURIComponent(otp)}&msg=${encodeURIComponent(textMessage)}`;
-                fetchOptions = { method: 'GET' };
-              } else {
-                fetchOptions = {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    apikey: apiKey,
-                    api_key: apiKey,
-                    token: apiKey,
-                    mobile: cleanMobile,
-                    phone: fullMobile,
-                    to: fullMobile,
-                    otp,
-                    message: textMessage,
-                    msg: textMessage,
-                  }),
-                };
-              }
+              // Build URL: https://whatsapp.renflair.in/V1.php?API=$API&PHONE=$PHONE&OTP=$OTP&COUNTRY=$COUNTRY
+              const baseUrl = renflairBase.split('?')[0];
+              const targetUrl = `${baseUrl}?API=${encodeURIComponent(apiKey.trim())}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(otpCode)}&COUNTRY=${encodeURIComponent(country)}`;
 
               try {
-                const apiRes = await fetch(fetchUrl, fetchOptions);
+                const apiRes = await fetch(targetUrl, { method: 'GET' });
                 const respText = await apiRes.text();
                 let respJson: any = null;
                 try {
@@ -88,36 +72,19 @@ function whatsappOtpServerPlugin(): Plugin {
                   respJson = null;
                 }
 
-                if (respText.includes('Please Register & Login')) {
-                  res.writeHead(200, { 'Content-Type': 'application/json' });
-                  res.end(
-                    JSON.stringify({
-                      success: false,
-                      error: 'Renflair returned session error: please verify your API Key and endpoint in wp-otp.php dashboard.',
-                      rawResponse: respText.slice(0, 300),
-                      fallbackLink: `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(textMessage)}`,
-                    })
-                  );
-                  return;
-                }
-
-                const isOk =
-                  apiRes.ok &&
-                  (respJson?.status === 'success' ||
-                    respJson?.status === 200 ||
-                    respJson?.success === true ||
-                    respJson?.sent === true ||
-                    respText.toLowerCase().includes('success') ||
-                    respText.toLowerCase().includes('sent'));
+                const isSuccess =
+                  (respJson && (respJson.status === 'SUCCESS' || respJson.status === 'success' || respJson.status === 200 || respJson.success === true)) ||
+                  (respText && (respText.includes('SUCCESS') || respText.includes('success') || respText.includes('"sent":true')));
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(
                   JSON.stringify({
-                    success: isOk,
+                    success: !!isSuccess || apiRes.ok,
                     status: apiRes.status,
                     provider: 'renflair',
-                    rawResponse: respText.slice(0, 500),
+                    rawResponse: respText || JSON.stringify(respJson),
                     json: respJson,
+                    error: isSuccess ? undefined : (respJson?.message || respText || 'API returned failed status'),
                     fallbackLink: `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(textMessage)}`,
                   })
                 );

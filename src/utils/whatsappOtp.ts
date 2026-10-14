@@ -36,8 +36,8 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
 
   const provider = adminSettings?.whatsappProvider || 'renflair';
   const apiKey = (adminSettings?.renflairApiKey || adminSettings?.whatsappApiToken || '').trim();
-  const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://renflair.in/wp-otp.php').trim();
-  const method = adminSettings?.renflairMethod || 'POST';
+  const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
+  const method = adminSettings?.renflairMethod || 'GET';
 
   try {
     // Call server-side API proxy (bypasses browser CORS)

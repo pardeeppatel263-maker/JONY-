@@ -361,17 +361,17 @@ export const AdminPanelScreen: React.FC = () => {
   >(adminSettings.whatsappProvider || 'renflair');
   const [renflairApiKeyInput, setRenflairApiKeyInput] = useState(adminSettings.renflairApiKey || adminSettings.whatsappApiToken || '');
   const [renflairApiUrlInput, setRenflairApiUrlInput] = useState(
-    adminSettings.renflairApiUrl || 'https://renflair.in/wp-otp.php'
+    adminSettings.renflairApiUrl || 'https://whatsapp.renflair.in/V1.php'
   );
   const [renflairMethodInput, setRenflairMethodInput] = useState<'POST' | 'GET'>(
-    adminSettings.renflairMethod || 'POST'
+    adminSettings.renflairMethod || 'GET'
   );
   const [whatsappApiTokenInput, setWhatsappApiTokenInput] = useState(adminSettings.whatsappApiToken || '');
   const [whatsappInstanceIdInput, setWhatsappInstanceIdInput] = useState(adminSettings.whatsappInstanceId || '');
   const [whatsappPhoneNumberIdInput, setWhatsappPhoneNumberIdInput] = useState(adminSettings.whatsappPhoneNumberId || '');
   const [whatsappWabaIdInput, setWhatsappWabaIdInput] = useState(adminSettings.whatsappWabaId || '');
   const [whatsappApiUrlInput, setWhatsappApiUrlInput] = useState(
-    adminSettings.whatsappApiUrl || 'https://renflair.in/wp-otp.php'
+    adminSettings.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php'
   );
   const [whatsappSupportNumberInput, setWhatsappSupportNumberInput] = useState(
     adminSettings.whatsappSupportNumber || adminSettings.supportWhatsapp || '+91 9876543210'
@@ -767,13 +767,13 @@ export const AdminPanelScreen: React.FC = () => {
       whatsappApiEnabled: whatsappApiEnabledInput,
       whatsappProvider: whatsappProviderInput,
       renflairApiKey: renflairApiKeyInput.trim(),
-      renflairApiUrl: renflairApiUrlInput.trim() || 'https://renflair.in/wp-otp.php',
+      renflairApiUrl: renflairApiUrlInput.trim() || 'https://whatsapp.renflair.in/V1.php',
       renflairMethod: renflairMethodInput,
       whatsappApiToken: renflairApiKeyInput.trim() || whatsappApiTokenInput.trim(),
       whatsappInstanceId: whatsappInstanceIdInput.trim(),
       whatsappPhoneNumberId: whatsappPhoneNumberIdInput.trim(),
       whatsappWabaId: whatsappWabaIdInput.trim(),
-      whatsappApiUrl: renflairApiUrlInput.trim() || whatsappApiUrlInput.trim() || 'https://renflair.in/wp-otp.php',
+      whatsappApiUrl: renflairApiUrlInput.trim() || whatsappApiUrlInput.trim() || 'https://whatsapp.renflair.in/V1.php',
       whatsappSupportNumber: whatsappSupportNumberInput.trim(),
       supportWhatsapp: whatsappSupportNumberInput.trim(),
       whatsappAutoWelcome: whatsappAutoWelcomeInput,
@@ -3459,11 +3459,11 @@ export const AdminPanelScreen: React.FC = () => {
                             setRenflairApiUrlInput(e.target.value);
                             setWhatsappApiUrlInput(e.target.value);
                           }}
-                          placeholder="https://renflair.in/wp-otp.php"
+                          placeholder="https://whatsapp.renflair.in/V1.php"
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
                         />
                         <span className="text-[9px] text-slate-400">
-                          Default is https://renflair.in/wp-otp.php (or your designated API URL).
+                          Official endpoint: <code className="text-emerald-400">https://whatsapp.renflair.in/V1.php</code>
                         </span>
                       </div>
 
@@ -3476,11 +3476,11 @@ export const AdminPanelScreen: React.FC = () => {
                           onChange={(e) => setRenflairMethodInput(e.target.value as 'POST' | 'GET')}
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
                         >
+                          <option value="GET">GET (Query Parameters: API, PHONE, OTP, COUNTRY)</option>
                           <option value="POST">POST (JSON / Body Payload)</option>
-                          <option value="GET">GET (URL Query Parameters)</option>
                         </select>
                         <span className="text-[9px] text-slate-400">
-                          Default is POST. Select GET if your Renflair docs indicate GET parameters.
+                          Renflair V1.php uses <strong className="text-emerald-400">GET</strong> method.
                         </span>
                       </div>
                     </div>

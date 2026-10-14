@@ -80,8 +80,8 @@ export const RegisterScreen: React.FC = () => {
       return;
     }
 
-    // Generate random 6-digit OTP
-    const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate random 4-digit OTP matching Renflair spec
+    const randomOtp = Math.floor(1000 + Math.random() * 9000).toString();
     setGeneratedOtp(randomOtp);
     setOtpSent(true);
     setResendTimer(30);
@@ -89,7 +89,7 @@ export const RegisterScreen: React.FC = () => {
 
     if (channel === 'whatsapp') {
       const activeProvider = adminSettings?.whatsappProvider || 'renflair';
-      const providerLabel = activeProvider === 'renflair' ? 'Renflair (wp-otp)' : activeProvider.toUpperCase();
+      const providerLabel = activeProvider === 'renflair' ? 'Renflair' : activeProvider.toUpperCase();
       showToast(`Sending WhatsApp OTP via ${providerLabel}...`);
 
       sendWhatsAppOtp({
@@ -122,15 +122,16 @@ export const RegisterScreen: React.FC = () => {
 
   const handleVerifyOtp = () => {
     if (!otpCode || otpCode.trim().length < 4) {
-      setOtpError('Please enter a valid OTP code');
+      setOtpError('Please enter a valid 4-digit OTP code');
       return;
     }
 
-    // Accept generated OTP or 123456 or any 6-digit entered by user
+    // Accept generated OTP or 1234 or 123456 or valid 4-6 digit code
     if (
       otpCode.trim() === generatedOtp ||
+      otpCode.trim() === '1234' ||
       otpCode.trim() === '123456' ||
-      otpCode.trim().length === 6
+      otpCode.trim().length >= 4
     ) {
       setIsMobileVerified(true);
       setOtpError('');
@@ -392,7 +393,7 @@ export const RegisterScreen: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-emerald-950 flex items-center gap-1.5">
                   <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-                  Enter 6-Digit OTP received on WhatsApp
+                  Enter OTP received on WhatsApp
                 </span>
                 {resendTimer > 0 ? (
                   <span className="text-[10px] text-slate-500 font-medium">
@@ -419,7 +420,7 @@ export const RegisterScreen: React.FC = () => {
                   maxLength={6}
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter 6-digit OTP"
+                  placeholder="Enter OTP (e.g. 1234)"
                   className="flex-1 py-2.5 px-3 text-center tracking-widest font-mono font-bold text-sm bg-white rounded-xl border border-slate-300 outline-none focus:border-emerald-500 shadow-inner"
                   autoFocus
                 />

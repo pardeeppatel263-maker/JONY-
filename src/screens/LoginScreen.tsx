@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { TaskVibeLogo } from '../components/TaskVibeLogo';
 import { downloadApkToDevice } from '../utils/apkDownloader';
+import { sendWhatsAppOtp } from '../utils/whatsappOtp';
 import {
   Lock,
   Eye,
@@ -131,31 +132,28 @@ export const LoginScreen: React.FC = () => {
       setWhatsappFallbackLink(waUrl);
 
       if (channel === 'whatsapp') {
-        const instId = adminSettings?.whatsappInstanceId?.trim() || 'instance192672';
-        const token = adminSettings?.whatsappApiToken?.trim() || 'zwsvwyr1pqa8ztxa';
+        const activeProvider = adminSettings?.whatsappProvider || 'renflair';
+        showToast(`Sending WhatsApp OTP via ${activeProvider === 'renflair' ? 'Renflair' : activeProvider.toUpperCase()}...`);
 
-        showToast(`Sending WhatsApp OTP to +91 ${cleanMobile}...`);
-
-        fetch(`https://api.ultramsg.com/${instId}/messages/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            token: token,
-            to: `91${cleanMobile}`,
-            body: messageBody,
-          }),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (data?.sent === 'true' || data?.id) {
-              showToast(`✓ WhatsApp OTP sent to +91 ${cleanMobile}!`);
-            } else {
-              showToast(`WhatsApp OTP generated for +91 ${cleanMobile}!`);
-            }
-          })
-          .catch(() => {
-            showToast(`WhatsApp OTP ready for +91 ${cleanMobile}!`);
+        try {
+          const res = await sendWhatsAppOtp({
+            mobile: cleanMobile,
+            otp: randomOtp,
+            purpose: 'forgot_password',
+            adminSettings,
           });
+
+          if (res.success) {
+            showToast(`✓ WhatsApp OTP delivered to +91 ${cleanMobile}!`);
+          } else {
+            showToast(res.message);
+            if (res.fallbackLink) {
+              setWhatsappFallbackLink(res.fallbackLink);
+            }
+          }
+        } catch {
+          showToast(`WhatsApp OTP ready for +91 ${cleanMobile}!`);
+        }
       } else {
         showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
       }

@@ -36,7 +36,7 @@ export interface AdminSettings {
   supportTelegram?: string;
   // WhatsApp API Gateway Settings
   whatsappApiEnabled?: boolean;
-  whatsappProvider?: 'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'custom' | 'direct';
+  whatsappProvider?: 'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'renflair' | 'custom' | 'direct';
   whatsappApiToken?: string;
   whatsappInstanceId?: string;
   whatsappPhoneNumberId?: string;
@@ -47,6 +47,11 @@ export interface AdminSettings {
   whatsappAutoDepositNotify?: boolean;
   whatsappAutoWithdrawNotify?: boolean;
   whatsappWelcomeMessage?: string;
+  // Renflair WhatsApp OTP specific
+  renflairApiKey?: string;
+  renflairApiUrl?: string;
+  renflairMethod?: 'GET' | 'POST';
+  renflairSenderId?: string;
   announcementEnabled?: boolean;
   announcementTitle?: string;
   announcementMessage?: string;

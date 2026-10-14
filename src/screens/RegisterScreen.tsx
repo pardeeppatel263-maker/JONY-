@@ -20,6 +20,7 @@ import {
   Download,
 } from 'lucide-react';
 import { downloadApkToDevice } from '../utils/apkDownloader';
+import { sendWhatsAppOtp } from '../utils/whatsappOtp';
 
 export const RegisterScreen: React.FC = () => {
   const {
@@ -87,40 +88,32 @@ export const RegisterScreen: React.FC = () => {
     setOtpError('');
 
     if (channel === 'whatsapp') {
-      const messageBody = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
+      const activeProvider = adminSettings?.whatsappProvider || 'renflair';
+      const providerLabel = activeProvider === 'renflair' ? 'Renflair (wp-otp)' : activeProvider.toUpperCase();
+      showToast(`Sending WhatsApp OTP via ${providerLabel}...`);
 
-      const instId = adminSettings?.whatsappInstanceId?.trim() || 'instance192672';
-      const token = adminSettings?.whatsappApiToken?.trim() || 'zwsvwyr1pqa8ztxa';
-
-      showToast(`Sending WhatsApp OTP to +91 ${cleanMobile}...`);
-
-      // Send via UltraMsg official endpoint
-      fetch(`https://api.ultramsg.com/${instId}/messages/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          token: token,
-          to: `91${cleanMobile}`,
-          body: messageBody,
-        }),
+      sendWhatsAppOtp({
+        mobile: cleanMobile,
+        otp: randomOtp,
+        purpose: 'register',
+        adminSettings,
       })
-        .then((res) => res.json())
-        .then((data) => {
-          console.log('UltraMsg response:', data);
-          if (data?.sent === 'true' || data?.id) {
-            showToast(`✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`);
-          } else if (data?.error) {
-            console.warn('UltraMsg Gateway returned error:', data.error);
-            showToast(`API: ${data.error}. Opening WhatsApp directly...`);
-            window.open(`https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageBody)}`, '_blank');
+        .then((result) => {
+          if (result.success) {
+            showToast(`✓ WhatsApp OTP delivered to +91 ${cleanMobile}!`);
           } else {
-            showToast(`WhatsApp OTP sent to +91 ${cleanMobile}!`);
+            console.warn('WhatsApp API response:', result);
+            showToast(`${result.message}`);
+            if (result.fallbackLink) {
+              window.open(result.fallbackLink, '_blank');
+            }
           }
         })
         .catch((err) => {
-          console.warn('Network/CORS error calling WhatsApp API:', err);
-          window.open(`https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageBody)}`, '_blank');
-          showToast(`Opening WhatsApp to receive OTP`);
+          console.warn('Network error calling WhatsApp API:', err);
+          const fallbackMsg = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes.`;
+          window.open(`https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(fallbackMsg)}`, '_blank');
+          showToast(`Opening WhatsApp to receive verification code`);
         });
     } else {
       showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);

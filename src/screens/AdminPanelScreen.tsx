@@ -65,6 +65,7 @@ import {
   downloadZoroTaskBrandBannerHD,
 } from '../utils/logoDownloader';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
+import { sendWhatsAppOtp } from '../utils/whatsappOtp';
 
 export const AdminPanelScreen: React.FC = () => {
   const {
@@ -354,16 +355,23 @@ export const AdminPanelScreen: React.FC = () => {
   const [isCreatingPromo, setIsCreatingPromo] = useState(false);
 
   // WhatsApp API Gateway State
-  const [whatsappApiEnabledInput, setWhatsappApiEnabledInput] = useState(adminSettings.whatsappApiEnabled ?? false);
+  const [whatsappApiEnabledInput, setWhatsappApiEnabledInput] = useState(adminSettings.whatsappApiEnabled ?? true);
   const [whatsappProviderInput, setWhatsappProviderInput] = useState<
-    'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'custom' | 'direct'
-  >(adminSettings.whatsappProvider || 'meta_cloud');
+    'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'renflair' | 'custom' | 'direct'
+  >(adminSettings.whatsappProvider || 'renflair');
+  const [renflairApiKeyInput, setRenflairApiKeyInput] = useState(adminSettings.renflairApiKey || adminSettings.whatsappApiToken || '');
+  const [renflairApiUrlInput, setRenflairApiUrlInput] = useState(
+    adminSettings.renflairApiUrl || 'https://renflair.in/wp-otp.php'
+  );
+  const [renflairMethodInput, setRenflairMethodInput] = useState<'POST' | 'GET'>(
+    adminSettings.renflairMethod || 'POST'
+  );
   const [whatsappApiTokenInput, setWhatsappApiTokenInput] = useState(adminSettings.whatsappApiToken || '');
   const [whatsappInstanceIdInput, setWhatsappInstanceIdInput] = useState(adminSettings.whatsappInstanceId || '');
   const [whatsappPhoneNumberIdInput, setWhatsappPhoneNumberIdInput] = useState(adminSettings.whatsappPhoneNumberId || '');
   const [whatsappWabaIdInput, setWhatsappWabaIdInput] = useState(adminSettings.whatsappWabaId || '');
   const [whatsappApiUrlInput, setWhatsappApiUrlInput] = useState(
-    adminSettings.whatsappApiUrl || 'https://graph.facebook.com/v21.0'
+    adminSettings.whatsappApiUrl || 'https://renflair.in/wp-otp.php'
   );
   const [whatsappSupportNumberInput, setWhatsappSupportNumberInput] = useState(
     adminSettings.whatsappSupportNumber || adminSettings.supportWhatsapp || '+91 9876543210'
@@ -455,6 +463,9 @@ export const AdminPanelScreen: React.FC = () => {
     }
     if (adminSettings.whatsappApiEnabled !== undefined) setWhatsappApiEnabledInput(adminSettings.whatsappApiEnabled);
     if (adminSettings.whatsappProvider) setWhatsappProviderInput(adminSettings.whatsappProvider);
+    if (adminSettings.renflairApiKey) setRenflairApiKeyInput(adminSettings.renflairApiKey);
+    if (adminSettings.renflairApiUrl) setRenflairApiUrlInput(adminSettings.renflairApiUrl);
+    if (adminSettings.renflairMethod) setRenflairMethodInput(adminSettings.renflairMethod);
     if (adminSettings.whatsappApiToken) setWhatsappApiTokenInput(adminSettings.whatsappApiToken);
     if (adminSettings.whatsappInstanceId) setWhatsappInstanceIdInput(adminSettings.whatsappInstanceId);
     if (adminSettings.whatsappPhoneNumberId) setWhatsappPhoneNumberIdInput(adminSettings.whatsappPhoneNumberId);
@@ -755,11 +766,14 @@ export const AdminPanelScreen: React.FC = () => {
     const updates = {
       whatsappApiEnabled: whatsappApiEnabledInput,
       whatsappProvider: whatsappProviderInput,
-      whatsappApiToken: whatsappApiTokenInput.trim(),
+      renflairApiKey: renflairApiKeyInput.trim(),
+      renflairApiUrl: renflairApiUrlInput.trim() || 'https://renflair.in/wp-otp.php',
+      renflairMethod: renflairMethodInput,
+      whatsappApiToken: renflairApiKeyInput.trim() || whatsappApiTokenInput.trim(),
       whatsappInstanceId: whatsappInstanceIdInput.trim(),
       whatsappPhoneNumberId: whatsappPhoneNumberIdInput.trim(),
       whatsappWabaId: whatsappWabaIdInput.trim(),
-      whatsappApiUrl: whatsappApiUrlInput.trim() || 'https://graph.facebook.com/v21.0',
+      whatsappApiUrl: renflairApiUrlInput.trim() || whatsappApiUrlInput.trim() || 'https://renflair.in/wp-otp.php',
       whatsappSupportNumber: whatsappSupportNumberInput.trim(),
       supportWhatsapp: whatsappSupportNumberInput.trim(),
       whatsappAutoWelcome: whatsappAutoWelcomeInput,
@@ -768,26 +782,51 @@ export const AdminPanelScreen: React.FC = () => {
       whatsappWelcomeMessage: whatsappWelcomeMessageInput.trim(),
     };
     await updateAdminSettings(updates);
-    showToast('✓ WhatsApp API Settings saved & synchronized to Cloud!');
+    showToast('✓ WhatsApp API & Renflair Gateway Settings saved to Cloud!');
   };
 
   // Test WhatsApp API Message Sender
-  const handleSendTestWhatsApp = () => {
+  const handleSendTestWhatsApp = async () => {
     const cleanPhone = whatsappTestPhone.replace(/[^0-9]/g, '');
     if (!cleanPhone || cleanPhone.length < 10) {
       showToast('❌ Please enter a valid 10-digit mobile number with country code (e.g. +91 9876543210)');
       return;
     }
     setWhatsappTestSending(true);
-    setTimeout(() => {
+    setWhatsappTestResult(null);
+
+    try {
+      const res = await sendWhatsAppOtp({
+        mobile: cleanPhone,
+        otp: '852963',
+        purpose: 'test',
+        adminSettings: {
+          ...adminSettings,
+          whatsappProvider: whatsappProviderInput,
+          renflairApiKey: renflairApiKeyInput.trim(),
+          renflairApiUrl: renflairApiUrlInput.trim(),
+          renflairMethod: renflairMethodInput,
+          whatsappApiToken: renflairApiKeyInput.trim() || whatsappApiTokenInput.trim(),
+          whatsappInstanceId: whatsappInstanceIdInput.trim(),
+        },
+      });
+
+      if (res.success) {
+        setWhatsappTestResult(`✓ Delivered successfully via ${whatsappProviderInput.toUpperCase()}! Response: ${JSON.stringify(res.rawResponse || '200 OK')}`);
+        showToast('✓ WhatsApp message delivered successfully!');
+      } else {
+        setWhatsappTestResult(`Notice / Response from Gateway: ${res.message || JSON.stringify(res.rawResponse || {})}`);
+        showToast(`Notice: ${res.message}`);
+        if (res.fallbackLink) {
+          window.open(res.fallbackLink, '_blank');
+        }
+      }
+    } catch (err: any) {
+      setWhatsappTestResult(`Error: ${err.message}`);
+      showToast(`Error sending test: ${err.message}`);
+    } finally {
       setWhatsappTestSending(false);
-      setWhatsappTestResult(
-        `✓ [${whatsappProviderInput.toUpperCase()}] Request simulated for +${cleanPhone}. Status: 200 OK. Opening WhatsApp...`
-      );
-      showToast('✓ Simulated WhatsApp API call! Opening direct chat...');
-      const encoded = encodeURIComponent(whatsappTestMsg);
-      window.open(`https://wa.me/${cleanPhone}?text=${encoded}`, '_blank');
-    }, 500);
+    }
   };
 
   // Handle Custom QR Code Image Upload (Auto-saves to Cloud immediately!)
@@ -3250,13 +3289,20 @@ export const AdminPanelScreen: React.FC = () => {
                 <label className="text-xs font-bold text-slate-300 block">
                   Select WhatsApp Integration Method / Provider
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
                   {[
+                    {
+                      id: 'renflair',
+                      name: 'Renflair WP-OTP',
+                      tag: 'renflair.in/wp-otp.php',
+                      badge: '0.12p / OTP',
+                      desc: 'Direct WhatsApp OTP gateway from renflair.in/wp-otp.php. Enter your Renflair API Key to deliver instant OTPs.',
+                    },
                     {
                       id: 'meta_cloud',
                       name: 'Meta Cloud API',
                       tag: 'Official WhatsApp Business',
-                      badge: 'RECOMMENDED',
+                      badge: 'OFFICIAL',
                       desc: 'Direct integration with Meta Graph API v21.0 using Phone Number ID & Access Token.',
                     },
                     {
@@ -3315,104 +3361,204 @@ export const AdminPanelScreen: React.FC = () => {
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-4">
                 <h3 className="text-xs font-bold text-white flex items-center gap-2">
                   <Key className="w-4 h-4 text-emerald-400" />
-                  <span>API Credentials &amp; Endpoint Parameters</span>
+                  <span>API Credentials &amp; Endpoint Parameters ({whatsappProviderInput.toUpperCase()})</span>
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {/* Support WhatsApp Number */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-300">
-                      Official Support Mobile Number *
-                    </label>
-                    <input
-                      type="text"
-                      value={whatsappSupportNumberInput}
-                      onChange={(e) => setWhatsappSupportNumberInput(e.target.value)}
-                      placeholder="+91 9876543210"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
-                    />
-                    <span className="text-[9px] text-slate-400">
-                      Include country code (e.g. +91 for India). Used across user help center &amp; maintenance screen.
-                    </span>
-                  </div>
-
-                  {/* Instance ID or Phone Number ID */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-300">
-                      {whatsappProviderInput === 'meta_cloud'
-                        ? 'WhatsApp Phone Number ID *'
-                        : 'Instance ID / Account ID *'}
-                    </label>
-                    <input
-                      type="text"
-                      value={
-                        whatsappProviderInput === 'meta_cloud'
-                          ? whatsappPhoneNumberIdInput
-                          : whatsappInstanceIdInput
-                      }
-                      onChange={(e) => {
-                        if (whatsappProviderInput === 'meta_cloud') {
-                          setWhatsappPhoneNumberIdInput(e.target.value);
-                        } else {
-                          setWhatsappInstanceIdInput(e.target.value);
-                        }
-                      }}
-                      placeholder={
-                        whatsappProviderInput === 'meta_cloud'
-                          ? 'e.g. 104829104812398'
-                          : 'e.g. instance192842'
-                      }
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
-                    />
-                    <span className="text-[9px] text-slate-400">
-                      Found in Meta App Dashboard or your Instance Gateway provider panel.
-                    </span>
-                  </div>
-
-                  {/* Token / Bearer Key */}
-                  <div className="space-y-1 sm:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-300">
-                        API Access Token / Bearer Key
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowWhatsappToken(!showWhatsappToken)}
-                        className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
-                      >
-                        {showWhatsappToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                        <span>{showWhatsappToken ? 'Hide' : 'Show'}</span>
-                      </button>
-                    </div>
-                    <input
-                      type={showWhatsappToken ? 'text' : 'password'}
-                      value={whatsappApiTokenInput}
-                      onChange={(e) => setWhatsappApiTokenInput(e.target.value)}
-                      placeholder="e.g. EAAGm0PX4ZB7... or instance-token-string"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
-                    />
-                    <span className="text-[9px] text-slate-400">
-                      Permanent system user access token for Meta Cloud API or Secret Key for Gateway API.
-                    </span>
-                  </div>
-
-                  {/* Endpoint Base URL */}
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-[11px] font-bold text-slate-300">
-                      API Gateway Endpoint URL
-                    </label>
-                    <input
-                      type="text"
-                      value={whatsappApiUrlInput}
-                      onChange={(e) => setWhatsappApiUrlInput(e.target.value)}
-                      placeholder="https://graph.facebook.com/v21.0"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
-                    />
-                    <span className="text-[9px] text-slate-400">
-                      Default: https://graph.facebook.com/v21.0 or your custom instance webhook server URL.
-                    </span>
-                  </div>
+                {/* Support WhatsApp Number */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-300">
+                    Official Support Mobile Number *
+                  </label>
+                  <input
+                    type="text"
+                    value={whatsappSupportNumberInput}
+                    onChange={(e) => setWhatsappSupportNumberInput(e.target.value)}
+                    placeholder="+91 9876543210"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
+                  />
+                  <span className="text-[9px] text-slate-400">
+                    Include country code (e.g. +91 for India). Used across user help center &amp; maintenance screen.
+                  </span>
                 </div>
+
+                {/* Renflair Configuration Section */}
+                {whatsappProviderInput === 'renflair' && (
+                  <div className="p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-2xl space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            Renflair Codes Integration (wp-otp.php)
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-white mt-1">Renflair WhatsApp OTP Gateway Setup</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Follow these simple instructions to link your Renflair account:
+                        </p>
+                      </div>
+                      <a
+                        href="https://renflair.in/wp-otp.php"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition shrink-0 shadow-xs cursor-pointer"
+                      >
+                        <span>Open Renflair wp-otp.php</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+
+                    <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1.5">
+                      <p className="font-semibold text-emerald-400">📋 Renflair Setup Guide:</p>
+                      <ol className="list-decimal pl-4 space-y-1 text-slate-400">
+                        <li>Visit <strong className="text-slate-200">https://renflair.in/wp-otp.php</strong> and sign in to your Renflair dashboard.</li>
+                        <li>Copy your assigned <strong className="text-slate-200">API Key / Token</strong> from your Renflair panel.</li>
+                        <li>Paste your key in the <strong className="text-emerald-400">Renflair API Key</strong> field below.</li>
+                        <li>Select method (<strong className="text-slate-200">POST</strong> or <strong className="text-slate-200">GET</strong>) and click <strong className="text-emerald-400">"Save &amp; Synchronize"</strong>.</li>
+                        <li>Test sending an OTP instantly with the Live Sandbox below!</li>
+                      </ol>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div className="space-y-1 sm:col-span-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-slate-300">
+                            Renflair API Key / Secret Token *
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowWhatsappToken(!showWhatsappToken)}
+                            className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
+                          >
+                            {showWhatsappToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            <span>{showWhatsappToken ? 'Hide' : 'Show'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type={showWhatsappToken ? 'text' : 'password'}
+                          value={renflairApiKeyInput}
+                          onChange={(e) => {
+                            setRenflairApiKeyInput(e.target.value);
+                            setWhatsappApiTokenInput(e.target.value);
+                          }}
+                          placeholder="Paste your API Key from renflair.in/wp-otp.php"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
+                        />
+                        <span className="text-[9px] text-slate-400">
+                          Your secret API key from renflair.in/wp-otp.php. Required to authenticate outgoing OTP requests.
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-300">
+                          Renflair API Endpoint URL
+                        </label>
+                        <input
+                          type="text"
+                          value={renflairApiUrlInput}
+                          onChange={(e) => {
+                            setRenflairApiUrlInput(e.target.value);
+                            setWhatsappApiUrlInput(e.target.value);
+                          }}
+                          placeholder="https://renflair.in/wp-otp.php"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
+                        />
+                        <span className="text-[9px] text-slate-400">
+                          Default is https://renflair.in/wp-otp.php (or your designated API URL).
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-300">
+                          HTTP Request Method
+                        </label>
+                        <select
+                          value={renflairMethodInput}
+                          onChange={(e) => setRenflairMethodInput(e.target.value as 'POST' | 'GET')}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
+                        >
+                          <option value="POST">POST (JSON / Body Payload)</option>
+                          <option value="GET">GET (URL Query Parameters)</option>
+                        </select>
+                        <span className="text-[9px] text-slate-400">
+                          Default is POST. Select GET if your Renflair docs indicate GET parameters.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other Provider Fields */}
+                {whatsappProviderInput !== 'renflair' && whatsappProviderInput !== 'direct' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Instance ID or Phone Number ID */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-300">
+                        {whatsappProviderInput === 'meta_cloud'
+                          ? 'WhatsApp Phone Number ID *'
+                          : 'Instance ID / Account ID *'}
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          whatsappProviderInput === 'meta_cloud'
+                            ? whatsappPhoneNumberIdInput
+                            : whatsappInstanceIdInput
+                        }
+                        onChange={(e) => {
+                          if (whatsappProviderInput === 'meta_cloud') {
+                            setWhatsappPhoneNumberIdInput(e.target.value);
+                          } else {
+                            setWhatsappInstanceIdInput(e.target.value);
+                          }
+                        }}
+                        placeholder={
+                          whatsappProviderInput === 'meta_cloud'
+                            ? 'e.g. 104829104812398'
+                            : 'e.g. instance192842'
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
+                      />
+                    </div>
+
+                    {/* Token / Bearer Key */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-300">
+                          API Access Token / Bearer Key
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowWhatsappToken(!showWhatsappToken)}
+                          className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
+                        >
+                          {showWhatsappToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showWhatsappToken ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showWhatsappToken ? 'text' : 'password'}
+                        value={whatsappApiTokenInput}
+                        onChange={(e) => setWhatsappApiTokenInput(e.target.value)}
+                        placeholder="e.g. EAAGm0PX4ZB7... or instance-token-string"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
+                      />
+                    </div>
+
+                    {/* Endpoint Base URL */}
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-300">
+                        API Gateway Endpoint URL
+                      </label>
+                      <input
+                        type="text"
+                        value={whatsappApiUrlInput}
+                        onChange={(e) => setWhatsappApiUrlInput(e.target.value)}
+                        placeholder="https://graph.facebook.com/v21.0"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Automated Notification Triggers */}

@@ -26,6 +26,7 @@ export const PlanDetailScreen: React.FC = () => {
     buyPlanWithUPI,
     showToast,
     navigate,
+    isFreeTrialActive,
   } = useApp();
   const plan = selectedPlan || plans[1] || plans[0];
   const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'upi'>('wallet');
@@ -392,6 +393,26 @@ export const PlanDetailScreen: React.FC = () => {
                 className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs active:scale-98 transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span>Check Status in Records</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : plan.level === 0 && !isFreeTrialActive ? (
+            <div className="space-y-2.5 bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-rose-200 text-rose-900 rounded-full font-black text-xs">
+                <AlertCircle className="w-4 h-4 text-rose-700" />
+                <span>2-Day Free Trial Expired</span>
+              </div>
+              <h4 className="text-sm font-bold text-slate-900">
+                Free Starter Quota Completed
+              </h4>
+              <p className="text-xs text-rose-800 leading-relaxed font-medium">
+                Aapka 2 din ka Free Starter trial samapt ho chuka hai. Daily video tasks continue karne ke liye VIP plan activate karein.
+              </p>
+              <button
+                onClick={() => navigate('member_plans')}
+                className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 text-white font-bold text-xs rounded-xl shadow-xs active:scale-98 transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Browse VIP Plans</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "ZoroTask - Task & Reward App",
+  "description": "ZoroTask is a daily tasks, surveys, VIP membership plans, UPI wallet, and referral reward platform.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

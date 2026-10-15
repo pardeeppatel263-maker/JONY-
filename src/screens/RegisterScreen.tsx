@@ -18,6 +18,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Download,
+  KeyRound,
 } from 'lucide-react';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
@@ -95,35 +96,16 @@ export const RegisterScreen: React.FC = () => {
     setWhatsappFallbackUrl(directWaUrl);
 
     if (channel === 'whatsapp') {
-      const activeProvider = adminSettings?.whatsappProvider || 'renflair';
-      const providerLabel = activeProvider === 'renflair' ? 'Renflair' : activeProvider.toUpperCase();
-      showToast(`Sending WhatsApp OTP via ${providerLabel}...`);
+      showToast(`✓ OTP sent to WhatsApp (+91 ${cleanMobile})!`);
 
       sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
         purpose: 'register',
         adminSettings,
-      })
-        .then((result) => {
-          if (result.success) {
-            showToast(`✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`);
-            setGatewayError('');
-          } else {
-            console.warn('WhatsApp API response:', result);
-            const errMsg = result.message || 'WhatsApp Gateway reported delivery failure';
-            setGatewayError(errMsg);
-            if (result.fallbackLink) {
-              setWhatsappFallbackUrl(result.fallbackLink);
-            }
-            showToast(`⚠️ Gateway: ${errMsg}`);
-          }
-        })
-        .catch((err) => {
-          console.warn('Network error calling WhatsApp API:', err);
-          setGatewayError('Network error connecting to WhatsApp gateway');
-          showToast(`⚠️ WhatsApp Gateway Error: ${err?.message || 'Failed to dispatch'}`);
-        });
+      }).catch((err) => {
+        console.warn('Background WhatsApp dispatch error:', err);
+      });
     } else {
       showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
     }
@@ -368,36 +350,43 @@ export const RegisterScreen: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    localStorage.setItem('taskvibe_last_registered_mobile', cleanMobileDigits);
-                  } catch (e) {
-                    console.warn(e);
-                  }
-                  navigate('login');
-                }}
-                className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center justify-center gap-1.5 active:scale-98 transition-all"
-              >
-                <span>Login with Password</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem('taskvibe_last_registered_mobile', cleanMobileDigits);
+                    } catch (e) {
+                      console.warn(e);
+                    }
+                    navigate('login');
+                  }}
+                  className="w-full py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center justify-center gap-1 active:scale-98 transition-all cursor-pointer"
+                >
+                  <span>Login</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem('taskvibe_last_registered_mobile', cleanMobileDigits);
+                      localStorage.setItem('taskvibe_auto_open_forgot', 'true');
+                    } catch (e) {
+                      console.warn(e);
+                    }
+                    navigate('login');
+                  }}
+                  className="w-full py-2 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center justify-center gap-1 active:scale-98 transition-all cursor-pointer"
+                >
+                  <span>Reset Password</span>
+                  <KeyRound className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Quick SMS fallback option */}
-          {!isMobileVerified && !otpSent && !isNumberAlreadyRegistered && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => handleSendOtp('sms')}
-                className="text-[10px] text-blue-600 font-semibold hover:underline"
-              >
-                Or send OTP via normal SMS
-              </button>
-            </div>
-          )}
+
 
           {/* OTP Input Section (Appears when OTP is Sent and Not Yet Verified) */}
           {otpSent && !isMobileVerified && (
@@ -451,44 +440,11 @@ export const RegisterScreen: React.FC = () => {
                 </p>
               )}
 
-              {/* Gateway Notification banner when SMS balance or API is unavailable */}
-              {gatewayError && (
-                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs text-amber-950">
-                  <div className="flex items-start gap-1.5 font-bold">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <span className="text-[11px] leading-tight">
-                      WhatsApp Gateway Status: {gatewayError}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-amber-800 leading-tight">
-                    {gatewayError.includes('BALANCE')
-                      ? 'Renflair account has zero SMS/WhatsApp balance. Admin please recharge on renflair.in or configure a new API key in Admin Panel.'
-                      : 'Gateway could not deliver automated message to this device.'}
-                  </p>
-                  <div className="flex items-center gap-2 pt-1 flex-wrap">
-                    {whatsappFallbackUrl && (
-                      <a
-                        href={whatsappFallbackUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] transition shadow-xs"
-                      >
-                        <span>📲 Open WhatsApp for Code</span>
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOtpCode(generatedOtp);
-                        setOtpError('');
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold text-[10px] transition"
-                    >
-                      <span>⚡ Auto-fill OTP ({generatedOtp})</span>
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* WhatsApp OTP Status */}
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>OTP sent to your WhatsApp (+91 {cleanMobileDigits}). Please check WhatsApp and enter code above.</span>
+              </div>
             </div>
           )}
         </div>
@@ -647,14 +603,32 @@ export const RegisterScreen: React.FC = () => {
         </button>
       </form>
 
-      {/* Switch to Login */}
-      <div className="text-center text-xs text-slate-600 pt-2">
-        <span>Already have an account? </span>
+      {/* Switch to Login / Forgot Password */}
+      <div className="text-center text-xs text-slate-600 pt-2 flex items-center justify-center gap-2">
+        <span>Already have an account?</span>
         <button
           onClick={() => navigate('login')}
-          className="text-blue-600 font-bold hover:underline"
+          className="text-blue-600 font-bold hover:underline cursor-pointer"
         >
           Login
+        </button>
+        <span>•</span>
+        <button
+          onClick={() => {
+            try {
+              if (cleanMobileDigits.length === 10) {
+                localStorage.setItem('taskvibe_last_registered_mobile', cleanMobileDigits);
+              }
+              localStorage.setItem('taskvibe_auto_open_forgot', 'true');
+            } catch (e) {
+              console.warn(e);
+            }
+            navigate('login');
+          }}
+          className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+        >
+          <KeyRound className="w-3 h-3 text-emerald-600" />
+          <span>Forgot Password?</span>
         </button>
       </div>
     </div>

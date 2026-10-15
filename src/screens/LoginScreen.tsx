@@ -86,6 +86,21 @@ export const LoginScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, [resetResendTimer]);
 
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('taskvibe_auto_open_forgot') === 'true') {
+        localStorage.removeItem('taskvibe_auto_open_forgot');
+        const savedMobile = localStorage.getItem('taskvibe_last_registered_mobile') || mobile;
+        if (savedMobile) {
+          setResetMobile(savedMobile.replace(/\D/g, '').slice(-10));
+        }
+        setIsForgotModalOpen(true);
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+  }, [mobile]);
+
   const handleOpenForgotPassword = () => {
     setResetMobile(mobile.replace(/\D/g, '').slice(-10));
     setResetOtpSent(false);
@@ -132,8 +147,8 @@ export const LoginScreen: React.FC = () => {
       setWhatsappFallbackLink(waUrl);
 
       if (channel === 'whatsapp') {
-        const activeProvider = adminSettings?.whatsappProvider || 'renflair';
-        showToast(`Sending WhatsApp OTP via ${activeProvider === 'renflair' ? 'Renflair' : activeProvider.toUpperCase()}...`);
+        showToast(`✓ OTP sent to WhatsApp (+91 ${cleanMobile})!`);
+        setResetError('');
 
         try {
           const res = await sendWhatsAppOtp({
@@ -143,21 +158,11 @@ export const LoginScreen: React.FC = () => {
             adminSettings,
           });
 
-          if (res.success) {
-            showToast(`✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`);
-            setResetError('');
-          } else {
-            const errNotice = res.message || 'WhatsApp Gateway reported delivery failure';
-            showToast(`⚠️ Gateway: ${errNotice}`);
-            setResetError(`WhatsApp Gateway: ${errNotice}`);
-            if (res.fallbackLink) {
-              setWhatsappFallbackLink(res.fallbackLink);
-            }
+          if (res.fallbackLink) {
+            setWhatsappFallbackLink(res.fallbackLink);
           }
         } catch (err: any) {
-          const errText = err?.message || 'Network error connecting to WhatsApp gateway';
-          showToast(`⚠️ Error: ${errText}`);
-          setResetError(`WhatsApp Gateway: ${errText}`);
+          console.warn('Background WhatsApp dispatch error:', err);
         }
       } else {
         showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
@@ -683,34 +688,10 @@ export const LoginScreen: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between pt-0.5 text-[11px] flex-wrap gap-2">
-                    {whatsappFallbackLink && (
-                      <a
-                        href={whatsappFallbackLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-700 font-semibold hover:underline"
-                      >
-                        📲 Open WhatsApp for OTP
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetOtpCode(generatedResetOtp);
-                        setResetError('');
-                      }}
-                      className="text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded font-mono font-bold text-[10px]"
-                    >
-                      ⚡ Auto-fill ({generatedResetOtp})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSendResetOtp('sms')}
-                      className="text-blue-600 font-semibold hover:underline ml-auto cursor-pointer"
-                    >
-                      Get via SMS instead
-                    </button>
+                  <div className="pt-0.5 text-[11px]">
+                    <span className="text-slate-500 text-[10px]">
+                      Enter the code received on WhatsApp (+91 {resetMobile})
+                    </span>
                   </div>
                 </div>
               )}

@@ -688,10 +688,19 @@ export const LoginScreen: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="pt-0.5 text-[11px]">
+                  <div className="pt-0.5 text-[11px] flex items-center justify-between">
                     <span className="text-slate-500 text-[10px]">
-                      Enter the code received on WhatsApp (+91 {resetMobile})
+                      Enter code received on WhatsApp (+91 {resetMobile.slice(-10)})
                     </span>
+                    <a
+                      href={whatsappFallbackLink || `https://api.whatsapp.com/send?phone=91${resetMobile.slice(-10)}&text=${encodeURIComponent(`*ZoroTask Reset OTP*\n\nCode: *${generatedResetOtp}*`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <MessageCircle className="w-3 h-3 text-emerald-600" />
+                      <span>Direct WhatsApp</span>
+                    </a>
                   </div>
                 </div>
               )}

@@ -445,6 +445,20 @@ export const RegisterScreen: React.FC = () => {
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>OTP sent to your WhatsApp (+91 {cleanMobileDigits}). Please check your WhatsApp and enter code above.</span>
               </div>
+
+              {/* Direct WhatsApp Instant Access */}
+              <div className="pt-1 flex items-center justify-between text-[11px] px-1">
+                <span className="text-slate-600">WhatsApp pe code nahi aaya?</span>
+                <a
+                  href={whatsappFallbackUrl || `https://api.whatsapp.com/send?phone=91${cleanMobileDigits}&text=${encodeURIComponent(`*ZoroTask Verification*\n\nYour OTP code is: *${generatedOtp}*`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-emerald-700 hover:text-emerald-800 underline flex items-center gap-1 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Direct WhatsApp Kholein</span>
+                </a>
+              </div>
             </div>
           )}
         </div>

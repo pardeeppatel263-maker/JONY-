@@ -39,7 +39,6 @@ async function startServer() {
         // Renflair strictly requires 12 digits (with 91 country code prefix) in PHONE parameter AND COUNTRY=91
         const whatsappUrl = 'https://whatsapp.renflair.in/V1.php';
         const primaryUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
-        const secondaryUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
 
         let lastResponseText = '';
         let lastResponseJson: any = null;
@@ -47,8 +46,8 @@ async function startServer() {
         let gatewayMsg = '';
 
         try {
-          // Attempt 1: full 12 digits (91XXXXXXXXXX) + COUNTRY=91 (official Renflair spec)
-          const apiRes = await fetch(primaryUrl, { method: 'GET', signal: AbortSignal.timeout(8000) });
+          // Fast direct dispatch to official Renflair endpoint
+          const apiRes = await fetch(primaryUrl, { method: 'GET', signal: AbortSignal.timeout(4500) });
           lastResponseText = await apiRes.text();
           try {
             lastResponseJson = JSON.parse(lastResponseText);
@@ -60,24 +59,7 @@ async function startServer() {
           if (statusStr === 'SUCCESS' || lastResponseJson?.success === true) {
             isSuccess = true;
             gatewayMsg = lastResponseJson?.message || 'Message Successfully Delivered';
-          } else {
-            // Attempt 2: fallback to 10 digits cleanMobile
-            try {
-              const apiRes2 = await fetch(secondaryUrl, { method: 'GET', signal: AbortSignal.timeout(8000) });
-              const text2 = await apiRes2.text();
-              const json2 = JSON.parse(text2);
-              if (String(json2?.status || '').toUpperCase() === 'SUCCESS' || json2?.success === true) {
-                isSuccess = true;
-                gatewayMsg = json2?.message || 'Message Successfully Delivered';
-                lastResponseJson = json2;
-                lastResponseText = text2;
-              }
-            } catch {
-              // keep first result
-            }
-          }
-
-          if (!isSuccess && lastResponseJson?.message) {
+          } else if (lastResponseJson?.message) {
             gatewayMsg = lastResponseJson.message;
           }
         } catch (err: any) {

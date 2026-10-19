@@ -76,25 +76,22 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
   const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
   const method = adminSettings?.renflairMethod || 'GET';
 
-  // Official Renflair direct WhatsApp endpoint with 91 country code
-  const directRenflairUrl = `https://whatsapp.renflair.in/V1.php?API=${encodeURIComponent(apiKey)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
-
-  // Always fire direct beacon in background so mobile/APK/Web directly invokes Renflair gateway
-  if (provider === 'renflair' || apiUrl.includes('renflair')) {
-    try {
-      fetch(directRenflairUrl, { mode: 'no-cors' }).catch(() => {});
-      if (typeof Image !== 'undefined') {
-        const beacon = new Image();
-        beacon.src = `${directRenflairUrl}&_t=${Date.now()}`;
-      }
-    } catch {
-      // ignore
+  // Determine correct API proxy endpoint (handles both Web and Capacitor APK)
+  let apiProxyBase = '';
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isCapacitor = window.location.protocol === 'capacitor:' || (isLocalhost && window.location.port !== '3000');
+    if (isCapacitor) {
+      // Deployed Cloud backend URL for APK
+      apiProxyBase = 'https://ais-pre-hca27kxh4s3vxwr5k7ksky-300326017780.asia-east1.run.app';
     }
   }
 
+  const endpointUrl = `${apiProxyBase}/api/send-whatsapp-otp`;
+
   try {
-    // Call server-side API proxy (bypasses browser CORS and confirms delivery)
-    const proxyResponse = await fetch('/api/send-whatsapp-otp', {
+    // Fast, single server proxy call (with 5-second timeout to prevent any delay/hanging)
+    const proxyResponse = await fetch(endpointUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -108,6 +105,7 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
         instanceId: adminSettings?.whatsappInstanceId,
         phoneNumberId: adminSettings?.whatsappPhoneNumberId,
       }),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (proxyResponse.ok) {
@@ -120,8 +118,8 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
         usedEndpoint: data.usedEndpoint,
         message: data.message || (delivered ? `✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!` : `OTP dispatched to WhatsApp +91 ${cleanMobile}`),
         provider,
-        fallbackLink: data.fallbackLink || fallbackWaLink,
-        directLink: data.directLink || fallbackWaLink,
+        fallbackLink: fallbackWaLink,
+        directLink: fallbackWaLink,
         rawResponse: data,
       };
     } else {
@@ -135,7 +133,16 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
       };
     }
   } catch (err: any) {
-    console.warn('API proxy call error, using direct WhatsApp dispatch:', err);
+    console.warn('API proxy call error or timeout, firing direct Renflair beacon:', err);
+    // Only in case of network issue/timeout with proxy, trigger direct gateway ping
+    if (provider === 'renflair' || apiUrl.includes('renflair')) {
+      try {
+        const directRenflairUrl = `https://whatsapp.renflair.in/V1.php?API=${encodeURIComponent(apiKey)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+        fetch(directRenflairUrl, { mode: 'no-cors' }).catch(() => {});
+      } catch {
+        // ignore
+      }
+    }
     return {
       success: true,
       deliveredByGateway: true,

@@ -29,6 +29,7 @@ import {
   Upload,
   AlertTriangle,
   Phone,
+  Smartphone,
   MessageSquare,
   QrCode,
   FileText,
@@ -457,6 +458,13 @@ export const AdminPanelScreen: React.FC = () => {
   const [whatsappTestSending, setWhatsappTestSending] = useState(false);
   const [whatsappTestResult, setWhatsappTestResult] = useState<string | null>(null);
   const [showWhatsappToken, setShowWhatsappToken] = useState(false);
+
+  // WhatsApp Web Instance QR & Connection State
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
+  const [isQrImageUrl, setIsQrImageUrl] = useState(false);
+  const [instanceAuthStatus, setInstanceAuthStatus] = useState<'idle' | 'authorized' | 'not_authorized' | 'loading'>('idle');
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
   // YouTube Multi-Video Playlist State
   const [youtubeVideoUrlsList, setYoutubeVideoUrlsList] = useState<string[]>(() => {
@@ -1162,6 +1170,66 @@ export const AdminPanelScreen: React.FC = () => {
     };
     await updateAdminSettings(updates);
     showToast('✓ Renflair Settings auto-configured & saved to Cloud! (Endpoint: https://sms.renflair.in/V1.php, Method: GET)');
+  };
+
+  // WhatsApp Web QR Code Fetcher for Instance Connection
+  const handleFetchWhatsAppQr = async () => {
+    if (!whatsappInstanceIdInput.trim() || !whatsappApiTokenInput.trim()) {
+      showToast('⚠️ Kripya pehle Instance ID aur API Token dalein');
+      return;
+    }
+    setQrLoading(true);
+    try {
+      const res = await fetch(
+        `/api/whatsapp-instance-qr?provider=${whatsappProviderInput}&instanceId=${encodeURIComponent(
+          whatsappInstanceIdInput.trim()
+        )}&apiToken=${encodeURIComponent(whatsappApiTokenInput.trim())}`
+      );
+      const data = await res.json();
+      if (data.type === 'alreadyLogged' || data.raw?.stateInstance === 'authorized') {
+        setInstanceAuthStatus('authorized');
+        showToast('✓ WhatsApp Web pehle se connect aur active hai!');
+      } else if (data.qrData) {
+        setQrCodeData(data.qrData);
+        setIsQrImageUrl(Boolean(data.isImageUrl));
+        setInstanceAuthStatus('not_authorized');
+        showToast('✓ Naya QR Code load ho gaya! Apne WhatsApp se scan karein.');
+      } else {
+        showToast(data.message || 'QR code generate nahi ho saka. Credentials check karein.');
+      }
+    } catch (err: any) {
+      showToast('QR Code load karne me samasya: ' + err.message);
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  // Check WhatsApp Web Connection Status
+  const handleCheckInstanceStatus = async () => {
+    if (!whatsappInstanceIdInput.trim() || !whatsappApiTokenInput.trim()) {
+      showToast('⚠️ Kripya pehle Instance ID aur API Token dalein');
+      return;
+    }
+    setIsCheckingStatus(true);
+    try {
+      const res = await fetch(
+        `/api/whatsapp-instance-status?provider=${whatsappProviderInput}&instanceId=${encodeURIComponent(
+          whatsappInstanceIdInput.trim()
+        )}&apiToken=${encodeURIComponent(whatsappApiTokenInput.trim())}`
+      );
+      const data = await res.json();
+      if (data.isAuthorized) {
+        setInstanceAuthStatus('authorized');
+        showToast('🟢 WhatsApp Web Successfully Connected! Status: AUTHORIZED');
+      } else {
+        setInstanceAuthStatus('not_authorized');
+        showToast(`🟡 Status: ${data.state || 'Not Authorized'}. Kripya QR code scan karein.`);
+      }
+    } catch (err: any) {
+      showToast('Status check error: ' + err.message);
+    } finally {
+      setIsCheckingStatus(false);
+    }
   };
 
   // Handle Custom QR Code Image Upload (Auto-saves to Cloud immediately!)
@@ -4893,9 +4961,118 @@ export const AdminPanelScreen: React.FC = () => {
                         type="text"
                         value={whatsappApiUrlInput}
                         onChange={(e) => setWhatsappApiUrlInput(e.target.value)}
-                        placeholder="https://graph.facebook.com/v21.0"
+                        placeholder="https://api.green-api.com"
                         className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
                       />
+                    </div>
+
+                    {/* Live WhatsApp Web QR Code Linker Box */}
+                    <div className="sm:col-span-2 p-4 bg-gradient-to-br from-slate-900 via-emerald-950/20 to-slate-900 border border-emerald-500/40 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                            <QrCode className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <span>WhatsApp Web QR Scanner (Direct Phone Pairing)</span>
+                              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-black">
+                                MULTI-DEVICE
+                              </span>
+                            </h4>
+                            <p className="text-[10px] text-slate-400">
+                              Apne WhatsApp se yeh QR scan karein — OTP aapke usi linked phone se automatic bheja jayega!
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Connection Badge */}
+                        <div className="flex items-center gap-2">
+                          {instanceAuthStatus === 'authorized' ? (
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/50 px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-pulse">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                              <span>WhatsApp Linked (Online)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-500/50 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                              <span>{instanceAuthStatus === 'not_authorized' ? 'QR Scan Required' : 'Not Connected'}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Instructions */}
+                      <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1.5">
+                        <p className="font-bold text-emerald-400 text-xs flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5" />
+                          <span>WhatsApp Web Login Kaise Karein (3 Simple Steps):</span>
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-300 text-[11px]">
+                          <li>Apne phone me WhatsApp open karein aur <strong className="text-white">Settings / Menu (⋮)</strong> me jayein.</li>
+                          <li><strong className="text-emerald-300">"Linked Devices" (लिंक्ड डिवाइसेस)</strong> option par tap karein aur <strong className="text-white">"Link a Device"</strong> chunein.</li>
+                          <li>Niche diye gaye button par click karke <strong className="text-emerald-300">QR Code load karein</strong> aur phone se scan karein!</li>
+                        </ol>
+                      </div>
+
+                      {/* QR Display Area */}
+                      <div className="flex flex-col items-center justify-center p-4 bg-slate-950 rounded-xl border border-slate-800 text-center space-y-3">
+                        {instanceAuthStatus === 'authorized' ? (
+                          <div className="py-6 flex flex-col items-center space-y-2">
+                            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
+                              <CheckCircle2 className="w-8 h-8" />
+                            </div>
+                            <h5 className="text-sm font-bold text-white">WhatsApp Account Successfully Connected!</h5>
+                            <p className="text-xs text-slate-400 max-w-sm">
+                              Aapka WhatsApp session live aur active hai. Jab bhi koi user register ya OTP request karega, aapke phone se automatic WhatsApp OTP message deliver hoga.
+                            </p>
+                          </div>
+                        ) : qrCodeData ? (
+                          <div className="space-y-3 flex flex-col items-center">
+                            <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-emerald-500/30">
+                              {isQrImageUrl ? (
+                                <img src={qrCodeData} alt="WhatsApp Web QR Code" className="w-56 h-56 object-contain" />
+                              ) : (
+                                <img src={`data:image/png;base64,${qrCodeData}`} alt="WhatsApp Web QR Code" className="w-56 h-56 object-contain" />
+                              )}
+                            </div>
+                            <p className="text-xs text-amber-300 font-bold flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>QR code active hai. Turant WhatsApp camera se scan karein!</span>
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="py-6 space-y-2 flex flex-col items-center">
+                            <QrCode className="w-12 h-12 text-slate-600" />
+                            <p className="text-xs text-slate-400">
+                              QR Code generate karne ke liye upar Instance ID aur API Token daal kar niche button par click karein.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-center gap-2.5 flex-wrap pt-1">
+                          <button
+                            type="button"
+                            disabled={qrLoading}
+                            onClick={handleFetchWhatsAppQr}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${qrLoading ? 'animate-spin' : ''}`} />
+                            <span>{qrLoading ? 'Loading QR...' : '📷 Load / Refresh WhatsApp Web QR'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isCheckingStatus}
+                            onClick={handleCheckInstanceStatus}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                          >
+                            <CheckCheck className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+                            <span>{isCheckingStatus ? 'Checking...' : 'Check Connection Status'}</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

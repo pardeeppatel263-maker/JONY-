@@ -95,7 +95,60 @@ async function startServer() {
         });
       }
 
-      // 2. UltraMsg Gateway
+      // 2. Green-API / WhatsApp Web Multi-Device Instance
+      if (provider === 'green_api') {
+        const idInst = String(instanceId || '').trim();
+        const apiTok = String(apiKey || '').trim();
+
+        if (!idInst || !apiTok) {
+          return res.json({
+            success: false,
+            provider: 'green_api',
+            deliveredByGateway: false,
+            message: 'Green-API Instance ID or Token missing. Please configure in Admin Panel.',
+            fallbackLink,
+          });
+        }
+
+        const baseUrl = apiUrl || `https://api.green-api.com/waInstance${idInst}`;
+
+        try {
+          console.log(`[WhatsApp-Web] Sending via Green-API Instance ${idInst} to +${fullMobile}`);
+          const gRes = await fetch(`${baseUrl}/sendMessage/${apiTok}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chatId: `${fullMobile}@c.us`,
+              message: textMessage,
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const gJson: any = await gRes.json();
+          const isDelivered = Boolean(gJson?.idMessage);
+
+          return res.json({
+            success: isDelivered,
+            provider: 'green_api',
+            deliveredByGateway: isDelivered,
+            gatewayResponse: gJson,
+            message: isDelivered
+              ? `OTP dispatched from your linked WhatsApp Web to +91 ${cleanMobile}`
+              : gJson?.message || 'Green-API delivery failed. Check QR connection status.',
+            fallbackLink,
+            directLink: fallbackLink,
+          });
+        } catch (gErr: any) {
+          console.warn('[WhatsApp-Web] Green-API error:', gErr.message);
+          return res.json({
+            success: false,
+            provider: 'green_api',
+            message: gErr.message || 'Green-API connection timeout',
+            fallbackLink,
+          });
+        }
+      }
+
+      // 3. UltraMsg Gateway
       if (provider === 'ultramsg') {
         const inst = instanceId || 'instance192672';
         const tok = apiKey || 'zwsvwyr1pqa8ztxa';
@@ -131,7 +184,7 @@ async function startServer() {
         }
       }
 
-      // 3. Default Direct Mode
+      // 4. Default Direct Mode
       return res.json({
         success: true,
         provider: 'direct',
@@ -150,6 +203,91 @@ async function startServer() {
         fallbackLink: fallback,
         directLink: fallback,
       });
+    }
+  });
+
+  // 1. WhatsApp Instance QR Code Endpoint (for scanning QR in Admin Panel)
+  app.get('/api/whatsapp-instance-qr', async (req, res) => {
+    try {
+      const { provider = 'green_api', instanceId = '', apiToken = '' } = req.query;
+      const cleanInst = String(instanceId || '').trim();
+      const cleanToken = String(apiToken || '').trim();
+
+      if (!cleanInst || !cleanToken) {
+        return res.json({
+          success: false,
+          message: 'Please enter your Instance ID and Token first.',
+        });
+      }
+
+      if (provider === 'green_api') {
+        const qrUrl = `https://api.green-api.com/waInstance${cleanInst}/qr/${cleanToken}`;
+        const qrRes = await fetch(qrUrl, { signal: AbortSignal.timeout(8000) });
+        const qrJson: any = await qrRes.json();
+        return res.json({
+          success: true,
+          type: qrJson?.type || 'qrCode',
+          qrData: qrJson?.message || '',
+          raw: qrJson,
+        });
+      }
+
+      if (provider === 'ultramsg') {
+        return res.json({
+          success: true,
+          type: 'qrCode',
+          qrData: `https://api.ultramsg.com/${cleanInst}/instance/qr?token=${cleanToken}`,
+          isImageUrl: true,
+        });
+      }
+
+      return res.json({
+        success: false,
+        message: 'Unsupported QR provider',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 2. WhatsApp Instance Connection Status Endpoint
+  app.get('/api/whatsapp-instance-status', async (req, res) => {
+    try {
+      const { provider = 'green_api', instanceId = '', apiToken = '' } = req.query;
+      const cleanInst = String(instanceId || '').trim();
+      const cleanToken = String(apiToken || '').trim();
+
+      if (!cleanInst || !cleanToken) {
+        return res.json({ success: false, isAuthorized: false, state: 'not_configured' });
+      }
+
+      if (provider === 'green_api') {
+        const stUrl = `https://api.green-api.com/waInstance${cleanInst}/getStateInstance/${cleanToken}`;
+        const stRes = await fetch(stUrl, { signal: AbortSignal.timeout(8000) });
+        const stJson: any = await stRes.json();
+        const isAuth = stJson?.stateInstance === 'authorized';
+        return res.json({
+          success: true,
+          state: stJson?.stateInstance || 'unknown',
+          isAuthorized: isAuth,
+        });
+      }
+
+      if (provider === 'ultramsg') {
+        const stUrl = `https://api.ultramsg.com/${cleanInst}/instance/status?token=${cleanToken}`;
+        const stRes = await fetch(stUrl, { signal: AbortSignal.timeout(8000) });
+        const stJson: any = await stRes.json();
+        const isAuth = stJson?.status?.accountStatus === 'authenticated';
+        return res.json({
+          success: true,
+          state: stJson?.status?.accountStatus || 'unknown',
+          isAuthorized: isAuth,
+        });
+      }
+
+      return res.json({ success: false, isAuthorized: false, state: 'unknown' });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
     }
   });
 

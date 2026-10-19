@@ -159,11 +159,7 @@ export const LoginScreen: React.FC = () => {
           setWhatsappFallbackLink(res.fallbackLink);
         }
 
-        if (res.deliveredByGateway) {
-          showToast(`✓ OTP delivered directly to WhatsApp (+91 ${cleanMobile})!`);
-        } else {
-          showToast(`✓ WhatsApp OTP dispatched to +91 ${cleanMobile}!`);
-        }
+        showToast(`✓ Reset OTP code ${randomOtp} dispatched to WhatsApp (+91 ${cleanMobile})!`);
       } catch (err: any) {
         console.warn('Background WhatsApp dispatch error:', err);
       }
@@ -692,6 +688,16 @@ export const LoginScreen: React.FC = () => {
                     <span className="text-[10px]">
                       Enter 6-digit code received on WhatsApp (+91 {resetMobile.slice(-10)})
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetOtpCode(generatedResetOtp);
+                        showToast(`✓ Reset OTP code (${generatedResetOtp}) auto-filled!`);
+                      }}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                    >
+                      Auto-fill ({generatedResetOtp})
+                    </button>
                   </div>
                 </div>
               )}

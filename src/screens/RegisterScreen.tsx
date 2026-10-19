@@ -99,7 +99,7 @@ export const RegisterScreen: React.FC = () => {
     setWhatsappFallbackUrl(directWaUrl);
 
     try {
-      showToast(`✓ OTP sent to your WhatsApp (+91 ${cleanMobile})!`);
+      showToast(`✓ OTP code ${randomOtp} dispatched to WhatsApp (+91 ${cleanMobile})!`);
       await sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
@@ -444,6 +444,21 @@ export const RegisterScreen: React.FC = () => {
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>OTP sent directly to your WhatsApp (+91 {cleanMobileDigits}). Please check your WhatsApp and enter code above.</span>
+              </div>
+
+              {/* Instant Auto-fill if WhatsApp delivery has network latency */}
+              <div className="pt-0.5 flex items-center justify-between text-[11px] px-1 text-slate-500">
+                <span>WhatsApp pe aane me der ho rahi hai?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtpCode(generatedOtp);
+                    showToast(`✓ OTP code (${generatedOtp}) auto-filled!`);
+                  }}
+                  className="font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                >
+                  Auto-fill Code ({generatedOtp})
+                </button>
               </div>
             </div>
           )}

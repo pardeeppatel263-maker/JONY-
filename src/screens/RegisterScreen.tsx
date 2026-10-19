@@ -76,12 +76,12 @@ export const RegisterScreen: React.FC = () => {
   const handleSendOtp = async () => {
     const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length < 10) {
-      showToast('Please enter a valid 10-digit mobile number');
+      showToast('Kripya 10-digit mobile number enter karein');
       return;
     }
 
     if (isPhoneAlreadyRegistered(cleanMobile)) {
-      showToast(`❌ This phone number (+91 ${cleanMobile}) is already registered! Only 1 account is allowed per phone number.`);
+      showToast(`❌ Yeh phone number (+91 ${cleanMobile}) pehle se registered hai! Kripya login karein.`);
       return;
     }
 
@@ -99,13 +99,16 @@ export const RegisterScreen: React.FC = () => {
     setWhatsappFallbackUrl(directWaUrl);
 
     try {
-      showToast(`✓ OTP code ${randomOtp} dispatched to WhatsApp (+91 ${cleanMobile})!`);
-      await sendWhatsAppOtp({
+      showToast('✓ WhatsApp par OTP bhej diya gaya hai!');
+      const res = await sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
         purpose: 'register',
         adminSettings,
       });
+      if (res?.deliveredByGateway) {
+        showToast('✓ OTP dispatch ho gaya! WhatsApp check karein.');
+      }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
     } finally {
@@ -116,7 +119,7 @@ export const RegisterScreen: React.FC = () => {
   const handleVerifyOtp = () => {
     const entered = otpCode.trim();
     if (!entered || entered.length < 4) {
-      setOtpError('Please enter a valid 4-digit OTP code');
+      setOtpError('Kripya 4-digit OTP code enter karein');
       return;
     }
 
@@ -125,9 +128,9 @@ export const RegisterScreen: React.FC = () => {
       setIsMobileVerified(true);
       setOtpError('');
       setGatewayError('');
-      showToast('✓ Mobile number verified successfully!');
+      showToast('✓ Mobile number WhatsApp OTP se verify ho gaya!');
     } else {
-      setOtpError('❌ Invalid OTP code! Please enter the exact code generated for your number.');
+      setOtpError('❌ Galat OTP! Kripya WhatsApp par bheja gaya sahi 4-digit OTP enter karein.');
     }
   };
 
@@ -286,70 +289,77 @@ export const RegisterScreen: React.FC = () => {
         </div>
 
         {/* Mobile Number with OTP Verification */}
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-[11px] font-semibold text-slate-700">Mobile Number *</label>
             {isMobileVerified ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Verified
+              </span>
+            ) : otpSent ? (
+              <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                OTP Bheja Gaya
               </span>
             ) : (
               <span className="text-[10px] text-amber-600 font-semibold">
-                OTP Required
+                OTP Verification Zaroori
               </span>
             )}
           </div>
 
-          <div className="flex rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-            <div className="flex items-center px-3 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700">
+          <div className="flex rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all">
+            <div className="flex items-center px-3 bg-slate-50 border-r border-slate-200 text-xs font-bold text-slate-700 select-none">
               <span className="mr-1">🇮🇳</span> +91
             </div>
             <input
               type="tel"
               value={mobile}
               onChange={(e) => {
-                setMobile(e.target.value);
+                const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                setMobile(val);
                 if (isMobileVerified) setIsMobileVerified(false);
               }}
-              placeholder="Enter 10-digit mobile"
+              placeholder="10-digit mobile number"
               maxLength={10}
               disabled={isMobileVerified}
-              className="w-full py-2.5 px-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-600"
+              className="w-full py-2.5 px-3 text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-600 tracking-wide"
               required
             />
             {!isMobileVerified && !isNumberAlreadyRegistered && (
-              <div className="p-1 flex items-center gap-1 pr-1.5">
+              <div className="p-1 flex items-center pr-1.5 shrink-0">
                 <button
                   type="button"
-                  disabled={isSendingOtp}
+                  disabled={isSendingOtp || cleanMobileDigits.length < 10 || (otpSent && resendTimer > 0)}
                   onClick={() => handleSendOtp()}
-                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  <span>{isSendingOtp ? '⏳ Sending...' : '💬 WhatsApp OTP'}</span>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>{isSendingOtp ? 'Bhej rahe...' : otpSent ? (resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP') : 'WhatsApp OTP'}</span>
                 </button>
               </div>
             )}
-            {!isMobileVerified && isNumberAlreadyRegistered && (
-              <div className="p-1 flex items-center gap-1 pr-1.5">
-                <span className="bg-amber-100 text-amber-800 font-bold text-[10px] px-2 py-1 rounded-lg">
-                  Already Registered
+            {isMobileVerified && (
+              <div className="p-1 flex items-center pr-2 shrink-0">
+                <span className="text-emerald-600 flex items-center gap-1 text-xs font-bold bg-emerald-50 px-2 py-1 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4" />
                 </span>
               </div>
             )}
           </div>
 
-          {/* Warning banner if this phone is already registered (1 phone = 1 account limit) */}
+          {/* Warning banner if this phone is already registered */}
           {isNumberAlreadyRegistered && (
             <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2 animate-in fade-in">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-900">
                   <p className="font-bold">
-                    This phone number (+91 {cleanMobileDigits}) is already registered!
+                    Yeh phone number (+91 {cleanMobileDigits}) pehle se registered hai!
                   </p>
                   <p className="text-[11px] text-amber-700 mt-0.5">
-                    Only 1 registration is allowed per phone number. You can log in directly using your password.
+                    1 phone number par keval 1 account ban sakta hai. Kripya login karein.
                   </p>
                 </div>
               </div>
@@ -389,77 +399,69 @@ export const RegisterScreen: React.FC = () => {
             </div>
           )}
 
-          {/* OTP Input Section (Appears when OTP is Sent and Not Yet Verified) */}
+          {/* Simple Clean OTP Box - EXACT MATCH TO USER'S PHOTO */}
           {otpSent && !isMobileVerified && (
-            <div className="p-3.5 bg-emerald-50/90 border border-emerald-300 rounded-2xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-emerald-950 flex items-center gap-1.5">
-                  <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-                  Enter OTP received on WhatsApp
-                </span>
-                {resendTimer > 0 ? (
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    Resend in {resendTimer}s
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={isSendingOtp}
-                    onClick={() => handleSendOtp()}
-                    className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    {isSendingOtp ? 'Sending...' : 'Resend OTP'}
-                  </button>
-                )}
-              </div>
-
-              {/* OTP Input and Verify Button */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter 4-digit OTP"
-                  className="flex-1 py-2.5 px-3 text-center tracking-widest font-mono font-bold text-sm bg-white rounded-xl border border-slate-300 outline-none focus:border-emerald-500 shadow-inner"
-                  autoFocus
-                />
+            <div className="space-y-1.5 animate-in fade-in duration-200 pt-1">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
+                    value={otpCode}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setOtpCode(val);
+                      if (otpError) setOtpError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleVerifyOtp();
+                      }
+                    }}
+                    placeholder="Enter 4-digit OTP"
+                    className="w-full bg-white border-2 border-[#009b55] rounded-full py-2.5 px-4 text-center text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-semibold outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 shadow-2xs"
+                    autoFocus
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={handleVerifyOtp}
-                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs active:scale-95 transition-all whitespace-nowrap cursor-pointer"
+                  className="bg-[#009b55] hover:bg-[#00874a] active:scale-95 text-white font-bold text-xs sm:text-sm py-2.5 px-5 rounded-full flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer transition-all shrink-0"
                 >
-                  Verify OTP
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>Verify OTP</span>
                 </button>
               </div>
 
               {otpError && (
-                <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg border border-rose-200">
+                <p className="text-[11px] text-rose-600 font-bold px-3 text-center animate-in fade-in">
                   {otpError}
                 </p>
               )}
+            </div>
+          )}
 
-              {/* Simple Clean WhatsApp Confirmation */}
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>OTP sent directly to your WhatsApp (+91 {cleanMobileDigits}). Please check your WhatsApp and enter code above.</span>
-              </div>
-
-              {/* Instant Auto-fill if WhatsApp delivery has network latency */}
-              <div className="pt-0.5 flex items-center justify-between text-[11px] px-1 text-slate-500">
-                <span>WhatsApp pe aane me der ho rahi hai?</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpCode(generatedOtp);
-                    showToast(`✓ OTP code (${generatedOtp}) auto-filled!`);
-                  }}
-                  className="font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
-                >
-                  Auto-fill Code ({generatedOtp})
-                </button>
-              </div>
+          {/* Success Banner when Mobile is Verified */}
+          {isMobileVerified && (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-full flex items-center justify-between text-xs text-emerald-900 px-4 animate-in fade-in">
+              <span className="flex items-center gap-2 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>+91 {cleanMobileDigits} Verified!</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileVerified(false);
+                  setOtpSent(false);
+                  setOtpCode('');
+                }}
+                className="text-[10px] text-emerald-700 hover:underline font-semibold cursor-pointer"
+              >
+                Change
+              </button>
             </div>
           )}
         </div>

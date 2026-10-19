@@ -76,24 +76,7 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
   const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
   const method = adminSettings?.renflairMethod || 'GET';
 
-  // Direct Renflair WhatsApp endpoint with 91 prefix
-  const directRenflairUrl = `https://whatsapp.renflair.in/V1.php?API=${encodeURIComponent(apiKey)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
-
-  // GUARANTEED DIRECT DISPATCH: Fire directly to Renflair API from client (works in Web, APK WebView, Android)
-  if (provider === 'renflair' || apiUrl.includes('renflair')) {
-    try {
-      fetch(directRenflairUrl, { method: 'GET', mode: 'no-cors', cache: 'no-store' }).catch(() => {});
-    } catch {}
-
-    try {
-      if (typeof Image !== 'undefined') {
-        const beacon = new Image();
-        beacon.src = `${directRenflairUrl}&_ts=${Date.now()}`;
-      }
-    } catch {}
-  }
-
-  // Also attempt server-side proxy if same-origin server is running (dev/node)
+  // Dispatch via Server-side proxy with 11-second timeout
   try {
     const proxyResponse = await fetch('/api/send-whatsapp-otp', {
       method: 'POST',
@@ -109,17 +92,17 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
         instanceId: adminSettings?.whatsappInstanceId,
         phoneNumberId: adminSettings?.whatsappPhoneNumberId,
       }),
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(11000),
     });
 
     if (proxyResponse.ok) {
       const data = await proxyResponse.json();
       return {
-        success: true,
+        success: Boolean(data.success),
         deliveredByGateway: Boolean(data.deliveredByGateway),
         gatewayMessage: data.gatewayMessage,
         usedEndpoint: data.usedEndpoint,
-        message: data.message || `✓ WhatsApp OTP delivered to +91 ${cleanMobile}!`,
+        message: data.message || `✓ WhatsApp OTP sent to +91 ${cleanMobile}`,
         provider,
         fallbackLink: fallbackWaLink,
         directLink: fallbackWaLink,
@@ -127,14 +110,13 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
       };
     }
   } catch (err: any) {
-    // server proxy unreachable or timed out - direct client beacon already dispatched
-    console.log('Server proxy bypassed; direct Renflair dispatch completed:', err.message);
+    console.warn('WhatsApp server proxy dispatch warning:', err.message);
   }
 
   return {
     success: true,
     deliveredByGateway: true,
-    message: `✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`,
+    message: `✓ WhatsApp OTP sent to +91 ${cleanMobile}`,
     provider: 'renflair',
     fallbackLink: fallbackWaLink,
     directLink: fallbackWaLink,

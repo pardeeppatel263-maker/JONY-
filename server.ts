@@ -34,11 +34,13 @@ async function startServer() {
 
       // 1. Renflair WhatsApp Gateway (Direct WhatsApp OTP delivery)
       if (provider === 'renflair' || String(apiUrl).includes('renflair')) {
-        const keyToUse = (apiKey || '417d155c4d7937dc6555a13a71f09ec0').trim();
+        const keyToUse = (apiKey || process.env.RENFLAIR_API_KEY || '417d155c4d7937dc6555a13a71f09ec0').trim();
         
         // Renflair strictly requires 12 digits (with 91 country code prefix) in PHONE parameter AND COUNTRY=91
         const whatsappUrl = 'https://whatsapp.renflair.in/V1.php';
         const primaryUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+
+        console.log(`[WhatsApp-OTP] Dispatched to +${fullMobile} | OTP: ${otp} | Key: ${keyToUse.slice(0, 6)}...`);
 
         let lastResponseText = '';
         let lastResponseJson: any = null;
@@ -46,9 +48,17 @@ async function startServer() {
         let gatewayMsg = '';
 
         try {
-          // Fast direct dispatch to official Renflair endpoint
-          const apiRes = await fetch(primaryUrl, { method: 'GET', signal: AbortSignal.timeout(4500) });
+          const apiRes = await fetch(primaryUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'application/json, text/plain, */*',
+            },
+            signal: AbortSignal.timeout(10000),
+          });
           lastResponseText = await apiRes.text();
+          console.log(`[WhatsApp-OTP] Renflair Gateway Response for +${fullMobile}:`, lastResponseText);
+
           try {
             lastResponseJson = JSON.parse(lastResponseText);
           } catch {
@@ -63,22 +73,22 @@ async function startServer() {
             gatewayMsg = lastResponseJson.message;
           }
         } catch (err: any) {
-          console.warn(`Renflair WhatsApp gateway error:`, err.message);
+          console.warn(`[WhatsApp-OTP] Renflair Gateway Error:`, err.message);
           gatewayMsg = err.message || 'Connection timeout';
         }
 
         return res.json({
-          success: true,
+          success: isSuccess,
           provider: 'renflair',
           deliveredByGateway: isSuccess,
           status: isSuccess ? 200 : 400,
           usedEndpoint: whatsappUrl,
           gatewayMessage: gatewayMsg,
           message: isSuccess
-            ? `OTP sent to your WhatsApp (+91 ${cleanMobile})!`
+            ? `OTP sent to your WhatsApp (+91 ${cleanMobile})`
             : gatewayMsg
               ? `Renflair Gateway: ${gatewayMsg}`
-              : `OTP generated for WhatsApp (+91 ${cleanMobile})`,
+              : `OTP delivery pending for WhatsApp (+91 ${cleanMobile})`,
           fallbackLink,
           directLink: fallbackLink,
           gatewayResponse: lastResponseJson || lastResponseText,

@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Download,
   KeyRound,
+  MessageCircle,
 } from 'lucide-react';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
@@ -49,6 +50,7 @@ export const RegisterScreen: React.FC = () => {
 
   // OTP Verification States
   const [otpSent, setOtpSent] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [isMobileVerified, setIsMobileVerified] = useState(false);
@@ -71,7 +73,7 @@ export const RegisterScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, [resendTimer]);
 
-  const handleSendOtp = (channel: 'whatsapp' | 'sms' = 'whatsapp') => {
+  const handleSendOtp = async () => {
     const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length < 10) {
       showToast('Please enter a valid 10-digit mobile number');
@@ -90,24 +92,24 @@ export const RegisterScreen: React.FC = () => {
     setResendTimer(30);
     setOtpError('');
     setGatewayError('');
+    setIsSendingOtp(true);
 
     const messageText = `*ZoroTask Account Verification*\n\nYour OTP code is: *${randomOtp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
     const directWaUrl = `https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageText)}`;
     setWhatsappFallbackUrl(directWaUrl);
 
-    if (channel === 'whatsapp') {
-      showToast(`✓ OTP sent to WhatsApp (+91 ${cleanMobile})!`);
-
-      sendWhatsAppOtp({
+    try {
+      showToast(`✓ OTP sent to your WhatsApp (+91 ${cleanMobile})!`);
+      await sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
         purpose: 'register',
         adminSettings,
-      }).catch((err) => {
-        console.warn('Background WhatsApp dispatch error:', err);
       });
-    } else {
-      showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
+    } catch (err: any) {
+      console.warn('WhatsApp dispatch error:', err);
+    } finally {
+      setIsSendingOtp(false);
     }
   };
 
@@ -320,10 +322,11 @@ export const RegisterScreen: React.FC = () => {
               <div className="p-1 flex items-center gap-1 pr-1.5">
                 <button
                   type="button"
-                  onClick={() => handleSendOtp('whatsapp')}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all whitespace-nowrap flex items-center gap-1"
+                  disabled={isSendingOtp}
+                  onClick={() => handleSendOtp()}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer"
                 >
-                  <span>💬 WhatsApp OTP</span>
+                  <span>{isSendingOtp ? '⏳ Sending...' : '💬 WhatsApp OTP'}</span>
                 </button>
               </div>
             )}
@@ -386,11 +389,9 @@ export const RegisterScreen: React.FC = () => {
             </div>
           )}
 
-
-
           {/* OTP Input Section (Appears when OTP is Sent and Not Yet Verified) */}
           {otpSent && !isMobileVerified && (
-            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl space-y-2.5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-3.5 bg-emerald-50/90 border border-emerald-300 rounded-2xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-emerald-950 flex items-center gap-1.5">
                   <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
@@ -401,16 +402,15 @@ export const RegisterScreen: React.FC = () => {
                     Resend in {resendTimer}s
                   </span>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSendOtp('whatsapp')}
-                      className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-0.5"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Resend WhatsApp
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={isSendingOtp}
+                    onClick={() => handleSendOtp()}
+                    className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    {isSendingOtp ? 'Sending...' : 'Resend OTP'}
+                  </button>
                 )}
               </div>
 
@@ -428,22 +428,22 @@ export const RegisterScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleVerifyOtp}
-                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs active:scale-95 transition-all whitespace-nowrap"
+                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs active:scale-95 transition-all whitespace-nowrap cursor-pointer"
                 >
                   Verify OTP
                 </button>
               </div>
 
               {otpError && (
-                <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-1.5 rounded-lg border border-rose-200">
+                <p className="text-[10px] text-rose-600 font-bold bg-rose-50 p-2 rounded-lg border border-rose-200">
                   {otpError}
                 </p>
               )}
 
-              {/* WhatsApp OTP Status */}
+              {/* Simple Clean WhatsApp Confirmation */}
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>OTP sent to your WhatsApp (+91 {cleanMobileDigits}). Please check WhatsApp and enter code above.</span>
+                <span>OTP sent to your WhatsApp (+91 {cleanMobileDigits}). Please check your WhatsApp and enter code above.</span>
               </div>
             </div>
           )}

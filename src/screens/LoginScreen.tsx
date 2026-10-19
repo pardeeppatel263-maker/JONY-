@@ -16,6 +16,7 @@ import {
   RotateCcw,
   KeyRound,
   ShieldCheck,
+  MessageCircle,
 } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
@@ -115,7 +116,7 @@ export const LoginScreen: React.FC = () => {
     setIsForgotModalOpen(true);
   };
 
-  const handleSendResetOtp = async (channel: 'whatsapp' | 'sms' = 'whatsapp') => {
+  const handleSendResetOtp = async () => {
     const cleanMobile = resetMobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length < 10) {
       setResetError('Please enter a valid 10-digit registered mobile number');
@@ -146,26 +147,25 @@ export const LoginScreen: React.FC = () => {
       const waUrl = `https://api.whatsapp.com/send?phone=91${cleanMobile}&text=${encodeURIComponent(messageBody)}`;
       setWhatsappFallbackLink(waUrl);
 
-      if (channel === 'whatsapp') {
-        showToast(`✓ OTP sent to WhatsApp (+91 ${cleanMobile})!`);
-        setResetError('');
+      try {
+        const res = await sendWhatsAppOtp({
+          mobile: cleanMobile,
+          otp: randomOtp,
+          purpose: 'forgot_password',
+          adminSettings,
+        });
 
-        try {
-          const res = await sendWhatsAppOtp({
-            mobile: cleanMobile,
-            otp: randomOtp,
-            purpose: 'forgot_password',
-            adminSettings,
-          });
-
-          if (res.fallbackLink) {
-            setWhatsappFallbackLink(res.fallbackLink);
-          }
-        } catch (err: any) {
-          console.warn('Background WhatsApp dispatch error:', err);
+        if (res.fallbackLink) {
+          setWhatsappFallbackLink(res.fallbackLink);
         }
-      } else {
-        showToast(`SMS OTP sent to +91 ${cleanMobile}! Code: ${randomOtp}`);
+
+        if (res.deliveredByGateway) {
+          showToast(`✓ OTP delivered directly to WhatsApp (+91 ${cleanMobile})!`);
+        } else {
+          showToast(`✓ WhatsApp OTP dispatched to +91 ${cleanMobile}!`);
+        }
+      } catch (err: any) {
+        console.warn('Background WhatsApp dispatch error:', err);
       }
     } finally {
       setIsSendingResetOtp(false);
@@ -625,7 +625,7 @@ export const LoginScreen: React.FC = () => {
                   {!isResetOtpVerified && (
                     <button
                       type="button"
-                      onClick={() => handleSendResetOtp('whatsapp')}
+                      onClick={() => handleSendResetOtp()}
                       disabled={isSendingResetOtp || resetMobile.replace(/\D/g, '').length < 10}
                       className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs whitespace-nowrap transition-all active:scale-95 cursor-pointer"
                     >
@@ -656,7 +656,7 @@ export const LoginScreen: React.FC = () => {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleSendResetOtp('whatsapp')}
+                        onClick={() => handleSendResetOtp()}
                         className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         <RotateCcw className="w-3 h-3" />

@@ -32,47 +32,56 @@ async function startServer() {
       const textMessage = message || `*ZoroTask Account Verification*\n\nYour OTP code is: *${otp}*\n\nValid for 10 minutes. Do not share this OTP with anyone.\n\n- ZoroTask Security Team`;
       const fallbackLink = `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(textMessage)}`;
 
-      // 1. Renflair Gateway
+      // 1. Renflair WhatsApp Gateway (Direct WhatsApp OTP delivery)
       if (provider === 'renflair' || String(apiUrl).includes('renflair')) {
         const keyToUse = (apiKey || '417d155c4d7937dc6555a13a71f09ec0').trim();
-        const baseUrl = 'https://whatsapp.renflair.in/V1.php';
-        const targetUrl = `${baseUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+        
+        // Always prioritize the official Renflair WhatsApp OTP endpoint
+        const whatsappUrl = 'https://whatsapp.renflair.in/V1.php';
+        const targetUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+
+        let lastResponseText = '';
+        let lastResponseJson: any = null;
+        let isSuccess = false;
+        let gatewayMsg = '';
 
         try {
-          const apiRes = await fetch(targetUrl, { method: 'GET' });
-          const respText = await apiRes.text();
-          let respJson: any = null;
+          const apiRes = await fetch(targetUrl, { method: 'GET', signal: AbortSignal.timeout(8000) });
+          lastResponseText = await apiRes.text();
           try {
-            respJson = JSON.parse(respText);
+            lastResponseJson = JSON.parse(lastResponseText);
           } catch {
-            respJson = null;
+            lastResponseJson = null;
           }
 
-          const statusStr = String(respJson?.status || '').toUpperCase();
-          const isSuccess = statusStr === 'SUCCESS' || respJson?.success === true;
-
-          return res.json({
-            success: true,
-            provider: 'renflair',
-            deliveredByGateway: isSuccess,
-            status: apiRes.status,
-            message: isSuccess
-              ? `Delivered directly to WhatsApp +91 ${cleanMobile}`
-              : `OTP dispatched to WhatsApp +91 ${cleanMobile}`,
-            fallbackLink,
-            directLink: fallbackLink,
-            gatewayResponse: respJson || respText,
-          });
-        } catch (gatewayErr: any) {
-          console.warn('Renflair gateway fetch warning:', gatewayErr.message);
-          return res.json({
-            success: true,
-            provider: 'direct',
-            message: `OTP dispatched to WhatsApp +91 ${cleanMobile}`,
-            fallbackLink,
-            directLink: fallbackLink,
-          });
+          const statusStr = String(lastResponseJson?.status || '').toUpperCase();
+          if (statusStr === 'SUCCESS' || lastResponseJson?.success === true) {
+            isSuccess = true;
+            gatewayMsg = lastResponseJson?.message || 'Message Successfully Delivered';
+          } else if (lastResponseJson?.message) {
+            gatewayMsg = lastResponseJson.message;
+          }
+        } catch (err: any) {
+          console.warn(`Renflair WhatsApp gateway error:`, err.message);
+          gatewayMsg = err.message || 'Connection timeout';
         }
+
+        return res.json({
+          success: true,
+          provider: 'renflair',
+          deliveredByGateway: isSuccess,
+          status: isSuccess ? 200 : 400,
+          usedEndpoint: whatsappUrl,
+          gatewayMessage: gatewayMsg,
+          message: isSuccess
+            ? `OTP sent to your WhatsApp (+91 ${cleanMobile})!`
+            : gatewayMsg
+              ? `Renflair Gateway: ${gatewayMsg}`
+              : `OTP generated for WhatsApp (+91 ${cleanMobile})`,
+          fallbackLink,
+          directLink: fallbackLink,
+          gatewayResponse: lastResponseJson || lastResponseText,
+        });
       }
 
       // 2. UltraMsg Gateway

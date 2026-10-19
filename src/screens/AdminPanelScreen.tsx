@@ -55,8 +55,14 @@ import {
   Gift,
   Ticket,
   Send,
+  Zap,
+  LayoutDashboard,
+  TrendingUp,
+  TrendingDown,
+  Landmark,
+  Receipt,
 } from 'lucide-react';
-import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode, AddMoneyTier } from '../types';
+import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode, AddMoneyTier, AdminSettings } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { extractYouTubeId } from '../components/modals/VideoTaskModal';
 import {
@@ -66,6 +72,50 @@ import {
 } from '../utils/logoDownloader';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
+
+export interface AggregatedWithdrawal {
+  id: string;
+  userId?: string;
+  userName: string;
+  userMobile: string;
+  amount: number;
+  date: string;
+  timestamp?: number;
+  status: 'verified' | 'completed' | 'pending' | 'failed' | 'in_process';
+  payoutMethod?: 'upi' | 'bank';
+  payoutDetails?: string;
+  userUpiId: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankAccountHolder?: string;
+  utrNumber?: string;
+  note?: string;
+}
+
+export interface UserFinancialSummary {
+  mobile: string;
+  name: string;
+  joinedDate: string;
+  balance: number;
+  vipLevel: number;
+  vipTag: string;
+  totalDeposited: number;
+  approvedDepositsCount: number;
+  pendingDepositsCount: number;
+  upiIdsUsed: string[];
+  deposits: PaymentDeposit[];
+  totalWithdrawn: number;
+  completedWithdrawalsCount: number;
+  pendingWithdrawalsCount: number;
+  withdrawals: AggregatedWithdrawal[];
+  registeredUpiId: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankAccountHolder?: string;
+  netProfitForPlatform: number;
+}
 
 export const AdminPanelScreen: React.FC = () => {
   const {
@@ -124,19 +174,19 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Active Tab - Persisted across reloads so admin never loses their place
   const [activeTab, setActiveTab] = useState<
-    'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'notice' | 'gateway' | 'whatsapp' | 'settings' | 'backup' | 'tickets' | 'promos'
+    'dashboard' | 'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'notice' | 'gateway' | 'whatsapp' | 'settings' | 'backup' | 'tickets' | 'promos'
   >(() => {
     try {
       const savedTab = localStorage.getItem('zorotask_admin_active_tab') as any;
       if (
         savedTab &&
-        ['deposits', 'withdrawals', 'users', 'submissions', 'plans', 'notice', 'gateway', 'whatsapp', 'settings', 'backup', 'tickets', 'promos'].includes(savedTab)
+        ['dashboard', 'deposits', 'withdrawals', 'users', 'submissions', 'plans', 'notice', 'gateway', 'whatsapp', 'settings', 'backup', 'tickets', 'promos'].includes(savedTab)
       ) {
         return savedTab;
       }
-      return 'deposits';
+      return 'dashboard';
     } catch {
-      return 'deposits';
+      return 'dashboard';
     }
   });
 
@@ -145,6 +195,13 @@ export const AdminPanelScreen: React.FC = () => {
       localStorage.setItem('zorotask_admin_active_tab', activeTab);
     } catch {}
   }, [activeTab]);
+
+  // Financial Dashboard View States
+  const [dashboardView, setDashboardView] = useState<'ledger' | 'deposits' | 'withdrawals' | 'upi_breakdown'>('ledger');
+  const [dashboardSearch, setDashboardSearch] = useState('');
+  const [dashboardFilterUpi, setDashboardFilterUpi] = useState('all');
+  const [dashboardStatusFilter, setDashboardStatusFilter] = useState<'all' | 'paying_only' | 'withdrawn_only'>('all');
+  const [selectedUserLedger, setSelectedUserLedger] = useState<UserFinancialSummary | null>(null);
 
   // Payment Gateway API State
   const [gatewayEnabled, setGatewayEnabled] = useState(adminSettings.paymentGatewayEnabled ?? false);
@@ -597,6 +654,258 @@ export const AdminPanelScreen: React.FC = () => {
     [paymentDeposits]
   );
 
+  // All platform withdrawals across all users and global transactions
+  const allPlatformWithdrawals = useMemo<AggregatedWithdrawal[]>(() => {
+    const map = new Map<string, AggregatedWithdrawal>();
+
+    // 1. Collect from registeredUsers
+    registeredUsers.forEach((u) => {
+      const cleanM = (u.mobile || '').replace(/\D/g, '').slice(-10);
+      (u.transactions || []).forEach((t) => {
+        if (t.type === 'withdrawal') {
+          map.set(t.id, {
+            id: t.id,
+            userId: u.referralCode,
+            userName: u.name || 'User',
+            userMobile: cleanM,
+            amount: t.amount,
+            date: t.date,
+            timestamp: t.timestamp || 0,
+            status: t.status,
+            payoutMethod: t.payoutMethod || (u.bankAccountNumber ? 'bank' : 'upi'),
+            payoutDetails: t.payoutDetails || u.upiId || u.bankAccountNumber || '',
+            userUpiId: u.upiId || '',
+            bankName: u.bankName,
+            bankAccountNumber: u.bankAccountNumber,
+            bankIfsc: u.bankIfsc,
+            bankAccountHolder: u.bankAccountHolder || u.name,
+            utrNumber: t.utrNumber || '',
+            note: t.note,
+          });
+        }
+      });
+    });
+
+    // 2. Collect from global transactions
+    transactions.forEach((t) => {
+      if (t.type === 'withdrawal' && !map.has(t.id)) {
+        const cleanM = (user.mobile || '').replace(/\D/g, '').slice(-10);
+        map.set(t.id, {
+          id: t.id,
+          userName: user.name || 'User',
+          userMobile: cleanM,
+          amount: t.amount,
+          date: t.date,
+          timestamp: t.timestamp || 0,
+          status: t.status,
+          payoutMethod: t.payoutMethod || 'upi',
+          payoutDetails: t.payoutDetails || user.upiId || '',
+          userUpiId: user.upiId || '',
+          bankName: user.bankName,
+          bankAccountNumber: user.bankAccountNumber,
+          bankIfsc: user.bankIfsc,
+          bankAccountHolder: user.bankAccountHolder || user.name,
+          utrNumber: t.utrNumber || '',
+          note: t.note,
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [registeredUsers, transactions, user]);
+
+  const totalPaidWithdrawalsAmount = useMemo(() => {
+    return allPlatformWithdrawals
+      .filter((w) => w.status === 'verified' || w.status === 'completed')
+      .reduce((sum, w) => sum + (w.amount || 0), 0);
+  }, [allPlatformWithdrawals]);
+
+  const totalAllPendingWithdrawalsAmount = useMemo(() => {
+    return allPlatformWithdrawals
+      .filter((w) => w.status === 'pending')
+      .reduce((sum, w) => sum + (w.amount || 0), 0);
+  }, [allPlatformWithdrawals]);
+
+  const netPlatformCashflow = useMemo(() => {
+    return totalApprovedDepositsAmount - totalPaidWithdrawalsAmount;
+  }, [totalApprovedDepositsAmount, totalPaidWithdrawalsAmount]);
+
+  // User-wise Financial Summaries (Kaun user kitna payment kiya, kaun UPI par kiya, kitna withdrawal mila)
+  const userFinancialLedger = useMemo<UserFinancialSummary[]>(() => {
+    const usersMap = new Map<string, {
+      name: string;
+      mobile: string;
+      joinedDate: string;
+      balance: number;
+      vipLevel: number;
+      vipTag: string;
+      upiId: string;
+      bankName?: string;
+      bankAccountNumber?: string;
+      bankIfsc?: string;
+      bankAccountHolder?: string;
+    }>();
+
+    // Add all registered users
+    registeredUsers.forEach((u) => {
+      const cleanM = (u.mobile || '').replace(/\D/g, '').slice(-10);
+      if (cleanM) {
+        usersMap.set(cleanM, {
+          name: u.name || 'User',
+          mobile: cleanM,
+          joinedDate: u.joinedDate || '',
+          balance: u.balance || 0,
+          vipLevel: u.vipLevel ?? 0,
+          vipTag: u.vipTag || 'LV 0',
+          upiId: u.upiId || '',
+          bankName: u.bankName,
+          bankAccountNumber: u.bankAccountNumber,
+          bankIfsc: u.bankIfsc,
+          bankAccountHolder: u.bankAccountHolder || u.name,
+        });
+      }
+    });
+
+    // Also include depositors if not yet in registered users map
+    paymentDeposits.forEach((d) => {
+      const cleanM = (d.userMobile || '').replace(/\D/g, '').slice(-10);
+      if (cleanM && !usersMap.has(cleanM)) {
+        usersMap.set(cleanM, {
+          name: d.userName || 'Member',
+          mobile: cleanM,
+          joinedDate: d.submittedAt ? d.submittedAt.split(',')[0] : 'Recent',
+          balance: 0,
+          vipLevel: d.planLevel ?? 0,
+          vipTag: d.planTitle || 'LV 0',
+          upiId: '',
+        });
+      }
+    });
+
+    const summaries: UserFinancialSummary[] = [];
+
+    usersMap.forEach((u, cleanM) => {
+      const userDeposits = paymentDeposits.filter((d) => (d.userMobile || '').replace(/\D/g, '').slice(-10) === cleanM);
+      const approvedDeposits = userDeposits.filter((d) => d.status === 'approved');
+      const pendingDeposits = userDeposits.filter((d) => d.status === 'in_process');
+      const totalDeposited = approvedDeposits.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+      const upiIdsSet = new Set<string>();
+      approvedDeposits.forEach((d) => {
+        if (d.adminUpiId) upiIdsSet.add(d.adminUpiId);
+      });
+      if (upiIdsSet.size === 0 && userDeposits.length > 0) {
+        userDeposits.forEach((d) => { if (d.adminUpiId) upiIdsSet.add(d.adminUpiId); });
+      }
+
+      const userWithdrawals = allPlatformWithdrawals.filter((w) => w.userMobile === cleanM);
+      const completedWithdrawals = userWithdrawals.filter((w) => w.status === 'verified' || w.status === 'completed');
+      const pendingWithdrawals = userWithdrawals.filter((w) => w.status === 'pending');
+      const totalWithdrawn = completedWithdrawals.reduce((sum, w) => sum + (w.amount || 0), 0);
+
+      summaries.push({
+        mobile: cleanM,
+        name: u.name,
+        joinedDate: u.joinedDate,
+        balance: u.balance,
+        vipLevel: u.vipLevel,
+        vipTag: u.vipTag,
+        totalDeposited,
+        approvedDepositsCount: approvedDeposits.length,
+        pendingDepositsCount: pendingDeposits.length,
+        upiIdsUsed: Array.from(upiIdsSet),
+        deposits: userDeposits.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+        totalWithdrawn,
+        completedWithdrawalsCount: completedWithdrawals.length,
+        pendingWithdrawalsCount: pendingWithdrawals.length,
+        withdrawals: userWithdrawals,
+        registeredUpiId: u.upiId,
+        bankName: u.bankName,
+        bankAccountNumber: u.bankAccountNumber,
+        bankIfsc: u.bankIfsc,
+        bankAccountHolder: u.bankAccountHolder,
+        netProfitForPlatform: totalDeposited - totalWithdrawn,
+      });
+    });
+
+    return summaries.sort((a, b) => b.totalDeposited - a.totalDeposited || b.totalWithdrawn - a.totalWithdrawn);
+  }, [registeredUsers, paymentDeposits, allPlatformWithdrawals]);
+
+  // Breakdown of collections by Admin UPI ID
+  const upiIdBreakdown = useMemo(() => {
+    const map = new Map<string, { totalAmount: number; count: number; users: Set<string>; lastPaymentDate: string }>();
+
+    paymentDeposits.forEach((d) => {
+      if (d.status === 'approved') {
+        const upi = d.adminUpiId || adminSettings.adminUpiId || 'Primary Admin UPI';
+        const cur = map.get(upi) || { totalAmount: 0, count: 0, users: new Set<string>(), lastPaymentDate: '' };
+        cur.totalAmount += d.amount || 0;
+        cur.count += 1;
+        cur.users.add((d.userMobile || '').replace(/\D/g, '').slice(-10));
+        if (d.submittedAt) cur.lastPaymentDate = d.submittedAt;
+        map.set(upi, cur);
+      }
+    });
+
+    return Array.from(map.entries()).map(([upiId, data]) => ({
+      upiId,
+      totalAmount: data.totalAmount,
+      count: data.count,
+      uniqueUsersCount: data.users.size,
+      lastPaymentDate: data.lastPaymentDate,
+    })).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [paymentDeposits, adminSettings.adminUpiId]);
+
+  // Filtered User Financial Ledger
+  const filteredUserLedger = useMemo(() => {
+    return userFinancialLedger.filter((u) => {
+      if (dashboardStatusFilter === 'paying_only' && u.totalDeposited <= 0) return false;
+      if (dashboardStatusFilter === 'withdrawn_only' && u.totalWithdrawn <= 0) return false;
+      if (dashboardFilterUpi !== 'all' && !u.upiIdsUsed.includes(dashboardFilterUpi)) return false;
+
+      if (!dashboardSearch.trim()) return true;
+      const q = dashboardSearch.toLowerCase().trim();
+      return (
+        u.mobile.includes(q) ||
+        u.name.toLowerCase().includes(q) ||
+        u.registeredUpiId.toLowerCase().includes(q) ||
+        u.upiIdsUsed.some((upi) => upi.toLowerCase().includes(q)) ||
+        (u.bankAccountNumber && u.bankAccountNumber.includes(q))
+      );
+    });
+  }, [userFinancialLedger, dashboardSearch, dashboardFilterUpi, dashboardStatusFilter]);
+
+  // Filtered deposits specifically for Dashboard View
+  const filteredDashboardDeposits = useMemo(() => {
+    return paymentDeposits.filter((d) => {
+      if (dashboardFilterUpi !== 'all' && d.adminUpiId !== dashboardFilterUpi) return false;
+      if (!dashboardSearch.trim()) return true;
+      const q = dashboardSearch.toLowerCase().trim();
+      return (
+        (d.userMobile && d.userMobile.includes(q)) ||
+        (d.userName && d.userName.toLowerCase().includes(q)) ||
+        (d.utrNumber && d.utrNumber.toLowerCase().includes(q)) ||
+        (d.adminUpiId && d.adminUpiId.toLowerCase().includes(q)) ||
+        (d.planTitle && d.planTitle.toLowerCase().includes(q))
+      );
+    });
+  }, [paymentDeposits, dashboardSearch, dashboardFilterUpi]);
+
+  // Filtered withdrawals specifically for Dashboard View
+  const filteredDashboardWithdrawals = useMemo(() => {
+    return allPlatformWithdrawals.filter((w) => {
+      if (!dashboardSearch.trim()) return true;
+      const q = dashboardSearch.toLowerCase().trim();
+      return (
+        w.userMobile.includes(q) ||
+        w.userName.toLowerCase().includes(q) ||
+        w.userUpiId.toLowerCase().includes(q) ||
+        (w.bankAccountNumber && w.bankAccountNumber.includes(q)) ||
+        (w.bankName && w.bankName.toLowerCase().includes(q))
+      );
+    });
+  }, [allPlatformWithdrawals, dashboardSearch]);
+
   // Filtered deposits
   const filteredDeposits = useMemo(() => {
     return paymentDeposits.filter((d) => {
@@ -817,12 +1126,12 @@ export const AdminPanelScreen: React.FC = () => {
         },
       });
 
-      if (res.success) {
-        setWhatsappTestResult(`✓ Delivered successfully via ${whatsappProviderInput.toUpperCase()}! Response: ${JSON.stringify(res.rawResponse || '200 OK')}`);
-        showToast('✓ WhatsApp message delivered successfully!');
+      if (res.success && res.deliveredByGateway) {
+        setWhatsappTestResult(`✓ Delivered successfully via ${whatsappProviderInput.toUpperCase()}! Endpoint: ${res.usedEndpoint || renflairApiUrlInput} | Message: ${res.gatewayMessage || 'OK'} | Full Response: ${JSON.stringify(res.rawResponse || '200 OK')}`);
+        showToast(`✓ WhatsApp message delivered! (${res.gatewayMessage || 'OK'})`);
       } else {
-        setWhatsappTestResult(`Notice / Response from Gateway: ${res.message || JSON.stringify(res.rawResponse || {})}`);
-        showToast(`Notice: ${res.message}`);
+        setWhatsappTestResult(`⚠️ Gateway Report: ${res.gatewayMessage || res.message} | Endpoint: ${res.usedEndpoint || renflairApiUrlInput} | Status: ${res.deliveredByGateway ? 'Delivered' : 'Pending/Failed'} | Response: ${JSON.stringify(res.rawResponse || {})}`);
+        showToast(`⚠️ Gateway: ${res.gatewayMessage || res.message}`);
         if (res.fallbackLink) {
           window.open(res.fallbackLink, '_blank');
         }
@@ -833,6 +1142,26 @@ export const AdminPanelScreen: React.FC = () => {
     } finally {
       setWhatsappTestSending(false);
     }
+  };
+
+  // One-click Auto-Configure & Fix Renflair Settings
+  const handleAutoConfigureRenflair = async () => {
+    setWhatsappProviderInput('renflair');
+    setRenflairApiUrlInput('https://sms.renflair.in/V1.php');
+    setWhatsappApiUrlInput('https://sms.renflair.in/V1.php');
+    setRenflairMethodInput('GET');
+    setWhatsappApiEnabledInput(true);
+    
+    const updates: Partial<AdminSettings> = {
+      whatsappProvider: 'renflair',
+      renflairApiUrl: 'https://sms.renflair.in/V1.php',
+      whatsappApiUrl: 'https://sms.renflair.in/V1.php',
+      renflairMethod: 'GET',
+      whatsappApiEnabled: true,
+      renflairApiKey: renflairApiKeyInput.trim(),
+    };
+    await updateAdminSettings(updates);
+    showToast('✓ Renflair Settings auto-configured & saved to Cloud! (Endpoint: https://sms.renflair.in/V1.php, Method: GET)');
   };
 
   // Handle Custom QR Code Image Upload (Auto-saves to Cloud immediately!)
@@ -1160,6 +1489,18 @@ export const AdminPanelScreen: React.FC = () => {
         {/* Tab Navigation Navigation Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-800 scrollbar-none">
           <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'dashboard'
+                ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>📊 Financial Dashboard</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('deposits')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
               activeTab === 'deposits'
@@ -1344,6 +1685,935 @@ export const AdminPanelScreen: React.FC = () => {
             <span>Database Backup</span>
           </button>
         </div>
+
+        {/* ========================================================= */}
+        {/* TAB 0: FINANCIAL DASHBOARD (USER PAYMENTS & WITHDRAWALS) */}
+        {/* ========================================================= */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Top Header Card */}
+            <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <LayoutDashboard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                      Financial Tracking &amp; Payment Ledger
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Kon user kitna payment kiya hai, kaun UPI par kiya hai, aur kis user ko kitna withdrawal mila hai — full dashboard record.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* View Switcher Pills */}
+              <div className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('ledger')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    dashboardView === 'ledger'
+                      ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Users Ledger ({filteredUserLedger.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('deposits')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    dashboardView === 'deposits'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>All UPI Payments ({filteredDashboardDeposits.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('withdrawals')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    dashboardView === 'withdrawals'
+                      ? 'bg-indigo-500 text-white font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Withdrawals ({filteredDashboardWithdrawals.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDashboardView('upi_breakdown')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    dashboardView === 'upi_breakdown'
+                      ? 'bg-blue-500 text-white font-black shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>UPI Breakdown ({upiIdBreakdown.length})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Financial Overview Metrics Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {/* Metric 1: Total Collections */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-slate-900 border border-emerald-500/30 shadow-sm">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-400 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4" />
+                    <span>Total User Payments</span>
+                  </span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                    Deposited
+                  </span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">
+                  ₹{totalApprovedDepositsAmount.toLocaleString('en-IN')}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>{paymentDeposits.filter((d) => d.status === 'approved').length} verified deposits</span>
+                  <span className="text-emerald-400 font-semibold">{userFinancialLedger.filter((u) => u.totalDeposited > 0).length} users</span>
+                </div>
+              </div>
+
+              {/* Metric 2: Total Withdrawals Paid */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-slate-900 border border-indigo-500/30 shadow-sm">
+                <div className="flex items-center justify-between text-xs font-bold text-indigo-400 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <TrendingDown className="w-4 h-4" />
+                    <span>Total Withdrawals Paid</span>
+                  </span>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-bold">
+                    Paid Out
+                  </span>
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-indigo-400 tracking-tight">
+                  ₹{totalPaidWithdrawalsAmount.toLocaleString('en-IN')}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>{allPlatformWithdrawals.filter((w) => w.status === 'verified' || w.status === 'completed').length} completed payouts</span>
+                  <span className="text-indigo-400 font-semibold">{userFinancialLedger.filter((u) => u.totalWithdrawn > 0).length} users</span>
+                </div>
+              </div>
+
+              {/* Metric 3: Net Platform Cashflow */}
+              <div className={`p-4 rounded-2xl border shadow-sm ${
+                netPlatformCashflow >= 0
+                  ? 'bg-gradient-to-br from-teal-500/10 to-slate-900 border-teal-500/30'
+                  : 'bg-gradient-to-br from-rose-500/10 to-slate-900 border-rose-500/30'
+              }`}>
+                <div className={`flex items-center justify-between text-xs font-bold mb-2 ${
+                  netPlatformCashflow >= 0 ? 'text-teal-400' : 'text-rose-400'
+                }`}>
+                  <span className="flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4" />
+                    <span>Net Platform Surplus</span>
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    netPlatformCashflow >= 0 ? 'bg-teal-500/20 text-teal-300' : 'bg-rose-500/20 text-rose-300'
+                  }`}>
+                    {netPlatformCashflow >= 0 ? 'Surplus' : 'Deficit'}
+                  </span>
+                </div>
+                <div className={`text-xl sm:text-2xl font-black tracking-tight ${
+                  netPlatformCashflow >= 0 ? 'text-teal-400' : 'text-rose-400'
+                }`}>
+                  ₹{netPlatformCashflow.toLocaleString('en-IN')}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Payments Received - Withdrawals Paid
+                </div>
+              </div>
+
+              {/* Metric 4: Pending Actions */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 to-slate-900 border border-amber-500/30 shadow-sm">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-400 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-4 h-4" />
+                    <span>Pending Processing</span>
+                  </span>
+                  {(pendingDepositsList.length > 0 || pendingWithdrawalsList.length > 0) && (
+                    <span className="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-black animate-pulse">
+                      Action Needed
+                    </span>
+                  )}
+                </div>
+                <div className="text-xl sm:text-2xl font-black text-amber-400 tracking-tight">
+                  ₹{(pendingDepositsAmount + totalAllPendingWithdrawalsAmount).toLocaleString('en-IN')}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>{pendingDepositsList.length} dep (₹{pendingDepositsAmount})</span>
+                  <span>{pendingWithdrawalsList.length} wdr (₹{totalAllPendingWithdrawalsAmount})</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Search Box */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={dashboardSearch}
+                  onChange={(e) => setDashboardSearch(e.target.value)}
+                  placeholder="Search by User Name, Mobile (10 digits), UPI ID, or UTR..."
+                  className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 outline-none focus:border-emerald-500 transition"
+                />
+                {dashboardSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setDashboardSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status and UPI Filters */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Status Filter */}
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setDashboardStatusFilter('all')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                      dashboardStatusFilter === 'all'
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    All Users ({userFinancialLedger.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDashboardStatusFilter('paying_only')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                      dashboardStatusFilter === 'paying_only'
+                        ? 'bg-emerald-500 text-slate-950 font-black'
+                        : 'text-emerald-400 hover:text-emerald-300'
+                    }`}
+                  >
+                    Paying Only ({userFinancialLedger.filter((u) => u.totalDeposited > 0).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDashboardStatusFilter('withdrawn_only')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                      dashboardStatusFilter === 'withdrawn_only'
+                        ? 'bg-indigo-500 text-white font-black'
+                        : 'text-indigo-400 hover:text-indigo-300'
+                    }`}
+                  >
+                    Withdrawn ({userFinancialLedger.filter((u) => u.totalWithdrawn > 0).length})
+                  </button>
+                </div>
+
+                {/* Filter by Admin UPI ID */}
+                {upiIdBreakdown.length > 0 && (
+                  <select
+                    value={dashboardFilterUpi}
+                    onChange={(e) => setDashboardFilterUpi(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 font-semibold outline-none focus:border-emerald-500"
+                  >
+                    <option value="all">All Admin UPI IDs</option>
+                    {upiIdBreakdown.map((b) => (
+                      <option key={b.upiId} value={b.upiId}>
+                        {b.upiId} (₹{b.totalAmount.toLocaleString('en-IN')})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* ======================================================== */}
+            {/* SUB-VIEW 1: USERS FINANCIAL LEDGER (CORE REQUIREMENT) */}
+            {/* ======================================================== */}
+            {dashboardView === 'ledger' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span>Showing {filteredUserLedger.length} member records</span>
+                  <span className="text-[11px] text-slate-500">Sorted by highest payments &amp; withdrawals</span>
+                </div>
+
+                {filteredUserLedger.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
+                    <Users className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+                    <p className="text-sm font-bold text-slate-300">No users match the search filter</p>
+                    <p className="text-xs text-slate-500 mt-1">Try clearing search or filters above</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                    {filteredUserLedger.map((u) => (
+                      <div
+                        key={u.mobile}
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 p-4 rounded-2xl transition flex flex-col justify-between space-y-3.5 shadow-xs"
+                      >
+                        {/* Top: User Info */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                              {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h3 className="text-sm font-black text-white truncate">{u.name}</h3>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  {u.vipTag || `LV ${u.vipLevel}`}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono mt-0.5">
+                                <span>+91 {u.mobile}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    copyText(u.mobile);
+                                    showToast('✓ Mobile number copied!');
+                                  }}
+                                  className="text-slate-500 hover:text-emerald-400 transition"
+                                  title="Copy Mobile"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] text-slate-500 block">Wallet Balance</span>
+                            <span className="text-xs font-mono font-bold text-slate-200">
+                              ₹{(u.balance || 0).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Middle: Financial Grid */}
+                        <div className="grid grid-cols-2 gap-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+                          {/* Payment Made By User */}
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
+                              <TrendingUp className="w-3 h-3" />
+                              <span>Total Payment Kiya</span>
+                            </span>
+                            <div className="text-base font-black text-emerald-400 font-mono">
+                              ₹{u.totalDeposited.toLocaleString('en-IN')}
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              {u.approvedDepositsCount} verified payments
+                              {u.pendingDepositsCount > 0 && (
+                                <span className="text-amber-400 ml-1 font-bold">({u.pendingDepositsCount} pending)</span>
+                              )}
+                            </span>
+                          </div>
+
+                          {/* Withdrawal Received By User */}
+                          <div className="space-y-1 border-l border-slate-800/80 pl-2.5">
+                            <span className="text-[10px] font-semibold text-indigo-400 flex items-center gap-1">
+                              <TrendingDown className="w-3 h-3" />
+                              <span>Withdrawal Mila</span>
+                            </span>
+                            <div className="text-base font-black text-indigo-400 font-mono">
+                              ₹{u.totalWithdrawn.toLocaleString('en-IN')}
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              {u.completedWithdrawalsCount} completed payouts
+                              {u.pendingWithdrawalsCount > 0 && (
+                                <span className="text-amber-400 ml-1 font-bold">({u.pendingWithdrawalsCount} pending)</span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* UPI IDs Used by this User */}
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-semibold text-slate-400 block">
+                            Kaun UPI par payment kiya:
+                          </span>
+                          {u.upiIdsUsed.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {u.upiIdsUsed.map((upi) => (
+                                <span
+                                  key={upi}
+                                  className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md"
+                                >
+                                  <QrCode className="w-2.5 h-2.5 text-amber-400" />
+                                  <span>{upi}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">No deposits recorded yet</span>
+                          )}
+                        </div>
+
+                        {/* Bottom Action & User Payout Info */}
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                          <div className="text-[10px] text-slate-400 truncate max-w-[200px]">
+                            {u.registeredUpiId ? (
+                              <span className="flex items-center gap-1 font-mono text-slate-300 truncate">
+                                <span>Payout UPI:</span> <strong>{u.registeredUpiId}</strong>
+                              </span>
+                            ) : u.bankAccountNumber ? (
+                              <span className="truncate">Bank: {u.bankName || 'Bank'} A/C ...{u.bankAccountNumber.slice(-4)}</span>
+                            ) : (
+                              <span>No payout method added</span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserLedger(u)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer"
+                          >
+                            <span>Statement Record</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* SUB-VIEW 2: ALL DEPOSITS & WHICH UPI ID USED */}
+            {/* ======================================================== */}
+            {dashboardView === 'deposits' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span>Showing {filteredDashboardDeposits.length} UPI deposit transactions</span>
+                  <span className="text-[11px] text-slate-500">Every payment submitted by users</span>
+                </div>
+
+                {filteredDashboardDeposits.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
+                    <QrCode className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+                    <p className="text-sm font-bold text-slate-300">No deposit records match your filter</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {filteredDashboardDeposits.map((d) => (
+                      <div
+                        key={d.id}
+                        className="bg-slate-900 border border-slate-800 p-3.5 sm:p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-700 transition"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                            d.status === 'approved'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : d.status === 'rejected'
+                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse'
+                          }`}>
+                            <QrCode className="w-5 h-5" />
+                          </div>
+
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-black text-white">{d.userName}</span>
+                              <span className="text-xs text-slate-400 font-mono">+91 {d.userMobile}</span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                d.status === 'approved'
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : d.status === 'rejected'
+                                  ? 'bg-rose-500 text-white'
+                                  : 'bg-amber-500 text-slate-950 font-black'
+                              }`}>
+                                {d.status === 'in_process' ? 'Pending Review' : d.status}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-300">
+                              <span className="font-semibold text-slate-400">Payment Made To:</span>
+                              <span className="font-mono font-black text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <span>{d.adminUpiId || adminSettings.adminUpiId || 'Admin UPI'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    copyText(d.adminUpiId || adminSettings.adminUpiId || '');
+                                    showToast('✓ UPI ID copied!');
+                                  }}
+                                  className="text-amber-400 hover:text-white"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              </span>
+
+                              <span className="text-slate-600">•</span>
+                              <span className="text-slate-400">UTR:</span>
+                              <span className="font-mono font-bold text-slate-200 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1">
+                                <span>{d.utrNumber}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    copyText(d.utrNumber);
+                                    showToast('✓ UTR copied!');
+                                  }}
+                                  className="text-slate-400 hover:text-white"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                              <span>Submitted: {d.submittedAt}</span>
+                              {d.planTitle && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-teal-400">{d.planTitle}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Amount & Actions */}
+                        <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                          <div className="text-left md:text-right">
+                            <span className="text-lg sm:text-xl font-black text-emerald-400 font-mono block">
+                              ₹{(d.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                            {d.bonus > 0 && (
+                              <span className="text-[10px] text-teal-400 font-semibold block">
+                                +₹{d.bonus} bonus
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {d.screenshotUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setViewScreenshotDeposit(d)}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                                title="View Payment Proof"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Proof</span>
+                              </button>
+                            )}
+
+                            {d.status === 'in_process' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => approvePaymentDeposit(d.id)}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRejectingDepositId(d.id)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* SUB-VIEW 3: ALL USER WITHDRAWALS (PAID & PENDING) */}
+            {/* ======================================================== */}
+            {dashboardView === 'withdrawals' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span>Showing {filteredDashboardWithdrawals.length} withdrawal transactions</span>
+                  <span className="text-[11px] text-slate-500">Every user payout record</span>
+                </div>
+
+                {filteredDashboardWithdrawals.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
+                    <ArrowUpRight className="w-8 h-8 mx-auto text-slate-600 mb-2" />
+                    <p className="text-sm font-bold text-slate-300">No withdrawal records match your filter</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {filteredDashboardWithdrawals.map((w) => (
+                      <div
+                        key={w.id}
+                        className="bg-slate-900 border border-slate-800 p-3.5 sm:p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-700 transition"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                            w.status === 'verified' || w.status === 'completed'
+                              ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                              : w.status === 'failed'
+                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse'
+                          }`}>
+                            <ArrowUpRight className="w-5 h-5" />
+                          </div>
+
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-black text-white">{w.userName}</span>
+                              <span className="text-xs text-slate-400 font-mono">+91 {w.userMobile}</span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                w.status === 'verified' || w.status === 'completed'
+                                  ? 'bg-emerald-500 text-slate-950 font-black'
+                                  : w.status === 'failed'
+                                  ? 'bg-rose-500 text-white'
+                                  : 'bg-amber-500 text-slate-950 font-black'
+                              }`}>
+                                {w.status === 'verified' ? 'Paid / Completed' : w.status}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-300">
+                              <span className="font-semibold text-slate-400">Sent To:</span>
+                              {w.userUpiId ? (
+                                <span className="font-mono font-black text-teal-300 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                  <span>{w.userUpiId}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      copyText(w.userUpiId);
+                                      showToast('✓ User UPI copied!');
+                                    }}
+                                    className="text-teal-400 hover:text-white"
+                                  >
+                                    <Copy className="w-2.5 h-2.5" />
+                                  </button>
+                                </span>
+                              ) : (
+                                <span className="font-mono text-slate-200">
+                                  {w.bankName || 'Bank'} A/C {w.bankAccountNumber} (IFSC: {w.bankIfsc})
+                                </span>
+                              )}
+
+                              {w.utrNumber && (
+                                <>
+                                  <span className="text-slate-600">•</span>
+                                  <span className="text-slate-400">Payout UTR:</span>
+                                  <span className="font-mono text-slate-200 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                                    {w.utrNumber}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-slate-500">
+                              <span>Date: {w.date}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Amount & Actions */}
+                        <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                          <div className="text-left md:text-right">
+                            <span className="text-lg sm:text-xl font-black text-indigo-400 font-mono block">
+                              ₹{(w.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-slate-400">Payout Amount</span>
+                          </div>
+
+                          {w.status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('withdrawals');
+                                setWithdrawalFilter('pending');
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>Process Payout</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* SUB-VIEW 4: UPI ID COLLECTION BREAKDOWN */}
+            {/* ======================================================== */}
+            {dashboardView === 'upi_breakdown' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span>Breakdown of all payments received per Admin UPI ID</span>
+                  <span className="text-[11px] text-slate-500">Track which UPI ID receives how much</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {upiIdBreakdown.map((b) => (
+                    <div
+                      key={b.upiId}
+                      className="bg-slate-900 border border-slate-800 hover:border-slate-700 p-4 rounded-2xl transition space-y-3 shadow-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                            Admin Receiving UPI
+                          </span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <h4 className="text-sm font-black text-amber-300 font-mono truncate">{b.upiId}</h4>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                copyText(b.upiId);
+                                showToast('✓ UPI ID copied!');
+                              }}
+                              className="text-slate-400 hover:text-white"
+                              title="Copy UPI ID"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <span className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <Building2 className="w-4 h-4" />
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Total Amount Collected</span>
+                        <div className="text-2xl font-black text-emerald-400 font-mono tracking-tight">
+                          ₹{b.totalAmount.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 pt-1">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">Transactions</span>
+                          <span className="font-bold text-white">{b.count} deposits</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">Unique Users</span>
+                          <span className="font-bold text-emerald-400">{b.uniqueUsersCount} users</span>
+                        </div>
+                      </div>
+
+                      {b.lastPaymentDate && (
+                        <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+                          Last payment: {b.lastPaymentDate}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDashboardFilterUpi(b.upiId);
+                          setDashboardView('deposits');
+                        }}
+                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                        <span>View Deposits on this UPI</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* USER DETAILED STATEMENT MODAL */}
+            {/* ======================================================== */}
+            {selectedUserLedger && (
+              <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+                <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950 font-black flex items-center justify-center text-sm shadow-xs">
+                        {selectedUserLedger.name ? selectedUserLedger.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black text-white">{selectedUserLedger.name}</h3>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            {selectedUserLedger.vipTag}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 font-mono">+91 {selectedUserLedger.mobile}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUserLedger(null)}
+                      className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Summary Bar */}
+                  <div className="grid grid-cols-3 gap-2 p-3 sm:p-4 bg-slate-950/80 border-b border-slate-800 shrink-0 text-center">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Total Deposited</span>
+                      <span className="text-sm sm:text-base font-black text-emerald-400 font-mono">
+                        ₹{selectedUserLedger.totalDeposited.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="border-x border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Total Withdrawn</span>
+                      <span className="text-sm sm:text-base font-black text-indigo-400 font-mono">
+                        ₹{selectedUserLedger.totalWithdrawn.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Net Platform Margin</span>
+                      <span className={`text-sm sm:text-base font-black font-mono ${
+                        selectedUserLedger.netProfitForPlatform >= 0 ? 'text-teal-400' : 'text-rose-400'
+                      }`}>
+                        ₹{selectedUserLedger.netProfitForPlatform.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Modal Body - Scrollable */}
+                  <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
+                    {/* User Payments Section */}
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Payments Made ({selectedUserLedger.deposits.length})</span>
+                      </h4>
+
+                      {selectedUserLedger.deposits.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic p-3 bg-slate-950 rounded-xl border border-slate-800">
+                          No payments made by this user yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedUserLedger.deposits.map((d) => (
+                            <div
+                              key={d.id}
+                              className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-white text-sm">
+                                    ₹{(d.amount || 0).toLocaleString('en-IN')}
+                                  </span>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                    d.status === 'approved'
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : d.status === 'rejected'
+                                      ? 'bg-rose-500/20 text-rose-300'
+                                      : 'bg-amber-500/20 text-amber-300'
+                                  }`}>
+                                    {d.status}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  Paid to UPI: <strong className="text-amber-300 font-mono">{d.adminUpiId || adminSettings.adminUpiId}</strong>
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  UTR: {d.utrNumber} • {d.submittedAt}
+                                </div>
+                              </div>
+
+                              {d.screenshotUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewScreenshotDeposit(d)}
+                                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>Proof</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* User Withdrawals Section */}
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>Withdrawals Received ({selectedUserLedger.withdrawals.length})</span>
+                      </h4>
+
+                      {selectedUserLedger.withdrawals.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic p-3 bg-slate-950 rounded-xl border border-slate-800">
+                          No withdrawals requested by this user yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedUserLedger.withdrawals.map((w) => (
+                            <div
+                              key={w.id}
+                              className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-white text-sm">
+                                    ₹{(w.amount || 0).toLocaleString('en-IN')}
+                                  </span>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                    w.status === 'verified' || w.status === 'completed'
+                                      ? 'bg-emerald-500/20 text-emerald-300'
+                                      : w.status === 'failed'
+                                      ? 'bg-rose-500/20 text-rose-300'
+                                      : 'bg-amber-500/20 text-amber-300'
+                                  }`}>
+                                    {w.status === 'verified' ? 'Completed' : w.status}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  Sent to: <strong className="text-teal-300 font-mono">{w.userUpiId || `${w.bankName || 'Bank'} A/C`}</strong>
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {w.utrNumber ? `Payout UTR: ${w.utrNumber} • ` : ''}{w.date}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-3 sm:p-4 bg-slate-950 border-t border-slate-800 flex justify-end shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUserLedger(null)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Close Statement
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ========================================================= */}
         {/* TAB 1: UPI & QR DEPOSITS VERIFICATION (CORE FIX!) */}
@@ -3413,22 +4683,50 @@ export const AdminPanelScreen: React.FC = () => {
                       </a>
                     </div>
 
-                    <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1.5">
-                      <p className="font-semibold text-emerald-400">📋 Renflair Setup Guide:</p>
-                      <ol className="list-decimal pl-4 space-y-1 text-slate-400">
-                        <li>Visit <strong className="text-slate-200">https://renflair.in/wp-otp.php</strong> and sign in to your Renflair dashboard.</li>
-                        <li>Copy your assigned <strong className="text-slate-200">API Key / Token</strong> from your Renflair panel.</li>
-                        <li>Paste your key in the <strong className="text-emerald-400">Renflair API Key</strong> field below.</li>
-                        <li>Select method (<strong className="text-slate-200">POST</strong> or <strong className="text-slate-200">GET</strong>) and click <strong className="text-emerald-400">"Save &amp; Synchronize"</strong>.</li>
-                        <li>Test sending an OTP instantly with the Live Sandbox below!</li>
-                      </ol>
+                    {/* Renflair Credit & Troubleshooting Guide */}
+                    <div className="p-3.5 bg-gradient-to-br from-slate-900 to-amber-950/30 rounded-xl border border-amber-500/30 text-[11px] text-slate-300 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-amber-400 flex items-center gap-1.5">
+                          <span>💡 Renflair Me Credit Hai Par OTP Nahi Jaa Raha? In 3 Cheezon Ko Check Karein:</span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleAutoConfigureRenflair}
+                          className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition active:scale-95"
+                        >
+                          <Zap className="w-3 h-3" />
+                          <span>⚡ 1-Click Auto Fix Settings</span>
+                        </button>
+                      </div>
+
+                      <ul className="space-y-1.5 text-slate-300 pl-1">
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-amber-400 font-bold shrink-0">1.</span>
+                          <span>
+                            <strong className="text-white">Personal API Key:</strong> Demo key <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">417d155c4d79...</code> sirf test account hai. Apna Renflair dashboard login karke apna <strong>Personal API Key</strong> yahan paste karein jisme aapka balance hai.
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-amber-400 font-bold shrink-0">2.</span>
+                          <span>
+                            <strong className="text-white">Recommended Endpoint:</strong> <code className="text-emerald-400 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">https://sms.renflair.in/V1.php</code> use karein — yeh WhatsApp aur SMS dono par 100% guarantee ke saath OTP deliver karta hai.
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-amber-400 font-bold shrink-0">3.</span>
+                          <span>
+                            <strong className="text-white">Method GET:</strong> Renflair V1 API query parameters (GET) use karta hai. POST select mat karein.
+                          </span>
+                        </li>
+                      </ul>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <div className="space-y-1 sm:col-span-2">
                         <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-bold text-slate-300">
-                            Renflair API Key / Secret Token *
+                          <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                            <span>Renflair API Key / Secret Token *</span>
+                            <span className="text-[10px] text-emerald-400 font-normal">(Account with your purchased credits)</span>
                           </label>
                           <button
                             type="button"
@@ -3446,18 +4744,51 @@ export const AdminPanelScreen: React.FC = () => {
                             setRenflairApiKeyInput(e.target.value);
                             setWhatsappApiTokenInput(e.target.value);
                           }}
-                          placeholder="Paste your API Key from renflair.in/wp-otp.php"
+                          placeholder="Paste your API Key from renflair.in"
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
                         />
                         <span className="text-[9px] text-slate-400">
-                          Your secret API key from renflair.in/wp-otp.php. Required to authenticate outgoing OTP requests.
+                          Apna Renflair dashboard se API key yahan daalein taaki aapka khareeda hua credit use ho sake.
                         </span>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-300">
-                          Renflair API Endpoint URL
-                        </label>
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-slate-300">
+                            Renflair API Endpoint URL
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenflairApiUrlInput('https://sms.renflair.in/V1.php');
+                                setWhatsappApiUrlInput('https://sms.renflair.in/V1.php');
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition ${
+                                renflairApiUrlInput.includes('sms.renflair.in')
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              SMS + WhatsApp (Best)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenflairApiUrlInput('https://whatsapp.renflair.in/V1.php');
+                                setWhatsappApiUrlInput('https://whatsapp.renflair.in/V1.php');
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition ${
+                                renflairApiUrlInput.includes('whatsapp.renflair.in')
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              WhatsApp Only
+                            </button>
+                          </div>
+                        </div>
+
                         <input
                           type="text"
                           value={renflairApiUrlInput}
@@ -3465,15 +4796,18 @@ export const AdminPanelScreen: React.FC = () => {
                             setRenflairApiUrlInput(e.target.value);
                             setWhatsappApiUrlInput(e.target.value);
                           }}
-                          placeholder="https://whatsapp.renflair.in/V1.php"
+                          placeholder="https://sms.renflair.in/V1.php"
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
                         />
-                        <span className="text-[9px] text-slate-400">
-                          Official endpoint: <code className="text-emerald-400">https://whatsapp.renflair.in/V1.php</code>
-                        </span>
+
+                        {renflairApiUrlInput.includes('wp-otp.php') && (
+                          <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">
+                            ⚠️ Note: <code className="text-amber-200">wp-otp.php</code> Renflair ka login portal hai, API nahi. ZoroTask automatically isko <code className="text-emerald-300 font-bold">https://sms.renflair.in/V1.php</code> par redirect kar dega.
+                          </div>
+                        )}
                       </div>
 
-                      <div className="space-y-1">
+                      <div className="space-y-1 sm:col-span-2">
                         <label className="text-[11px] font-bold text-slate-300">
                           HTTP Request Method
                         </label>
@@ -3482,11 +4816,11 @@ export const AdminPanelScreen: React.FC = () => {
                           onChange={(e) => setRenflairMethodInput(e.target.value as 'POST' | 'GET')}
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400"
                         >
-                          <option value="GET">GET (Query Parameters: API, PHONE, OTP, COUNTRY)</option>
-                          <option value="POST">POST (JSON / Body Payload)</option>
+                          <option value="GET">GET (Recommended: ?API=...&amp;PHONE=...&amp;OTP=...)</option>
+                          <option value="POST">POST (JSON/Body - May fail on Renflair V1)</option>
                         </select>
                         <span className="text-[9px] text-slate-400">
-                          Renflair V1.php uses <strong className="text-emerald-400">GET</strong> method.
+                          Renflair V1 API queries require <strong className="text-emerald-400">GET</strong> method.
                         </span>
                       </div>
                     </div>

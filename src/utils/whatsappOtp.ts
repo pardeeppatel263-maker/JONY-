@@ -13,6 +13,9 @@ export interface SendOtpParams {
 
 export interface SendOtpResult {
   success: boolean;
+  deliveredByGateway?: boolean;
+  gatewayMessage?: string;
+  usedEndpoint?: string;
   message: string;
   provider: string;
   fallbackLink?: string;
@@ -93,9 +96,13 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
 
     if (proxyResponse.ok) {
       const data = await proxyResponse.json();
+      const delivered = Boolean(data.deliveredByGateway);
       return {
         success: true,
-        message: data.message || `✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!`,
+        deliveredByGateway: delivered,
+        gatewayMessage: data.gatewayMessage,
+        usedEndpoint: data.usedEndpoint,
+        message: data.message || (delivered ? `✓ WhatsApp OTP delivered directly to +91 ${cleanMobile}!` : `OTP dispatched to WhatsApp +91 ${cleanMobile}`),
         provider,
         fallbackLink: data.fallbackLink || fallbackWaLink,
         directLink: data.directLink || fallbackWaLink,
@@ -105,6 +112,7 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
       // Fallback gracefully without throwing gateway errors
       return {
         success: true,
+        deliveredByGateway: false,
         message: `✓ OTP dispatched to +91 ${cleanMobile}`,
         provider,
         fallbackLink: fallbackWaLink,
@@ -115,6 +123,7 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
     console.warn('API proxy call error, using direct WhatsApp dispatch:', err);
     return {
       success: true,
+      deliveredByGateway: false,
       message: `✓ OTP dispatched to +91 ${cleanMobile}`,
       provider: 'direct',
       fallbackLink: fallbackWaLink,

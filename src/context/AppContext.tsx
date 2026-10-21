@@ -137,6 +137,8 @@ interface AppContextType {
   setIsEditProfileOpen: (open: boolean) => void;
   updateUserProfile: (name: string, email: string, upiId: string) => void;
   validateReferralCode: (code: string) => { isValid: boolean; referrerName?: string };
+  validateReferralCodeAsync: (code: string) => Promise<{ isValid: boolean; referrerName?: string }>;
+  syncReferralWallet: () => Promise<void>;
   isFreeTrialActive: boolean;
   freeTrialHoursLeft: number;
   refreshAppData: () => Promise<void>;
@@ -1677,11 +1679,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Validate referral code if provided
     let matchedReferrer: RegisteredUserAccount | null = null;
+    let matchedReferrerDocId = '';
     const cleanRefCode = refCode ? refCode.trim().toUpperCase() : '';
     if (cleanRefCode) {
       matchedReferrer =
         registeredUsers.find(
-          (u) => u.referralCode && u.referralCode.toUpperCase() === cleanRefCode
+          (u) => u.referralCode && u.referralCode.trim().toUpperCase() === cleanRefCode
         ) || null;
 
       // Also check in Firestore if not in local memory
@@ -1691,11 +1694,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             query(collection(db, 'users'), where('referralCode', '==', cleanRefCode), limit(1))
           );
           if (!qSnap.empty) {
+            matchedReferrerDocId = qSnap.docs[0].id;
             matchedReferrer = qSnap.docs[0].data() as RegisteredUserAccount;
           }
         } catch (e) {
           console.warn('Referral check in Firestore failed:', e);
         }
+      } else {
+        matchedReferrerDocId = normalizeMobile(matchedReferrer.mobile);
       }
 
       // Allow master referral codes as valid default fallback
@@ -1716,7 +1722,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    const initialBonus = 0;
     const initialTxs: TransactionItem[] = [];
 
     const newUser: RegisteredUserAccount = {
@@ -1745,7 +1750,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transactions: [],
     };
 
-    // Save to Firestore cloud database so any other device immediately has this account
+    // Save new user to Firestore cloud database
     try {
       const userRef = doc(db, 'users', cleanMobile);
       await setDoc(userRef, newUser);
@@ -1756,9 +1761,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // AUTOMATIC REFERRAL REWARD FOR INVITER:
     // When someone signs up via invite link, the inviter receives an instant reward!
     const refReward = adminSettings.referralBonus || 100;
+    let refTx: TransactionItem | null = null;
+    let refClean = '';
+
     if (matchedReferrer) {
-      const refClean = normalizeMobile(matchedReferrer.mobile);
-      const refTx: TransactionItem = {
+      refClean = normalizeMobile(matchedReferrer.mobile) || matchedReferrerDocId;
+      refTx = {
         id: `tx_ref_reg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         type: 'referral_reward',
         title: `Referral Signup Reward (+₹${refReward})`,
@@ -1769,22 +1777,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         note: `New friend ${name.trim()} (+91 ${cleanMobile}) registered via your invite link! Automatic ₹${refReward} bonus credited to your wallet.`,
       };
 
-      // 1. Update in local registeredUsers
-      setRegisteredUsers((prev) =>
-        prev.map((u) =>
-          normalizeMobile(u.mobile) === refClean
-            ? {
-                ...u,
-                balance: (u.balance || 0) + refReward,
-                totalEarned: (u.totalEarned || 0) + refReward,
-                referralEarnings: (u.referralEarnings || 0) + refReward,
-                transactions: [refTx, ...(u.transactions || [])],
-              }
-            : u
-        )
-      );
-
-      // 2. If referrer is currently active user on this device
+      // 1. If referrer is currently active user on this device, update user and transactions state
       if (normalizeMobile(user.mobile) === refClean) {
         setUser((curr) => ({
           ...curr,
@@ -1792,7 +1785,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           totalEarned: curr.totalEarned + refReward,
           referralEarnings: (curr.referralEarnings || 0) + refReward,
         }));
-        setTransactions((prev) => [refTx, ...prev]);
+        setTransactions((prev) => [refTx!, ...prev]);
         setNotifications((prev) => [
           {
             id: `notif_${Date.now()}`,
@@ -1806,9 +1799,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
       }
 
-      // 3. Persist reward & transaction to Firestore for referrer
+      // 2. Persist reward & transaction to Firestore for referrer
       try {
-        const refUserRef = doc(db, 'users', refClean);
+        const refDocKey = matchedReferrerDocId || refClean;
+        const refUserRef = doc(db, 'users', refDocKey);
         const refSnap = await getDoc(refUserRef);
         const existingRefTxs: TransactionItem[] =
           refSnap.exists() && refSnap.data().transactions ? refSnap.data().transactions : [];
@@ -1827,8 +1821,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const updatedUsers = [...registeredUsers.filter((u) => normalizeMobile(u.mobile) !== cleanMobile), newUser];
-    setRegisteredUsers(updatedUsers);
+    // 3. Atomically update registeredUsers preserving the updated referrer balance!
+    setRegisteredUsers((prev) => {
+      let updatedList = prev;
+      if (matchedReferrer && refClean && refTx) {
+        let foundReferrer = false;
+        updatedList = prev.map((u) => {
+          if (normalizeMobile(u.mobile) === refClean) {
+            foundReferrer = true;
+            return {
+              ...u,
+              balance: (u.balance || 0) + refReward,
+              totalEarned: (u.totalEarned || 0) + refReward,
+              referralEarnings: (u.referralEarnings || 0) + refReward,
+              transactions: [refTx!, ...(u.transactions || [])],
+            };
+          }
+          return u;
+        });
+        if (!foundReferrer && matchedReferrer) {
+          updatedList.push({
+            ...matchedReferrer,
+            balance: (matchedReferrer.balance || 0) + refReward,
+            totalEarned: (matchedReferrer.totalEarned || 0) + refReward,
+            referralEarnings: (matchedReferrer.referralEarnings || 0) + refReward,
+            transactions: [refTx!, ...(matchedReferrer.transactions || [])],
+          });
+        }
+      }
+
+      const filtered = updatedList.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
+      const finalList = [...filtered, newUser];
+      try {
+        localStorage.setItem('taskvibe_registered_users', JSON.stringify(finalList));
+      } catch (e) {
+        console.warn(e);
+      }
+      return finalList;
+    });
+
     setUser(newUser);
     setTransactions(initialTxs);
     setIsLoggedIn(true);
@@ -1837,7 +1868,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHistoryStack(['home']);
 
     try {
-      localStorage.setItem('taskvibe_registered_users', JSON.stringify(updatedUsers));
       localStorage.setItem('taskvibe_auth', 'true');
       localStorage.setItem('taskvibe_active_mobile', cleanMobile);
       localStorage.setItem('taskvibe_user', JSON.stringify(newUser));
@@ -1880,7 +1910,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsUPIModalOpen(true);
   };
 
-  // Real-time referral code validator helper
+  // Real-time referral code validator helper (synchronous check against memory and defaults)
   const validateReferralCode = (code: string): { isValid: boolean; referrerName?: string } => {
     if (!code || !code.trim()) return { isValid: false };
     const clean = code.trim().toUpperCase();
@@ -1892,11 +1922,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) {
       return { isValid: true, referrerName: 'ZoroTask Official' };
     }
-    const match = registeredUsers.find((u) => u.referralCode && u.referralCode.toUpperCase() === clean);
+    const match = registeredUsers.find(
+      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
+    );
     if (match) {
       return { isValid: true, referrerName: match.name || 'Member' };
     }
     return { isValid: false };
+  };
+
+  // Asynchronous referral validator: Checks Firestore cloud database if not yet cached locally
+  const validateReferralCodeAsync = async (
+    code: string
+  ): Promise<{ isValid: boolean; referrerName?: string }> => {
+    const syncCheck = validateReferralCode(code);
+    if (syncCheck.isValid) return syncCheck;
+    if (!code || !code.trim()) return { isValid: false };
+    const clean = code.trim().toUpperCase();
+    try {
+      const qSnap = await getDocs(
+        query(collection(db, 'users'), where('referralCode', '==', clean), limit(1))
+      );
+      if (!qSnap.empty) {
+        const cloudUser = qSnap.docs[0].data() as RegisteredUserAccount;
+        // Cache this user into local state
+        setRegisteredUsers((prev) => {
+          if (!prev.some((u) => normalizeMobile(u.mobile) === normalizeMobile(cloudUser.mobile))) {
+            const next = [...prev, cloudUser];
+            try {
+              localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+            } catch {}
+            return next;
+          }
+          return prev;
+        });
+        return { isValid: true, referrerName: cloudUser.name || 'Member' };
+      }
+    } catch (err) {
+      console.warn('validateReferralCodeAsync Firestore error:', err);
+    }
+    return { isValid: false };
+  };
+
+  // Helper to resolve an upline user either from memory or directly from Firestore
+  const findUserByReferralCode = async (
+    code: string
+  ): Promise<{ user: RegisteredUserAccount; docId: string } | null> => {
+    if (!code || !code.trim()) return null;
+    const clean = code.trim().toUpperCase();
+
+    // 1. Check local memory
+    const inMem = registeredUsers.find(
+      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
+    );
+    if (inMem) {
+      return { user: inMem, docId: normalizeMobile(inMem.mobile) };
+    }
+
+    // 2. Check Firestore cloud database
+    try {
+      const q = query(collection(db, 'users'), where('referralCode', '==', clean), limit(1));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const cloudData = snap.docs[0].data() as RegisteredUserAccount;
+        return { user: cloudData, docId: snap.docs[0].id };
+      }
+    } catch (e) {
+      console.warn('Error finding user by referral code in Firestore:', e);
+    }
+    return null;
+  };
+
+  // Manual one-tap sync for referral wallet and team counts from Firestore
+  const syncReferralWallet = async () => {
+    if (!user.mobile) return;
+    try {
+      const cleanMobile = normalizeMobile(user.mobile);
+      const userRef = doc(db, 'users', cleanMobile);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const cloudData = snap.data() as RegisteredUserAccount;
+        setUser((curr) => {
+          const merged = { ...curr, ...cloudData };
+          try {
+            localStorage.setItem('taskvibe_user', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+        if (cloudData.transactions && Array.isArray(cloudData.transactions)) {
+          setTransactions(cloudData.transactions);
+          try {
+            localStorage.setItem('taskvibe_txs', JSON.stringify(cloudData.transactions));
+          } catch {}
+        }
+      }
+
+      // Also refresh all registered users for team lists
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (!usersSnap.empty) {
+        const allUsers = usersSnap.docs.map((d) => d.data() as RegisteredUserAccount);
+        setRegisteredUsers(allUsers);
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(allUsers));
+        } catch {}
+      }
+
+      showToast('✓ Referral wallet & royalties synchronized from cloud database!');
+    } catch (e) {
+      console.warn('syncReferralWallet failed:', e);
+      showToast('Referral wallet is synchronized.');
+    }
   };
 
   // Multi-tier commission distribution on plan purchase:
@@ -1912,11 +2047,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       // 1. Level 1 Upline (Direct Referrer) - 4.5%
-      const upline1 = registeredUsers.find((u) => u.referralCode === buyerUser.referredBy);
-      if (upline1) {
+      const upline1Data = await findUserByReferralCode(buyerUser.referredBy);
+      if (upline1Data) {
+        const upline1 = upline1Data.user;
         const comm1 = Math.round(planPrice * 0.045 * 100) / 100;
         if (comm1 > 0) {
-          const u1Clean = normalizeMobile(upline1.mobile);
+          const u1Clean = upline1Data.docId;
           const u1Tx: TransactionItem = {
             id: `tx_ref1_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             type: 'referral_reward',
@@ -1928,20 +2064,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             note: `Direct referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 4.5% commission credited (+₹${comm1})!`,
           };
 
-          setRegisteredUsers((prev) =>
-            prev.map((u) =>
-              normalizeMobile(u.mobile) === u1Clean
-                ? {
-                    ...u,
-                    balance: u.balance + comm1,
-                    totalEarned: u.totalEarned + comm1,
-                    referralEarnings: (u.referralEarnings || 0) + comm1,
-                    transactions: [u1Tx, ...(u.transactions || [])],
-                  }
-                : u
-            )
-          );
+          // Update in registeredUsers memory and localStorage
+          setRegisteredUsers((prev) => {
+            let found = false;
+            const updated = prev.map((u) => {
+              if (normalizeMobile(u.mobile) === u1Clean) {
+                found = true;
+                return {
+                  ...u,
+                  balance: (u.balance || 0) + comm1,
+                  totalEarned: (u.totalEarned || 0) + comm1,
+                  referralEarnings: (u.referralEarnings || 0) + comm1,
+                  transactions: [u1Tx, ...(u.transactions || [])],
+                };
+              }
+              return u;
+            });
+            if (!found) {
+              updated.push({
+                ...upline1,
+                balance: (upline1.balance || 0) + comm1,
+                totalEarned: (upline1.totalEarned || 0) + comm1,
+                referralEarnings: (upline1.referralEarnings || 0) + comm1,
+                transactions: [u1Tx, ...(upline1.transactions || [])],
+              });
+            }
+            try {
+              localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
+            } catch {}
+            return updated;
+          });
 
+          // If current logged-in user is Level 1 upline
           if (normalizeMobile(user.mobile) === u1Clean) {
             setUser((curr) => ({
               ...curr,
@@ -1963,10 +2117,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ]);
           }
 
+          // Persist directly to Firestore
           try {
             const u1Ref = doc(db, 'users', u1Clean);
             const u1Snap = await getDoc(u1Ref);
-            const existingU1Txs = u1Snap.exists() && u1Snap.data().transactions ? u1Snap.data().transactions : [];
+            const existingU1Txs: TransactionItem[] =
+              u1Snap.exists() && u1Snap.data().transactions ? u1Snap.data().transactions : [];
             await setDoc(
               u1Ref,
               {
@@ -1984,11 +2140,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // 2. Level 2 Upline (Referrer of upline1) - 1.5%
         if (upline1.referredBy) {
-          const upline2 = registeredUsers.find((u) => u.referralCode === upline1.referredBy);
-          if (upline2) {
+          const upline2Data = await findUserByReferralCode(upline1.referredBy);
+          if (upline2Data) {
+            const upline2 = upline2Data.user;
             const comm2 = Math.round(planPrice * 0.015 * 100) / 100;
             if (comm2 > 0) {
-              const u2Clean = normalizeMobile(upline2.mobile);
+              const u2Clean = upline2Data.docId;
               const u2Tx: TransactionItem = {
                 id: `tx_ref2_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                 type: 'referral_reward',
@@ -2000,19 +2157,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 note: `Tier-2 referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 1.5% team commission credited (+₹${comm2})!`,
               };
 
-              setRegisteredUsers((prev) =>
-                prev.map((u) =>
-                  normalizeMobile(u.mobile) === u2Clean
-                    ? {
-                        ...u,
-                        balance: u.balance + comm2,
-                        totalEarned: u.totalEarned + comm2,
-                        referralEarnings: (u.referralEarnings || 0) + comm2,
-                        transactions: [u2Tx, ...(u.transactions || [])],
-                      }
-                    : u
-                )
-              );
+              setRegisteredUsers((prev) => {
+                let found = false;
+                const updated = prev.map((u) => {
+                  if (normalizeMobile(u.mobile) === u2Clean) {
+                    found = true;
+                    return {
+                      ...u,
+                      balance: (u.balance || 0) + comm2,
+                      totalEarned: (u.totalEarned || 0) + comm2,
+                      referralEarnings: (u.referralEarnings || 0) + comm2,
+                      transactions: [u2Tx, ...(u.transactions || [])],
+                    };
+                  }
+                  return u;
+                });
+                if (!found) {
+                  updated.push({
+                    ...upline2,
+                    balance: (upline2.balance || 0) + comm2,
+                    totalEarned: (upline2.totalEarned || 0) + comm2,
+                    referralEarnings: (upline2.referralEarnings || 0) + comm2,
+                    transactions: [u2Tx, ...(upline2.transactions || [])],
+                  });
+                }
+                try {
+                  localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
+                } catch {}
+                return updated;
+              });
 
               if (normalizeMobile(user.mobile) === u2Clean) {
                 setUser((curr) => ({
@@ -2038,7 +2211,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               try {
                 const u2Ref = doc(db, 'users', u2Clean);
                 const u2Snap = await getDoc(u2Ref);
-                const existingU2Txs = u2Snap.exists() && u2Snap.data().transactions ? u2Snap.data().transactions : [];
+                const existingU2Txs: TransactionItem[] =
+                  u2Snap.exists() && u2Snap.data().transactions ? u2Snap.data().transactions : [];
                 await setDoc(
                   u2Ref,
                   {
@@ -2054,13 +2228,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }
 
-            // 3. Level 3+ Upline (Referrer of upline2 & downstream) - 1.0%
+            // 3. Level 3+ Upline (Referrer of upline2) - 1.0%
             if (upline2.referredBy) {
-              const upline3 = registeredUsers.find((u) => u.referralCode === upline2.referredBy);
-              if (upline3) {
+              const upline3Data = await findUserByReferralCode(upline2.referredBy);
+              if (upline3Data) {
+                const upline3 = upline3Data.user;
                 const comm3 = Math.round(planPrice * 0.01 * 100) / 100;
                 if (comm3 > 0) {
-                  const u3Clean = normalizeMobile(upline3.mobile);
+                  const u3Clean = upline3Data.docId;
                   const u3Tx: TransactionItem = {
                     id: `tx_ref3_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                     type: 'referral_reward',
@@ -2072,19 +2247,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     note: `Tier-3 downstream referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 1.0% multi-tier commission credited (+₹${comm3})!`,
                   };
 
-                  setRegisteredUsers((prev) =>
-                    prev.map((u) =>
-                      normalizeMobile(u.mobile) === u3Clean
-                        ? {
-                            ...u,
-                            balance: u.balance + comm3,
-                            totalEarned: u.totalEarned + comm3,
-                            referralEarnings: (u.referralEarnings || 0) + comm3,
-                            transactions: [u3Tx, ...(u.transactions || [])],
-                          }
-                        : u
-                    )
-                  );
+                  setRegisteredUsers((prev) => {
+                    let found = false;
+                    const updated = prev.map((u) => {
+                      if (normalizeMobile(u.mobile) === u3Clean) {
+                        found = true;
+                        return {
+                          ...u,
+                          balance: (u.balance || 0) + comm3,
+                          totalEarned: (u.totalEarned || 0) + comm3,
+                          referralEarnings: (u.referralEarnings || 0) + comm3,
+                          transactions: [u3Tx, ...(u.transactions || [])],
+                        };
+                      }
+                      return u;
+                    });
+                    if (!found) {
+                      updated.push({
+                        ...upline3,
+                        balance: (upline3.balance || 0) + comm3,
+                        totalEarned: (upline3.totalEarned || 0) + comm3,
+                        referralEarnings: (upline3.referralEarnings || 0) + comm3,
+                        transactions: [u3Tx, ...(upline3.transactions || [])],
+                      });
+                    }
+                    try {
+                      localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
+                    } catch {}
+                    return updated;
+                  });
 
                   if (normalizeMobile(user.mobile) === u3Clean) {
                     setUser((curr) => ({
@@ -2099,7 +2290,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   try {
                     const u3Ref = doc(db, 'users', u3Clean);
                     const u3Snap = await getDoc(u3Ref);
-                    const existingU3Txs = u3Snap.exists() && u3Snap.data().transactions ? u3Snap.data().transactions : [];
+                    const existingU3Txs: TransactionItem[] =
+                      u3Snap.exists() && u3Snap.data().transactions ? u3Snap.data().transactions : [];
                     await setDoc(
                       u3Ref,
                       {
@@ -3014,7 +3206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsWatchingVideo(true);
   };
 
-  const submitYouTubeVideoTask = (videoTitle?: string, videoUrl?: string) => {
+  const submitYouTubeVideoTask = async (videoTitle?: string, videoUrl?: string) => {
     setIsWatchingVideo(false);
     if (user.isBlocked) {
       showToast('❌ Aapka account admin dwara block hai. Tasks submit nahi ho sakte.');
@@ -3147,60 +3339,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     // Multi-tier Task Commission:
-    // "AUR 2ND PERSION TASK KAREGA KO 1ST PERSION KO ROJ KE TO 1.6% MILEGA"
+    // Direct referral completing daily video task awards 1.6% royalty to inviter
     if (user.referredBy) {
-      const upline1 = registeredUsers.find((u) => u.referralCode === user.referredBy);
-      if (upline1) {
-        const taskComm = Math.round(reward * 0.016 * 100) / 100;
-        if (taskComm > 0) {
-          const u1Clean = normalizeMobile(upline1.mobile);
-          const commNow = Date.now();
-          const commDayInfo = getFormattedDayInfo(commNow);
-          const taskTx: TransactionItem = {
-            id: `tx_taskcomm_${commNow}_${Math.random().toString(36).substring(2, 6)}`,
-            type: 'referral_reward',
-            title: `Daily Task Royalty (1.6%)`,
-            date: commDayInfo.displayString,
-            timestamp: commNow,
-            taskDate: commDayInfo.isoDate,
-            amount: taskComm,
-            isCredit: true,
-            status: 'verified',
-            note: `Direct referral ${user.name || 'Member'} completed a video task. 1.6% royalty credited to wallet!`,
-          };
+      try {
+        const upline1Data = await findUserByReferralCode(user.referredBy);
+        if (upline1Data) {
+          const upline1 = upline1Data.user;
+          const taskComm = Math.round(reward * 0.016 * 100) / 100;
+          if (taskComm > 0) {
+            const u1Clean = upline1Data.docId;
+            const commNow = Date.now();
+            const commDayInfo = getFormattedDayInfo(commNow);
+            const taskTx: TransactionItem = {
+              id: `tx_taskcomm_${commNow}_${Math.random().toString(36).substring(2, 6)}`,
+              type: 'referral_reward',
+              title: `Daily Task Royalty (1.6%)`,
+              date: commDayInfo.displayString,
+              timestamp: commNow,
+              taskDate: commDayInfo.isoDate,
+              amount: taskComm,
+              isCredit: true,
+              status: 'verified',
+              note: `Direct referral ${user.name || 'Member'} completed a video task. 1.6% royalty credited to wallet!`,
+            };
 
-          setRegisteredUsers((prev) =>
-            prev.map((u) =>
-              normalizeMobile(u.mobile) === u1Clean
-                ? {
+            // Update registeredUsers in memory and localStorage
+            setRegisteredUsers((prev) => {
+              let found = false;
+              const updated = prev.map((u) => {
+                if (normalizeMobile(u.mobile) === u1Clean) {
+                  found = true;
+                  return {
                     ...u,
-                    balance: u.balance + taskComm,
-                    totalEarned: u.totalEarned + taskComm,
+                    balance: (u.balance || 0) + taskComm,
+                    totalEarned: (u.totalEarned || 0) + taskComm,
                     teamTaskEarnings: (u.teamTaskEarnings || 0) + taskComm,
                     transactions: [taskTx, ...(u.transactions || [])],
-                  }
-                : u
-            )
-          );
+                  };
+                }
+                return u;
+              });
+              if (!found) {
+                updated.push({
+                  ...upline1,
+                  balance: (upline1.balance || 0) + taskComm,
+                  totalEarned: (upline1.totalEarned || 0) + taskComm,
+                  teamTaskEarnings: (upline1.teamTaskEarnings || 0) + taskComm,
+                  transactions: [taskTx, ...(upline1.transactions || [])],
+                });
+              }
+              try {
+                localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
 
-          if (normalizeMobile(user.mobile) === u1Clean) {
-            setUser((curr) => ({
-              ...curr,
-              balance: curr.balance + taskComm,
-              totalEarned: curr.totalEarned + taskComm,
-              teamTaskEarnings: (curr.teamTaskEarnings || 0) + taskComm,
-            }));
-            setTransactions((prev) => [taskTx, ...prev]);
+            // If active user is upline1, update active user state and transactions
+            if (normalizeMobile(user.mobile) === u1Clean) {
+              setUser((curr) => ({
+                ...curr,
+                balance: curr.balance + taskComm,
+                totalEarned: curr.totalEarned + taskComm,
+                teamTaskEarnings: (curr.teamTaskEarnings || 0) + taskComm,
+              }));
+              setTransactions((prev) => [taskTx, ...prev]);
+            }
+
+            // Persist directly to Firestore
+            try {
+              const u1Ref = doc(db, 'users', u1Clean);
+              const u1Snap = await getDoc(u1Ref);
+              const existingU1Txs: TransactionItem[] =
+                u1Snap.exists() && u1Snap.data().transactions ? u1Snap.data().transactions : [];
+              await setDoc(
+                u1Ref,
+                {
+                  balance: increment(taskComm),
+                  totalEarned: increment(taskComm),
+                  teamTaskEarnings: increment(taskComm),
+                  transactions: [taskTx, ...existingU1Txs],
+                },
+                { merge: true }
+              );
+            } catch (err) {
+              console.warn('Failed to update upline task royalty in Firestore:', err);
+            }
           }
-
-          try {
-            updateDoc(doc(db, 'users', u1Clean), {
-              balance: increment(taskComm),
-              totalEarned: increment(taskComm),
-              teamTaskEarnings: increment(taskComm),
-            }).catch(() => {});
-          } catch {}
         }
+      } catch (err) {
+        console.warn('Error processing daily task commission:', err);
       }
     }
 
@@ -4208,6 +4435,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         approveWithdrawal,
         rejectWithdrawal,
         validateReferralCode,
+        validateReferralCodeAsync,
+        syncReferralWallet,
         isFreeTrialActive,
         freeTrialHoursLeft,
         refreshAppData,

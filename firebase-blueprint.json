@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account containing profile, wallet balances, referral information, and transaction records.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "balance": { "type": "number" },
+        "totalEarned": { "type": "number" },
+        "withdrawn": { "type": "number" },
+        "referralEarnings": { "type": "number" },
+        "teamTaskEarnings": { "type": "number" },
+        "upiId": { "type": "string" },
+        "joinedDate": { "type": "string" },
+        "joinedTimestamp": { "type": "number" },
+        "password": { "type": "string" },
+        "vipLevel": { "type": "number" },
+        "vipTag": { "type": "string" },
+        "isBlocked": { "type": "boolean" },
+        "isTaskLocked": { "type": "boolean" },
+        "isWithdrawalLocked": { "type": "boolean" }
+      },
+      "required": ["mobile", "referralCode", "balance", "totalEarned"]
+    },
+    "PaymentDeposit": {
+      "title": "PaymentDeposit",
+      "description": "UPI and QR code deposit submissions by users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "utrNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "amount", "utrNumber", "status"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "System-wide administrative settings for rewards, commissions, UPI IDs, and thresholds.",
+      "type": "object",
+      "properties": {
+        "referralBonus": { "type": "number" },
+        "minWithdrawal": { "type": "number" },
+        "upiId": { "type": "string" },
+        "merchantName": { "type": "string" },
+        "announcementTitle": { "type": "string" },
+        "announcementMessage": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles indexed by sanitized mobile number."
+    },
+    "/deposits/{depositId}": {
+      "schema": "PaymentDeposit",
+      "description": "Payment requests and UPI proof uploads."
+    },
+    "/settings/admin": {
+      "schema": "AdminSettings",
+      "description": "Master administration parameters and referral bonus configuration."
+    }
+  }
+}

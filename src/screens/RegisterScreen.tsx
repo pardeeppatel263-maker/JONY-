@@ -34,6 +34,8 @@ export const RegisterScreen: React.FC = () => {
     isPhoneAlreadyRegistered,
     checkPhoneExistsInFirestore,
     validateReferralCode,
+    validateReferralCodeAsync,
+    registeredUsers,
     pendingInviteCode,
   } = useApp();
   const [fullName, setFullName] = useState('');
@@ -58,6 +60,31 @@ export const RegisterScreen: React.FC = () => {
   const [otpError, setOtpError] = useState('');
   const [gatewayError, setGatewayError] = useState('');
   const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState('');
+  const [asyncRefStatus, setAsyncRefStatus] = useState<{ isValid: boolean; referrerName?: string } | null>(null);
+  const [isValidatingRef, setIsValidatingRef] = useState(false);
+
+  // Live real-time referral verification with fallback to cloud database
+  useEffect(() => {
+    const code = referralCode.trim();
+    if (!code) {
+      setAsyncRefStatus(null);
+      setIsValidatingRef(false);
+      return;
+    }
+    const syncVal = validateReferralCode(code);
+    if (syncVal.isValid) {
+      setAsyncRefStatus(syncVal);
+      setIsValidatingRef(false);
+      return;
+    }
+    setIsValidatingRef(true);
+    const timer = setTimeout(async () => {
+      const asyncVal = await validateReferralCodeAsync(code);
+      setAsyncRefStatus(asyncVal);
+      setIsValidatingRef(false);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [referralCode, registeredUsers]);
 
   const cleanMobileDigits = mobile.replace(/\D/g, '').slice(-10);
   const isNumberAlreadyRegistered = cleanMobileDigits.length === 10 && isPhoneAlreadyRegistered(cleanMobileDigits);
@@ -186,7 +213,10 @@ export const RegisterScreen: React.FC = () => {
       }
 
       if (referralCode.trim()) {
-        const check = validateReferralCode(referralCode.trim());
+        let check = validateReferralCode(referralCode.trim());
+        if (!check.isValid) {
+          check = await validateReferralCodeAsync(referralCode.trim());
+        }
         if (!check.isValid) {
           showToast(`❌ Invalid invite code "${referralCode.trim()}"! Please enter a valid candidate invite code or leave it blank.`);
           return;
@@ -547,7 +577,14 @@ export const RegisterScreen: React.FC = () => {
               className="w-full py-2.5 px-3 text-sm font-bold text-amber-900 outline-none placeholder:text-slate-400 tracking-wider"
             />
             {referralCode.trim().length > 0 && (() => {
-              const val = validateReferralCode(referralCode.trim());
+              if (isValidatingRef) {
+                return (
+                  <span className="pr-3 text-xs font-bold text-amber-600 flex items-center gap-1 shrink-0 animate-pulse">
+                    <span>Checking code...</span>
+                  </span>
+                );
+              }
+              const val = asyncRefStatus || validateReferralCode(referralCode.trim());
               return val.isValid ? (
                 <span className="pr-3 text-xs font-bold text-emerald-600 flex items-center gap-1 shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />

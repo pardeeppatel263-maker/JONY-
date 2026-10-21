@@ -7,12 +7,18 @@ export const TeamModal: React.FC = () => {
 
   if (!isTeamModalOpen) return null;
 
-  const myCode = user.referralCode;
-  const directTeam = registeredUsers.filter((u) => u.referredBy === myCode);
-  const directCodes = directTeam.map((u) => u.referralCode);
-  const tier2Team = registeredUsers.filter((u) => u.referredBy && directCodes.includes(u.referredBy));
-  const tier2Codes = tier2Team.map((u) => u.referralCode);
-  const tier3Team = registeredUsers.filter((u) => u.referredBy && tier2Codes.includes(u.referredBy));
+  const myCode = user.referralCode ? user.referralCode.trim().toUpperCase() : '';
+  const directTeam = registeredUsers.filter(
+    (u) => u.referredBy && u.referredBy.trim().toUpperCase() === myCode
+  );
+  const directCodes = directTeam.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
+  const tier2Team = registeredUsers.filter(
+    (u) => u.referredBy && directCodes.includes(u.referredBy.trim().toUpperCase())
+  );
+  const tier2Codes = tier2Team.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
+  const tier3Team = registeredUsers.filter(
+    (u) => u.referredBy && tier2Codes.includes(u.referredBy.trim().toUpperCase())
+  );
 
   const totalMembers = directTeam.length + tier2Team.length + tier3Team.length;
   const totalCommission = (user.referralEarnings || 0) + (user.teamTaskEarnings || 0);

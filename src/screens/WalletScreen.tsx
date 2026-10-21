@@ -4,8 +4,15 @@ import { AppHeader } from '../components/AppHeader';
 import { Wallet, ArrowRight, ArrowUpRight, Plus, Clock, Info, Gift, Sparkles } from 'lucide-react';
 
 export const WalletScreen: React.FC = () => {
-  const { user, transactions, navigate, setIsPromoModalOpen } = useApp();
+  const { user, transactions, navigate, setIsPromoModalOpen, syncReferralWallet } = useApp();
+  const [isSyncing, setIsSyncing] = React.useState(false);
   const recentTransactions = transactions.slice(0, 4);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    await syncReferralWallet();
+    setIsSyncing(false);
+  };
 
   return (
     <div className="flex flex-col h-full max-h-full overflow-hidden bg-slate-50">
@@ -21,9 +28,19 @@ export const WalletScreen: React.FC = () => {
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-800 text-white p-5 shadow-md">
             <div className="flex items-start justify-between">
               <div>
-                <span className="text-[11px] font-bold text-blue-200 uppercase tracking-wide">
-                  Total Balance
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-blue-200 uppercase tracking-wide">
+                    Total Balance
+                  </span>
+                  <button
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    title="Refresh wallet balance from cloud"
+                    className="text-[10px] bg-white/15 hover:bg-white/25 px-1.5 py-0.2 rounded text-blue-100 transition cursor-pointer"
+                  >
+                    {isSyncing ? '...' : '↻'}
+                  </button>
+                </div>
                 <div className="text-2xl font-black tracking-tight text-white mt-1">
                   ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>

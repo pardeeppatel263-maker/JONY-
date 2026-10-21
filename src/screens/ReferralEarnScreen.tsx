@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
 import { BottomNav } from '../components/BottomNav';
@@ -18,18 +18,30 @@ import {
 } from 'lucide-react';
 
 export const ReferralEarnScreen: React.FC = () => {
-  const { user, copyText, showToast, registeredUsers, setIsTeamModalOpen } = useApp();
+  const { user, copyText, showToast, registeredUsers, setIsTeamModalOpen, syncReferralWallet } = useApp();
+  const [isSyncing, setIsSyncing] = useState(false);
   const referralCode = user.referralCode || 'ZT982143';
   const referralLink =
     typeof window !== 'undefined'
       ? `${window.location.origin}${window.location.pathname}?invite=${referralCode}`
       : `https://zorotask.app/?invite=${referralCode}`;
 
-  // Calculate live team numbers
-  const directTeam = registeredUsers.filter((u) => u.referredBy === referralCode);
-  const directCodes = directTeam.map((u) => u.referralCode);
-  const tier2Team = registeredUsers.filter((u) => u.referredBy && directCodes.includes(u.referredBy));
+  // Calculate live team numbers with case-insensitive normalization
+  const cleanCode = referralCode.trim().toUpperCase();
+  const directTeam = registeredUsers.filter(
+    (u) => u.referredBy && u.referredBy.trim().toUpperCase() === cleanCode
+  );
+  const directCodes = directTeam.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
+  const tier2Team = registeredUsers.filter(
+    (u) => u.referredBy && directCodes.includes(u.referredBy.trim().toUpperCase())
+  );
   const totalTeamCount = directTeam.length + tier2Team.length;
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    await syncReferralWallet();
+    setIsSyncing(false);
+  };
 
   const handleShare = () => {
     const shareMessage = `Join ZoroTask and earn daily rewards! 🎁\n\nClick my invite link to register with code ${referralCode}: ${referralLink}`;
@@ -103,16 +115,22 @@ export const ReferralEarnScreen: React.FC = () => {
               </span>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 border border-emerald-200 shadow-xs text-center">
-              <span className="text-[10px] uppercase font-bold text-emerald-600 block">
-                Referral Earnings
-              </span>
-              <p className="text-xl font-black text-emerald-700 mt-0.5">
-                ₹{((user.referralEarnings || 0) + (user.teamTaskEarnings || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </p>
-              <span className="text-[9px] text-emerald-600 font-medium">
-                Plan &amp; Task Royalties
-              </span>
+            <div className="bg-white rounded-2xl p-3 border border-emerald-200 shadow-xs text-center flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-emerald-600 block">
+                  Referral Earnings
+                </span>
+                <p className="text-xl font-black text-emerald-700 mt-0.5">
+                  ₹{((user.referralEarnings || 0) + (user.teamTaskEarnings || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="mt-1 text-[9px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-0.5 px-2 rounded-full border border-emerald-200 font-bold flex items-center justify-center gap-1 mx-auto transition cursor-pointer"
+              >
+                <span>{isSyncing ? 'Syncing...' : '↻ Refresh Wallet'}</span>
+              </button>
             </div>
           </div>
 

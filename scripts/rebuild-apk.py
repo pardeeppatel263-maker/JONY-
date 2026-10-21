@@ -135,18 +135,39 @@ def main():
     print("Step 5: Packaging updated signed ZoroTask-Official.apk...")
     new_apk_path = os.path.join(root_dir, 'public', 'ZoroTask-Official.apk')
     
+    # Write APK
     with zipfile.ZipFile(new_apk_path, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
-        # Write regular files
         for filename in sorted(all_files.keys()):
             zout.writestr(filename, all_files[filename])
-        # Write META-INF signature files
         zout.writestr('META-INF/MANIFEST.MF', manifest_bytes)
         zout.writestr('META-INF/CERT.SF', sf_bytes)
         zout.writestr('META-INF/CERT.RSA', rsa_bytes)
 
+    # Step 6: Apply official APK Signature Scheme v2 & v3 with apksigner and debug.keystore
+    keystore_path = os.path.join(root_dir, 'scripts', 'debug.keystore')
+    if os.path.exists(keystore_path):
+        print("Step 6: Signing with apksigner (v1, v2, v3 schemes)...")
+        sign_cmd = [
+            'apksigner', 'sign',
+            '--ks', keystore_path,
+            '--ks-pass', 'pass:android',
+            '--ks-key-alias', 'androiddebugkey',
+            '--key-pass', 'pass:android',
+            '--v1-signing-enabled', 'true',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            new_apk_path
+        ]
+        res = subprocess.run(sign_cmd, capture_output=True, text=True)
+        if res.returncode == 0:
+            print("✓ APK signed with APK Signature Scheme v2 & v3 successfully!")
+        else:
+            print(f"Warning: apksigner returned {res.returncode}: {res.stderr}")
+
     # Also copy into dist/ if dist exists
     dist_apk = os.path.join(dist_dir, 'ZoroTask-Official.apk')
-    shutil.copy2(new_apk_path, dist_apk)
+    if os.path.exists(dist_dir):
+        shutil.copy2(new_apk_path, dist_apk)
 
     # Cleanup temp
     shutil.rmtree(temp_dir, ignore_errors=True)

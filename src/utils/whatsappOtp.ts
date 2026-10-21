@@ -73,8 +73,24 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
 
   const provider = adminSettings?.whatsappProvider || 'renflair';
   const apiKey = (adminSettings?.renflairApiKey || adminSettings?.whatsappApiToken || '417d155c4d7937dc6555a13a71f09ec0').trim();
-  const apiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || 'https://whatsapp.renflair.in/V1.php').trim();
+  const rawApiUrl = (adminSettings?.renflairApiUrl || adminSettings?.whatsappApiUrl || '').trim();
+  const apiUrl = (!rawApiUrl || rawApiUrl.includes('whatsapp.renflair.in') || rawApiUrl.includes('wp-otp.php') || rawApiUrl.includes('renflair'))
+    ? 'https://whatsapp.renflair.in/V1.php'
+    : rawApiUrl;
   const method = adminSettings?.renflairMethod || 'GET';
+
+  // DIRECT DUAL-DISPATCH BEACON:
+  // Fire directly to Renflair WhatsApp API via Image beacon from the browser/WebView with COUNTRY=91.
+  const directRenflairUrl = `https://whatsapp.renflair.in/V1.php?API=${encodeURIComponent(apiKey)}&PHONE=${encodeURIComponent(cleanMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+  try {
+    if (typeof Image !== 'undefined') {
+      const beacon = new Image();
+      beacon.src = `${directRenflairUrl}&_ts=${Date.now()}`;
+    }
+    if (typeof fetch !== 'undefined') {
+      fetch(directRenflairUrl, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    }
+  } catch {}
 
   // Dispatch via Server-side proxy with 11-second timeout
   try {
@@ -104,21 +120,32 @@ export async function sendWhatsAppOtp(params: SendOtpParams): Promise<SendOtpRes
         usedEndpoint: data.usedEndpoint,
         message: data.message || `✓ WhatsApp OTP sent to +91 ${cleanMobile}`,
         provider,
+        fallbackLink: data.fallbackLink || fallbackWaLink,
+        directLink: data.directLink || fallbackWaLink,
+        rawResponse: data,
+      };
+    } else {
+      const errText = await proxyResponse.text();
+      return {
+        success: false,
+        deliveredByGateway: false,
+        gatewayMessage: `Server error (${proxyResponse.status})`,
+        message: `HTTP ${proxyResponse.status}: ${errText.slice(0, 80)}`,
+        provider,
         fallbackLink: fallbackWaLink,
         directLink: fallbackWaLink,
-        rawResponse: data,
       };
     }
   } catch (err: any) {
     console.warn('WhatsApp server proxy dispatch warning:', err.message);
+    return {
+      success: false,
+      deliveredByGateway: false,
+      gatewayMessage: err.message || 'Network error',
+      message: `Failed to contact OTP server: ${err.message}`,
+      provider,
+      fallbackLink: fallbackWaLink,
+      directLink: fallbackWaLink,
+    };
   }
-
-  return {
-    success: true,
-    deliveredByGateway: true,
-    message: `✓ WhatsApp OTP sent to +91 ${cleanMobile}`,
-    provider: 'renflair',
-    fallbackLink: fallbackWaLink,
-    directLink: fallbackWaLink,
-  };
 }

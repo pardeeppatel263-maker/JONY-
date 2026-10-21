@@ -13,8 +13,17 @@ async function startServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Request logger for real-time diagnostics
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/api')) {
+      console.log(`[HTTP-REQ] ${req.method} ${req.url} - IP: ${req.ip} - Time: ${new Date().toISOString()}`);
+    }
+    next();
+  });
+
   // WhatsApp OTP API Proxy Route
   app.post('/api/send-whatsapp-otp', async (req, res) => {
+    console.log('[API-INCOMING] /api/send-whatsapp-otp received payload:', JSON.stringify(req.body));
     try {
       const payload = req.body || {};
       const {
@@ -33,19 +42,27 @@ async function startServer() {
       const fallbackLink = `https://api.whatsapp.com/send?phone=${fullMobile}&text=${encodeURIComponent(textMessage)}`;
 
       // 1. Renflair WhatsApp Gateway (Direct WhatsApp OTP delivery)
-      if (provider === 'renflair' || String(apiUrl).includes('renflair')) {
+      if (
+        provider === 'renflair' ||
+        provider === 'custom' ||
+        String(apiUrl).includes('renflair') ||
+        !['green_api', 'ultramsg', 'direct'].includes(provider)
+      ) {
         const keyToUse = (apiKey || process.env.RENFLAIR_API_KEY || '417d155c4d7937dc6555a13a71f09ec0').trim();
+        const clean10DigitMobile = cleanMobile; // Exactly 10 digits
         
-        // Renflair strictly requires 12 digits (with 91 country code prefix) in PHONE parameter AND COUNTRY=91
+        // WhatsApp Renflair Endpoint strictly requires COUNTRY=91
         const whatsappUrl = 'https://whatsapp.renflair.in/V1.php';
-        const primaryUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(fullMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+        const primaryUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(clean10DigitMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+        const alternateUrl = `${whatsappUrl}?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent('91' + clean10DigitMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
 
-        console.log(`[WhatsApp-OTP] Dispatched to +${fullMobile} | OTP: ${otp} | Key: ${keyToUse.slice(0, 6)}...`);
+        console.log(`[WhatsApp-OTP] Dispatched to Renflair WhatsApp API: ${clean10DigitMobile} | OTP: ${otp} | Key: ${keyToUse.slice(0, 6)}...`);
 
         let lastResponseText = '';
         let lastResponseJson: any = null;
         let isSuccess = false;
         let gatewayMsg = '';
+        let usedEndpoint = whatsappUrl;
 
         try {
           const apiRes = await fetch(primaryUrl, {
@@ -57,7 +74,7 @@ async function startServer() {
             signal: AbortSignal.timeout(10000),
           });
           lastResponseText = await apiRes.text();
-          console.log(`[WhatsApp-OTP] Renflair Gateway Response for +${fullMobile}:`, lastResponseText);
+          console.log(`[WhatsApp-OTP] Renflair WhatsApp Response for ${clean10DigitMobile}:`, lastResponseText);
 
           try {
             lastResponseJson = JSON.parse(lastResponseText);
@@ -72,6 +89,57 @@ async function startServer() {
           } else if (lastResponseJson?.message) {
             gatewayMsg = lastResponseJson.message;
           }
+
+          // If 10-digit didn't succeed, try 12-digit alternate URL
+          if (!isSuccess) {
+            try {
+              const altRes = await fetch(alternateUrl, {
+                method: 'GET',
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'application/json, text/plain, */*',
+                },
+                signal: AbortSignal.timeout(8000),
+              });
+              const altText = await altRes.text();
+              console.log(`[WhatsApp-OTP] Renflair WhatsApp Alternate Response:`, altText);
+              let altJson: any = null;
+              try { altJson = JSON.parse(altText); } catch { altJson = null; }
+              if (String(altJson?.status || '').toUpperCase() === 'SUCCESS') {
+                isSuccess = true;
+                gatewayMsg = altJson?.message || 'Message Successfully Delivered';
+                lastResponseJson = altJson;
+              }
+            } catch (aErr: any) {
+              console.warn('[WhatsApp-OTP] Alternate Renflair dispatch error:', aErr.message);
+            }
+          }
+
+          // If still not succeeded, try sms.renflair.in as backup
+          if (!isSuccess) {
+            const smsUrl = `https://sms.renflair.in/V1.php?API=${encodeURIComponent(keyToUse)}&PHONE=${encodeURIComponent(clean10DigitMobile)}&OTP=${encodeURIComponent(String(otp))}&COUNTRY=91`;
+            try {
+              const smsRes = await fetch(smsUrl, {
+                method: 'GET',
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Accept': 'application/json, text/plain, */*',
+                },
+                signal: AbortSignal.timeout(8000),
+              });
+              const smsText = await smsRes.text();
+              let smsJson: any = null;
+              try { smsJson = JSON.parse(smsText); } catch { smsJson = null; }
+              if (String(smsJson?.status || '').toUpperCase() === 'SUCCESS') {
+                isSuccess = true;
+                gatewayMsg = smsJson?.message || 'Message Successfully Delivered';
+                lastResponseJson = smsJson;
+                usedEndpoint = 'https://sms.renflair.in/V1.php';
+              }
+            } catch (sErr: any) {
+              console.warn('[WhatsApp-OTP] Backup SMS dispatch error:', sErr.message);
+            }
+          }
         } catch (err: any) {
           console.warn(`[WhatsApp-OTP] Renflair Gateway Error:`, err.message);
           gatewayMsg = err.message || 'Connection timeout';
@@ -82,7 +150,7 @@ async function startServer() {
           provider: 'renflair',
           deliveredByGateway: isSuccess,
           status: isSuccess ? 200 : 400,
-          usedEndpoint: whatsappUrl,
+          usedEndpoint,
           gatewayMessage: gatewayMsg,
           message: isSuccess
             ? `OTP sent to your WhatsApp (+91 ${cleanMobile})`

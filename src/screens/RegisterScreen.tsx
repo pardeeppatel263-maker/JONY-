@@ -99,18 +99,25 @@ export const RegisterScreen: React.FC = () => {
     setWhatsappFallbackUrl(directWaUrl);
 
     try {
-      showToast('✓ WhatsApp par OTP bhej diya gaya hai!');
+      showToast('✓ WhatsApp par OTP bhej rahe hain...');
       const res = await sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
         purpose: 'register',
         adminSettings,
       });
-      if (res?.deliveredByGateway) {
+      if (res?.deliveredByGateway || res?.success) {
         showToast('✓ OTP dispatch ho gaya! WhatsApp check karein.');
+        setGatewayError('');
+      } else {
+        setGatewayError(res?.gatewayMessage || res?.message || 'Gateway response delayed');
+      }
+      if (res?.fallbackLink) {
+        setWhatsappFallbackUrl(res.fallbackLink);
       }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
+      setGatewayError(err.message || 'WhatsApp message dispatch error');
     } finally {
       setIsSendingOtp(false);
     }
@@ -441,6 +448,35 @@ export const RegisterScreen: React.FC = () => {
                   {otpError}
                 </p>
               )}
+
+              {gatewayError && (
+                <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 text-center animate-in fade-in">
+                  ℹ️ {gatewayError}
+                </p>
+              )}
+
+              {/* Helper Links: Direct WhatsApp & Auto-fill */}
+              <div className="flex items-center justify-between px-2 pt-1 text-[11px]">
+                <a
+                  href={whatsappFallbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-700 hover:text-emerald-800 font-semibold underline flex items-center gap-1 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Direct WhatsApp Link</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtpCode(generatedOtp);
+                    showToast(`✓ OTP code (${generatedOtp}) auto-filled!`);
+                  }}
+                  className="text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
+                >
+                  Auto-fill ({generatedOtp})
+                </button>
+              </div>
             </div>
           )}
 

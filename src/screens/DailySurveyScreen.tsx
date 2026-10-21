@@ -4,7 +4,7 @@ import { AppHeader } from '../components/AppHeader';
 import { FileCheck, CheckCircle2, Clock, Sparkles, ArrowRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 export const DailySurveyScreen: React.FC = () => {
-  const { surveys, setIsSurveyModalOpen, adminSettings, isFreeTrialActive, activeUserPlans, navigate } = useApp();
+  const { surveys, setIsSurveyModalOpen, adminSettings, isFreeTrialActive, activeUserPlans, navigate, user, showToast } = useApp();
   const todaySurvey = surveys.find((s) => s.id === 'srv_today');
   const pastSurveys = surveys.filter((s) => s.id !== 'srv_today');
   const reward = adminSettings.dailySurveyReward || todaySurvey?.reward || 150;
@@ -21,6 +21,19 @@ export const DailySurveyScreen: React.FC = () => {
       {/* SCROLLABLE MIDDLE CONTENT */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <main className="p-4 space-y-4 max-w-md mx-auto pb-6">
+          {/* Blocked Account Notice */}
+          {user.isBlocked && (
+            <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 rounded-2xl p-4 shadow-sm space-y-1.5 animate-in fade-in">
+              <div className="flex items-center gap-2 font-black text-xs text-rose-800">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Surveys Disabled - Account Blocked</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-snug">
+                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Daily surveys available nahi hain. Kripya support se sampark karein.'}
+              </p>
+            </div>
+          )}
+
           {/* Free Trial Expired Notice */}
           {isTrialExpired && (
             <div className="rounded-2xl bg-gradient-to-r from-red-600 to-rose-700 text-white p-4 shadow-sm space-y-2.5">
@@ -94,22 +107,33 @@ export const DailySurveyScreen: React.FC = () => {
 
             <button
               onClick={() => {
+                if (user.isBlocked) {
+                  showToast('❌ Aapka account admin dwara block hai. Surveys available nahi hain.');
+                  return;
+                }
                 if (isTrialExpired) {
                   navigate('member_plans');
                 } else {
                   setIsSurveyModalOpen(true);
                 }
               }}
-              disabled={todaySurvey?.completed && !isTrialExpired}
+              disabled={(todaySurvey?.completed && !isTrialExpired) || user.isBlocked}
               className={`w-full py-3 px-4 font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all ${
-                isTrialExpired
+                user.isBlocked
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : isTrialExpired
                   ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-red-500/20 active:scale-98 cursor-pointer'
                   : todaySurvey?.completed
                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 active:scale-98 cursor-pointer'
               }`}
             >
-              {isTrialExpired ? (
+              {user.isBlocked ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-slate-400" />
+                  <span>Account Blocked (Surveys Disabled)</span>
+                </>
+              ) : isTrialExpired ? (
                 <>
                   <AlertTriangle className="w-4 h-4 text-amber-200" />
                   <span>Free Trial Expired • Upgrade to VIP Plan</span>

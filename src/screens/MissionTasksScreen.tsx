@@ -36,6 +36,7 @@ export const MissionTasksScreen: React.FC = () => {
     plans,
     user,
     isFreeTrialActive,
+    showToast,
   } = useApp();
   const hasPaidPlan = (activeUserPlans || []).some((p) => p.level > 0);
   const isTrialExpired = !isFreeTrialActive && !hasPaidPlan;
@@ -77,6 +78,10 @@ export const MissionTasksScreen: React.FC = () => {
   const allTasks = videoMissions;
 
   const handleStartTask = (category: string, taskNum?: number) => {
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Tasks available nahi hain.');
+      return;
+    }
     if (category === 'video') {
       openVideoTask(taskNum);
     }
@@ -110,6 +115,19 @@ export const MissionTasksScreen: React.FC = () => {
       {/* SCROLLABLE MIDDLE CONTENT */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <main className="p-4 space-y-4 max-w-md mx-auto pb-6">
+          {/* Blocked Account Notice */}
+          {user.isBlocked && (
+            <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 rounded-2xl p-4 shadow-sm space-y-1.5 animate-in fade-in">
+              <div className="flex items-center gap-2 font-black text-xs text-rose-800">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Tasks Disabled - Account Blocked</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-snug">
+                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Tasks available nahi hain. Kripya support se sampark karein.'}
+              </p>
+            </div>
+          )}
+
           {/* Header Banner with Level Info */}
           <div className="rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white p-4 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between relative z-10">

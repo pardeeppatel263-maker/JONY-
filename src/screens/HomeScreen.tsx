@@ -252,6 +252,19 @@ export const HomeScreen: React.FC = () => {
         )}
 
         <main className="p-4 space-y-4 max-w-md mx-auto pb-6">
+          {/* Blocked Account Notice */}
+          {user.isBlocked && (
+            <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 rounded-2xl p-3.5 shadow-xs flex items-start gap-2.5 animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-black block text-rose-800">Account Blocked by Admin</span>
+                <p className="text-[11px] text-rose-700 leading-snug">
+                  {user.blockedReason || 'Aapka account admin dwara block kiya gaya hai. Tasks aur withdrawals sthagit hain. Kripya help & support se sampark karein.'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* 2-Day Free Trial / VIP Status Notice */}
           {isFreeTrialActive ? (
             <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 p-3 rounded-2xl shadow-xs flex items-center justify-between">

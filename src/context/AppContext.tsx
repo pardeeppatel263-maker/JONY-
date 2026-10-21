@@ -156,6 +156,8 @@ interface AppContextType {
   isPhoneAlreadyRegistered: (mobile: string) => boolean;
   adminUpdateUser: (mobile: string, updates: Partial<RegisteredUserAccount>) => void;
   adminDeleteUser: (mobile: string) => void;
+  adminBlockUser: (mobile: string, reason?: string) => Promise<void>;
+  adminUnblockUser: (mobile: string) => Promise<void>;
   updatePlan: (planId: string, updates: Partial<PlanItem>) => void;
   addVIPPlan: (newPlan: PlanItem) => Promise<boolean>;
   updateVIPPlan: (planId: string, updates: Partial<PlanItem>) => Promise<boolean>;
@@ -2642,6 +2644,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ifsc?: string;
     }
   ) => {
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Withdrawal request submit nahi ho sakti.');
+      return { success: false, message: 'Account is blocked by admin' };
+    }
     if (amount < 1000) {
       showToast('Minimum withdrawal amount is ₹1,000');
       return { success: false, message: 'Minimum withdrawal amount is ₹1,000' };
@@ -2720,6 +2726,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitDailySurveyTask = (answers?: Record<number, string>) => {
     setIsSurveyModalOpen(false);
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Surveys submit nahi ho sakte.');
+      return;
+    }
     const hasPaidPlan = (activeUserPlans || []).some((p) => p.level > 0);
     if (!isFreeTrialActive && !hasPaidPlan) {
       showToast('⚠️ Aapka 2 din ka Free Trial samapt ho chuka hai! Daily surveys & tasks jari rakhne ke liye VIP plan activate karein.');
@@ -2982,6 +2992,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const openVideoTask = (taskNum?: number) => {
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Video tasks available nahi hain.');
+      return;
+    }
     if (activeUserPlans.length === 0) {
       showToast('⚠️ Your 2-day free trial has expired! Please activate a VIP level to continue earning from video tasks.');
       navigate('member_plans');
@@ -3002,6 +3016,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitYouTubeVideoTask = (videoTitle?: string, videoUrl?: string) => {
     setIsWatchingVideo(false);
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Tasks submit nahi ho sakte.');
+      return;
+    }
 
     // Strictly enforce mission daily limit
     if (!canWatchMoreVideos || todayVideosWatched >= maxDailyVideos) {
@@ -3566,7 +3584,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Firestore update failed', e);
     }
 
-    showToast('✓ User profile & VIP plans updated in Cloud!');
+    if (updates.isBlocked !== undefined) {
+      showToast(updates.isBlocked ? '⛔ User blocked by admin!' : '✓ User unblocked by admin!');
+    } else {
+      showToast('✓ User profile & VIP plans updated in Cloud!');
+    }
   };
 
   const adminDeleteUser = (mobile: string) => {
@@ -3575,6 +3597,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteDoc(doc(db, 'users', clean));
     } catch (e) {
       console.warn('Firestore delete failed', e);
+    }
+
+    if (normalizeMobile(user.mobile) === clean) {
+      logout();
     }
 
     setRegisteredUsers((prev) => {
@@ -3586,7 +3612,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return next;
     });
-    showToast('User deleted from database.');
+    showToast(`✓ User (+91 ${clean}) deleted from database.`);
+  };
+
+  const adminBlockUser = async (mobile: string, reason?: string) => {
+    const clean = normalizeMobile(mobile);
+    if (!clean) return;
+    await adminUpdateUser(clean, { isBlocked: true, blockedReason: reason || 'Account blocked by admin' });
+  };
+
+  const adminUnblockUser = async (mobile: string) => {
+    const clean = normalizeMobile(mobile);
+    if (!clean) return;
+    await adminUpdateUser(clean, { isBlocked: false, blockedReason: '' });
   };
 
   const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {
@@ -4176,6 +4214,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkPhoneExistsInFirestore,
         adminUpdateUser,
         adminDeleteUser,
+        adminBlockUser,
+        adminUnblockUser,
         updatePlan,
         addVIPPlan,
         updateVIPPlan,

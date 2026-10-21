@@ -122,6 +122,8 @@ export interface UserProfile {
   bankName?: string;
   bankAccountNumber?: string;
   bankIfsc?: string;
+  isBlocked?: boolean;
+  blockedReason?: string;
 }
 
 export interface RegisteredUserAccount extends UserProfile {

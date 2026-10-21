@@ -25,6 +25,8 @@ import {
   Minus,
   Edit2,
   Trash2,
+  Ban,
+  Unlock,
   Download,
   Upload,
   AlertTriangle,
@@ -144,6 +146,8 @@ export const AdminPanelScreen: React.FC = () => {
     deleteSurvey,
     adminUpdateUser,
     adminDeleteUser,
+    adminBlockUser,
+    adminUnblockUser,
     updatePlan,
     addVIPPlan,
     updateVIPPlan,
@@ -3088,7 +3092,14 @@ export const AdminPanelScreen: React.FC = () => {
                     <div className="space-y-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-bold text-white text-sm">{u.name || 'Member'}</div>
+                          <div className="font-bold text-white text-sm flex items-center gap-1.5 flex-wrap">
+                            <span>{u.name || 'Member'}</span>
+                            {u.isBlocked && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 uppercase tracking-wider">
+                                Blocked
+                              </span>
+                            )}
+                          </div>
                           <div className="font-mono text-xs text-slate-400">{u.mobile}</div>
                         </div>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
@@ -3168,61 +3179,106 @@ export const AdminPanelScreen: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdjustingUserMobile(u.mobile);
-                          setIsCredit(true);
-                        }}
-                        className="py-1.5 px-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] border border-emerald-500/30 flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" /> Bal
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentPlans = getUserActivePlansList(u);
-                          const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
-                          const hasLv0 = currentPlans.some((p) => p.level === 0);
-                          setEditingUser({
-                            ...u,
-                            purchasedPlanIds: currentPaidIds,
-                            freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
-                          });
-                        }}
-                        className="py-1.5 px-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[10px] border border-amber-500/30 flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Crown className="w-3 h-3" /> VIP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDirectAlertTargetMobile(u.mobile);
-                          setDirectAlertTitle('Important Notification from ZoroTask');
-                          setDirectAlertMsg(`Namaste ${u.name || 'Member'}, `);
-                          setDirectAlertModalOpen(true);
-                        }}
-                        className="py-1.5 px-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-bold text-[10px] border border-indigo-500/30 flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <BellRing className="w-3 h-3" /> Msg
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentPlans = getUserActivePlansList(u);
-                          const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
-                          const hasLv0 = currentPlans.some((p) => p.level === 0);
-                          setEditingUser({
-                            ...u,
-                            purchasedPlanIds: currentPaidIds,
-                            freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
-                          });
-                        }}
-                        className="py-1.5 px-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <Edit2 className="w-3 h-3" /> Edit
-                      </button>
+                    <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdjustingUserMobile(u.mobile);
+                            setIsCredit(true);
+                          }}
+                          className="py-1.5 px-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] border border-emerald-500/30 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" /> Bal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentPlans = getUserActivePlansList(u);
+                            const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
+                            const hasLv0 = currentPlans.some((p) => p.level === 0);
+                            setEditingUser({
+                              ...u,
+                              purchasedPlanIds: currentPaidIds,
+                              freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
+                            });
+                          }}
+                          className="py-1.5 px-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[10px] border border-amber-500/30 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Crown className="w-3 h-3" /> VIP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDirectAlertTargetMobile(u.mobile);
+                            setDirectAlertTitle('Important Notification from ZoroTask');
+                            setDirectAlertMsg(`Namaste ${u.name || 'Member'}, `);
+                            setDirectAlertModalOpen(true);
+                          }}
+                          className="py-1.5 px-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-bold text-[10px] border border-indigo-500/30 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <BellRing className="w-3 h-3" /> Msg
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentPlans = getUserActivePlansList(u);
+                            const currentPaidIds = currentPlans.filter((p) => p.level > 0).map((p) => p.id);
+                            const hasLv0 = currentPlans.some((p) => p.level === 0);
+                            setEditingUser({
+                              ...u,
+                              purchasedPlanIds: currentPaidIds,
+                              freeTrialOverride: hasLv0 ? 'enabled' : 'disabled',
+                            });
+                          }}
+                          className="py-1.5 px-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" /> Edit
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {u.isBlocked ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Kya aap user ${u.name || u.mobile} ko UNBLOCK karna chahte hain? Unblock karne par user phir se tasks aur withdrawal kar sakega.`)) {
+                                adminUnblockUser(u.mobile);
+                              }
+                            }}
+                            className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] border border-emerald-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                          >
+                            <Unlock className="w-3.5 h-3.5" />
+                            <span>Unblock</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`⚠️ Kya aap user ${u.name || u.mobile} ko BLOCK karna chahte hain?\n\nBlock karne ke baad:\n• User ko koi task nahi milega\n• User ka withdrawal band ho jayega`)) {
+                                adminBlockUser(u.mobile);
+                              }
+                            }}
+                            className="py-1.5 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-[10px] border border-rose-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>Block User</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`🚨 DHYAN DEIN: Kya aap user ${u.name || u.mobile} (${u.referralCode}) ko permanently DELETE karna chahte hain?\n\nYe user account database se hamesha ke liye delete ho jayega.`)) {
+                              adminDeleteUser(u.mobile);
+                            }
+                          }}
+                          className="py-1.5 px-2 rounded-lg bg-red-600/20 hover:bg-red-600/35 text-red-300 font-bold text-[10px] border border-red-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete User</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -6313,6 +6369,49 @@ export const AdminPanelScreen: React.FC = () => {
                 </div>
               </div>
 
+              {/* Account Access Status (Block / Active) */}
+              <div className="p-3 bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-white block">Account Access Status</span>
+                    <span className="text-[10px] text-slate-400">
+                      Block karne par user ko koi task nahi milega aur withdrawal band ho jayega.
+                    </span>
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                    editingUser.isBlocked ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  }`}>
+                    {editingUser.isBlocked ? 'Blocked' : 'Active'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser({ ...editingUser, isBlocked: false })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      !editingUser.isBlocked
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                    }`}
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Active (Allowed)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser({ ...editingUser, isBlocked: true })}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      editingUser.isBlocked
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                    }`}
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Block (No Task / No WD)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Per-User VIP Plan Control Section */}
               <div className="space-y-2.5 pt-2 border-t border-slate-800">
                 <div className="flex items-center justify-between">
@@ -6487,47 +6586,66 @@ export const AdminPanelScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setEditingUser(null)}
-                className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const selectedIds = editingUser.purchasedPlanIds || [];
-                  const activePaidPlans = plans
-                    .filter((p) => p.level > 0 && selectedIds.includes(p.id))
-                    .sort((a, b) => a.level - b.level);
-                  const highestPlan =
-                    activePaidPlans.length > 0 ? activePaidPlans[activePaidPlans.length - 1] : null;
-                  const computedLevel = highestPlan ? highestPlan.level : 0;
-                  const computedTag = highestPlan
-                    ? activePaidPlans.length > 1
-                      ? `${highestPlan.levelTag} (+${activePaidPlans.length - 1} VIP)`
-                      : highestPlan.levelTag
-                    : editingUser.freeTrialOverride === 'disabled'
-                    ? 'No Active Plan'
-                    : 'Free Starter';
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`🚨 DHYAN DEIN: Kya aap user ${editingUser.name || editingUser.mobile} ko permanently DELETE karna chahte hain?\n\nYe user account database se hamesha ke liye delete ho jayega.`)) {
+                      adminDeleteUser(editingUser.mobile);
+                      setEditingUser(null);
+                    }
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/35 text-red-300 font-bold text-xs border border-red-500/40 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Account</span>
+                </button>
 
-                  await adminUpdateUser(editingUser.mobile, {
-                    name: editingUser.name,
-                    password: editingUser.password,
-                    purchasedPlanIds: selectedIds,
-                    vipLevel: computedLevel,
-                    vipTag: computedTag,
-                    freeTrialOverride: editingUser.freeTrialOverride || 'enabled',
-                  });
-                  setEditingUser(null);
-                }}
-                className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save User &amp; VIP Plans</span>
-              </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const selectedIds = editingUser.purchasedPlanIds || [];
+                      const activePaidPlans = plans
+                        .filter((p) => p.level > 0 && selectedIds.includes(p.id))
+                        .sort((a, b) => a.level - b.level);
+                      const highestPlan =
+                        activePaidPlans.length > 0 ? activePaidPlans[activePaidPlans.length - 1] : null;
+                      const computedLevel = highestPlan ? highestPlan.level : 0;
+                      const computedTag = highestPlan
+                        ? activePaidPlans.length > 1
+                          ? `${highestPlan.levelTag} (+${activePaidPlans.length - 1} VIP)`
+                          : highestPlan.levelTag
+                        : editingUser.freeTrialOverride === 'disabled'
+                        ? 'No Active Plan'
+                        : 'Free Starter';
+
+                      await adminUpdateUser(editingUser.mobile, {
+                        name: editingUser.name,
+                        password: editingUser.password,
+                        purchasedPlanIds: selectedIds,
+                        vipLevel: computedLevel,
+                        vipTag: computedTag,
+                        freeTrialOverride: editingUser.freeTrialOverride || 'enabled',
+                        isBlocked: !!editingUser.isBlocked,
+                      });
+                      setEditingUser(null);
+                    }}
+                    className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

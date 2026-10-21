@@ -125,6 +125,11 @@ export const WithdrawScreen: React.FC = () => {
   }, [ifscCode]);
 
   const handleWithdraw = () => {
+    if (user.isBlocked) {
+      showToast('❌ Aapka account admin dwara block hai. Withdrawal request submit nahi ho sakti.');
+      return;
+    }
+
     if (selectedAmount < 1000) {
       showToast('❌ Minimum withdrawal amount is ₹1,000');
       return;
@@ -208,6 +213,19 @@ export const WithdrawScreen: React.FC = () => {
               <Wallet className="w-5 h-5" />
             </div>
           </div>
+
+          {/* Blocked Account Notice */}
+          {user.isBlocked && (
+            <div className="bg-rose-50 border-2 border-rose-400 text-rose-900 rounded-2xl p-4 shadow-sm space-y-1.5 animate-in fade-in">
+              <div className="flex items-center gap-2 font-black text-xs text-rose-800">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Account Blocked by Admin</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-snug">
+                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Withdrawal suvidha sthagit hai. Kripya help & support se sampark karein.'}
+              </p>
+            </div>
+          )}
 
           {/* Official Withdrawal Processing Window Notice */}
           <div className="bg-gradient-to-r from-indigo-900 via-blue-900 to-indigo-950 text-white rounded-2xl p-3.5 shadow-xs space-y-1.5 border border-indigo-700/40">
@@ -534,10 +552,19 @@ export const WithdrawScreen: React.FC = () => {
           <button
             type="button"
             onClick={handleWithdraw}
-            className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+            disabled={user.isBlocked}
+            className={`w-full py-3.5 px-4 font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all ${
+              user.isBlocked
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 active:scale-98 cursor-pointer'
+            }`}
           >
             <span>
-              {payoutMethod === 'bank' ? 'Request Bank Withdrawal' : 'Request UPI Withdrawal'}
+              {user.isBlocked
+                ? 'Account Blocked (Withdrawals Disabled)'
+                : payoutMethod === 'bank'
+                ? 'Request Bank Withdrawal'
+                : 'Request UPI Withdrawal'}
             </span>
             <ArrowRight className="w-4 h-4" />
           </button>

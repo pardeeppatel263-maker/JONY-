@@ -410,6 +410,14 @@ export const AdminPanelScreen: React.FC = () => {
   const [directAlertTitle, setDirectAlertTitle] = useState('Important Update from ZoroTask');
   const [directAlertMsg, setDirectAlertMsg] = useState('');
 
+  // User Management Actions Modal State (Block / Unblock / Delete)
+  const [userConfirmAction, setUserConfirmAction] = useState<{
+    type: 'block' | 'unblock' | 'delete';
+    user: RegisteredUserAccount;
+  } | null>(null);
+  const [blockReasonInput, setBlockReasonInput] = useState('');
+  const [isProcessingUserAction, setIsProcessingUserAction] = useState(false);
+
   // Promo Codes State
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [promoRewardInput, setPromoRewardInput] = useState('50');
@@ -3241,11 +3249,7 @@ export const AdminPanelScreen: React.FC = () => {
                         {u.isBlocked ? (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm(`Kya aap user ${u.name || u.mobile} ko UNBLOCK karna chahte hain? Unblock karne par user phir se tasks aur withdrawal kar sakega.`)) {
-                                adminUnblockUser(u.mobile);
-                              }
-                            }}
+                            onClick={() => setUserConfirmAction({ type: 'unblock', user: u })}
                             className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-[10px] border border-emerald-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
                           >
                             <Unlock className="w-3.5 h-3.5" />
@@ -3255,9 +3259,8 @@ export const AdminPanelScreen: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              if (window.confirm(`⚠️ Kya aap user ${u.name || u.mobile} ko BLOCK karna chahte hain?\n\nBlock karne ke baad:\n• User ko koi task nahi milega\n• User ka withdrawal band ho jayega`)) {
-                                adminBlockUser(u.mobile);
-                              }
+                              setBlockReasonInput('Account policy violation. Tasks aur withdrawals band hain.');
+                              setUserConfirmAction({ type: 'block', user: u });
                             }}
                             className="py-1.5 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-[10px] border border-rose-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
                           >
@@ -3268,11 +3271,7 @@ export const AdminPanelScreen: React.FC = () => {
 
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`🚨 DHYAN DEIN: Kya aap user ${u.name || u.mobile} (${u.referralCode}) ko permanently DELETE karna chahte hain?\n\nYe user account database se hamesha ke liye delete ho jayega.`)) {
-                              adminDeleteUser(u.mobile);
-                            }
-                          }}
+                          onClick={() => setUserConfirmAction({ type: 'delete', user: u })}
                           className="py-1.5 px-2 rounded-lg bg-red-600/20 hover:bg-red-600/35 text-red-300 font-bold text-[10px] border border-red-500/40 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -6591,10 +6590,9 @@ export const AdminPanelScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm(`🚨 DHYAN DEIN: Kya aap user ${editingUser.name || editingUser.mobile} ko permanently DELETE karna chahte hain?\n\nYe user account database se hamesha ke liye delete ho jayega.`)) {
-                      adminDeleteUser(editingUser.mobile);
-                      setEditingUser(null);
-                    }
+                    const target = editingUser;
+                    setEditingUser(null);
+                    setUserConfirmAction({ type: 'delete', user: target });
                   }}
                   className="py-2.5 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/35 text-red-300 font-bold text-xs border border-red-500/40 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
                 >
@@ -7205,6 +7203,166 @@ export const AdminPanelScreen: React.FC = () => {
                 <Check className="w-4 h-4" />
                 <span>Send Alert Now</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* USER ACTION MODAL (BLOCK / UNBLOCK / DELETE CONFIRMATION) */}
+      {/* ========================================================= */}
+      {userConfirmAction && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-2xl relative">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                {userConfirmAction.type === 'delete' ? (
+                  <div className="w-9 h-9 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center border border-red-500/30">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                ) : userConfirmAction.type === 'block' ? (
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                    <Ban className="w-4 h-4" />
+                  </div>
+                ) : (
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                    <Unlock className="w-4 h-4" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-black text-sm text-white">
+                    {userConfirmAction.type === 'delete'
+                      ? 'Delete User Account'
+                      : userConfirmAction.type === 'block'
+                      ? 'Block User Account'
+                      : 'Unblock User Account'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    +91 {userConfirmAction.user.mobile} • {userConfirmAction.user.name || 'Member'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setUserConfirmAction(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content info */}
+            {userConfirmAction.type === 'block' && (
+              <div className="space-y-3">
+                <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-3.5 space-y-2 text-xs text-rose-200">
+                  <div className="font-bold flex items-center gap-1.5 text-rose-300">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>Block karne par user par ye asar hoga:</span>
+                  </div>
+                  <ul className="space-y-1.5 text-[11px] text-rose-300/90 list-disc list-inside">
+                    <li><b>No Tasks:</b> User ko koi bhi video task ya daily survey nahi milega (Disabled).</li>
+                    <li><b>No Withdrawals:</b> User ka withdrawal request turant suspend ho jayega (Disabled).</li>
+                    <li>User ki screen par Red Notice aayega ki account block hai.</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-400 block">Block Reason (Optional)</label>
+                  <input
+                    type="text"
+                    value={blockReasonInput}
+                    onChange={(e) => setBlockReasonInput(e.target.value)}
+                    placeholder="e.g. Terms violation / Suspicious activity"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-rose-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            {userConfirmAction.type === 'unblock' && (
+              <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-3.5 space-y-2 text-xs text-emerald-200">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Unblock karne par:</span>
+                </div>
+                <ul className="space-y-1 text-[11px] text-emerald-300/90 list-disc list-inside">
+                  <li>User phir se normal tarike se daily video tasks aur surveys kar sakega.</li>
+                  <li>User ka withdrawal option phir se enable ho jayega.</li>
+                </ul>
+              </div>
+            )}
+
+            {userConfirmAction.type === 'delete' && (
+              <div className="bg-red-950/50 border border-red-500/40 rounded-2xl p-3.5 space-y-2 text-xs text-red-200">
+                <div className="font-bold flex items-center gap-1.5 text-red-300">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>🚨 Permanent Delete Warning:</span>
+                </div>
+                <p className="text-[11px] text-red-300/90 leading-relaxed">
+                  Ye user account database se hamesha ke liye delete ho jayega. User ka balance (₹{(userConfirmAction.user.balance || 0).toLocaleString('en-IN')}) aur saara data remove ho jayega. Agar user abhi login hai to uska session turant logout ho jayega.
+                </p>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isProcessingUserAction}
+                onClick={() => setUserConfirmAction(null)}
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition"
+              >
+                Cancel
+              </button>
+
+              {userConfirmAction.type === 'delete' ? (
+                <button
+                  type="button"
+                  disabled={isProcessingUserAction}
+                  onClick={async () => {
+                    setIsProcessingUserAction(true);
+                    await adminDeleteUser(userConfirmAction.user.mobile);
+                    setIsProcessingUserAction(false);
+                    setUserConfirmAction(null);
+                  }}
+                  className="py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isProcessingUserAction ? 'Deleting...' : 'Delete Permanently'}</span>
+                </button>
+              ) : userConfirmAction.type === 'block' ? (
+                <button
+                  type="button"
+                  disabled={isProcessingUserAction}
+                  onClick={async () => {
+                    setIsProcessingUserAction(true);
+                    await adminBlockUser(userConfirmAction.user.mobile, blockReasonInput);
+                    setIsProcessingUserAction(false);
+                    setUserConfirmAction(null);
+                  }}
+                  className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>{isProcessingUserAction ? 'Blocking...' : 'Confirm Block User'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isProcessingUserAction}
+                  onClick={async () => {
+                    setIsProcessingUserAction(true);
+                    await adminUnblockUser(userConfirmAction.user.mobile);
+                    setIsProcessingUserAction(false);
+                    setUserConfirmAction(null);
+                  }}
+                  className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>{isProcessingUserAction ? 'Unblocking...' : 'Confirm Unblock'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

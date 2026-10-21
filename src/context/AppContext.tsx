@@ -155,7 +155,7 @@ interface AppContextType {
   registeredUsers: RegisteredUserAccount[];
   isPhoneAlreadyRegistered: (mobile: string) => boolean;
   adminUpdateUser: (mobile: string, updates: Partial<RegisteredUserAccount>) => void;
-  adminDeleteUser: (mobile: string) => void;
+  adminDeleteUser: (mobile: string) => Promise<boolean>;
   adminBlockUser: (mobile: string, reason?: string) => Promise<void>;
   adminUnblockUser: (mobile: string) => Promise<void>;
   updatePlan: (planId: string, updates: Partial<PlanItem>) => void;
@@ -3591,12 +3591,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const adminDeleteUser = (mobile: string) => {
+  const adminDeleteUser = async (mobile: string): Promise<boolean> => {
     const clean = normalizeMobile(mobile);
+    if (!clean) return false;
+
     try {
-      deleteDoc(doc(db, 'users', clean));
+      await deleteDoc(doc(db, 'users', clean));
     } catch (e) {
-      console.warn('Firestore delete failed', e);
+      console.warn('Firestore user delete failed:', e);
     }
 
     if (normalizeMobile(user.mobile) === clean) {
@@ -3612,19 +3614,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return next;
     });
-    showToast(`✓ User (+91 ${clean}) deleted from database.`);
+
+    showToast(`✓ User (+91 ${clean}) database se permanently DELETE ho gaya!`);
+    return true;
   };
 
   const adminBlockUser = async (mobile: string, reason?: string) => {
     const clean = normalizeMobile(mobile);
     if (!clean) return;
-    await adminUpdateUser(clean, { isBlocked: true, blockedReason: reason || 'Account blocked by admin' });
+    await adminUpdateUser(clean, {
+      isBlocked: true,
+      blockedReason: reason || 'Account blocked by admin. Tasks aur withdrawals suspended hain.',
+    });
   };
 
   const adminUnblockUser = async (mobile: string) => {
     const clean = normalizeMobile(mobile);
     if (!clean) return;
-    await adminUpdateUser(clean, { isBlocked: false, blockedReason: '' });
+    await adminUpdateUser(clean, {
+      isBlocked: false,
+      blockedReason: '',
+    });
   };
 
   const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {

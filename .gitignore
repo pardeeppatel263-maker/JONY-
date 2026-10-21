@@ -8,3 +8,4 @@ coverage/
 !.env.example
 node-compile-cache/
 .tmp_apk/
+/public/assets/

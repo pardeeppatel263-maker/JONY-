@@ -1714,21 +1714,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    const initialBonus = cleanRefCode ? 100 : 0;
-    const initialTxs: TransactionItem[] = cleanRefCode
-      ? [
-          {
-            id: `tx_${Date.now()}`,
-            type: 'referral_reward',
-            title: 'Referral Signup Bonus',
-            date: 'Today',
-            amount: 100,
-            isCredit: true,
-            status: 'verified',
-            note: `Referral code applied: ${cleanRefCode}`,
-          },
-        ]
-      : [];
+    const initialBonus = 0;
+    const initialTxs: TransactionItem[] = [];
 
     const newUser: RegisteredUserAccount = {
       name: name.trim(),
@@ -1740,8 +1727,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : cleanRefCode
         ? cleanRefCode
         : undefined,
-      balance: initialBonus,
-      totalEarned: initialBonus,
+      balance: 0,
+      totalEarned: 0,
       withdrawn: 0,
       upiId: `${cleanMobile}@upi`,
       joinedDate: new Date().toLocaleDateString('en-IN', {
@@ -1753,7 +1740,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       password: pass.trim(),
       vipLevel: 0,
       vipTag: 'Free Starter',
-      transactions: initialTxs,
+      transactions: [],
     };
 
     // Save to Firestore cloud database so any other device immediately has this account
@@ -1859,13 +1846,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn(e);
     }
 
-    if (refCode) {
-      triggerConfetti();
-      showToast(`🎉 Account created! ₹100 welcome bonus received. Welcome ${newUser.name}!`);
-    } else {
-      triggerConfetti();
-      showToast(`🎉 Account successfully created! Welcome ${newUser.name}!`);
-    }
+    triggerConfetti();
+    showToast(`🎉 Account successfully created! Welcome ${newUser.name}!`);
 
     return true;
   };

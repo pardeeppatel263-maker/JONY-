@@ -99,25 +99,17 @@ export const RegisterScreen: React.FC = () => {
     setWhatsappFallbackUrl(directWaUrl);
 
     try {
-      showToast('✓ WhatsApp par OTP bhej rahe hain...');
       const res = await sendWhatsAppOtp({
         mobile: cleanMobile,
         otp: randomOtp,
         purpose: 'register',
         adminSettings,
       });
-      if (res?.deliveredByGateway || res?.success) {
-        showToast('✓ OTP dispatch ho gaya! WhatsApp check karein.');
-        setGatewayError('');
-      } else {
-        setGatewayError(res?.gatewayMessage || res?.message || 'Gateway response delayed');
-      }
       if (res?.fallbackLink) {
         setWhatsappFallbackUrl(res.fallbackLink);
       }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
-      setGatewayError(err.message || 'WhatsApp message dispatch error');
     } finally {
       setIsSendingOtp(false);
     }
@@ -269,7 +261,7 @@ export const RegisterScreen: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-emerald-800 leading-tight mt-0.5">
-              Aapko registration karte hi ₹100 Welcome Bonus prapt hoga!
+              Aapka account invite link se linked hai.
             </p>
           </div>
         </div>
@@ -448,35 +440,6 @@ export const RegisterScreen: React.FC = () => {
                   {otpError}
                 </p>
               )}
-
-              {gatewayError && (
-                <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 text-center animate-in fade-in">
-                  ℹ️ {gatewayError}
-                </p>
-              )}
-
-              {/* Helper Links: Direct WhatsApp & Auto-fill */}
-              <div className="flex items-center justify-between px-2 pt-1 text-[11px]">
-                <a
-                  href={whatsappFallbackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-700 hover:text-emerald-800 font-semibold underline flex items-center gap-1 cursor-pointer"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>Direct WhatsApp Link</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpCode(generatedOtp);
-                    showToast(`✓ OTP code (${generatedOtp}) auto-filled!`);
-                  }}
-                  className="text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
-                >
-                  Auto-fill ({generatedOtp})
-                </button>
-              </div>
             </div>
           )}
 
@@ -565,7 +528,7 @@ export const RegisterScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Referral Code (with bonus tag matching Screenshot 3) */}
+        {/* Referral Code */}
         <div className="space-y-1 pt-1">
           <div className="flex justify-between items-center">
             <label className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
@@ -573,9 +536,6 @@ export const RegisterScreen: React.FC = () => {
               <span>Referral Code</span>
               <span className="text-slate-400 font-normal">(Optional)</span>
             </label>
-            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              +₹100 Bonus
-            </span>
           </div>
 
           <div className="relative flex items-center rounded-xl border border-dashed border-amber-300 bg-amber-50/40 shadow-sm focus-within:border-amber-500 transition-all">
@@ -601,8 +561,8 @@ export const RegisterScreen: React.FC = () => {
               );
             })()}
           </div>
-          <p className="text-[10px] text-amber-700 font-medium">
-            🎁 Valid invite code daalne par ₹100 welcome bonus wallet me credit hoga!
+          <p className="text-[10px] text-slate-500 font-medium">
+            Invite code enter karne par aapke inviter ko referral reward prapt hoga.
           </p>
         </div>
 

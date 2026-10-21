@@ -32,7 +32,7 @@ export const ReferralEarnScreen: React.FC = () => {
   const totalTeamCount = directTeam.length + tier2Team.length;
 
   const handleShare = () => {
-    const shareMessage = `Join ZoroTask and earn daily rewards! 🎁\n\nClick my invite link to open the registration page directly with code ${referralCode} pre-filled. You get ₹100 welcome bonus immediately!\n\nLink: ${referralLink}`;
+    const shareMessage = `Join ZoroTask and earn daily rewards! 🎁\n\nClick my invite link to register with code ${referralCode}: ${referralLink}`;
 
     if (navigator.share) {
       navigator

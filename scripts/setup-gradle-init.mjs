@@ -96,11 +96,24 @@ public class MainActivity extends BridgeActivity {
                     });
                 }
             }
+    }
+
+    @Override
+    public void onBackPressed() {
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                getBridge().getWebView().evaluateJavascript(
+                    "if (window.__triggerZoroTaskBack) { window.__triggerZoroTaskBack(); } else { window.history.back(); }",
+                    null
+                );
+                return;
+            }
         } catch (Exception ignored) {}
+        super.onBackPressed();
     }
 }
 '''
-            println("✓ Gradle Init: Patched MainActivity.java for status bar safe insets!")
+            println("✓ Gradle Init: Patched MainActivity.java with safe back button navigation and insets!")
         }
     } catch (Exception e) {
         println("Gradle Init notice: " + e.getMessage())

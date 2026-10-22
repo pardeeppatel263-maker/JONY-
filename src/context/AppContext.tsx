@@ -374,18 +374,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveTab('home');
       setHistoryStack(['home']);
       try {
-        window.history.replaceState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
-      } catch (err) {
-        console.warn(err);
-      }
-    }
-  }, [isLoggedIn, currentScreen]);
-
-  // Keep a forward history state when on home to trap phone back button
-  useEffect(() => {
-    if (isLoggedIn && currentScreen === 'home') {
-      try {
-        window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+        window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
       } catch (err) {
         console.warn(err);
       }
@@ -1240,223 +1229,177 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return null;
   };
 
-  const lastBackPressTimeRef = useRef<number>(0);
+  const lastHandledTimeRef = useRef<number>(0);
+  const lastExitPressTimeRef = useRef<number>(0);
 
-  // Seed barrier on startup so Android WebView's canGoBack() is always true
+  // Initialize history guard on mount so Android WebView canGoBack() is always true
   useEffect(() => {
     try {
       const defaultScreen: ScreenType = isLoggedIn ? 'home' : 'login';
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
       const initialScreen = (hash in SCREEN_HASH_MAP ? hash : defaultScreen) as ScreenType;
 
-      if (!window.history.state || !window.history.state.taskvibe_barrier) {
-        window.history.replaceState({ taskvibe_barrier: true }, '', '#barrier');
-        window.history.pushState({ taskvibe: true, screen: initialScreen }, '', `#${initialScreen}`);
+      if (!window.history.state || !window.history.state.zorotask_guard) {
+        window.history.replaceState({ zorotask_guard: true, isRoot: true }, '', '#guard');
+        window.history.pushState({ zorotask_app: true, screen: initialScreen }, '', `#${initialScreen}`);
       }
     } catch (err) {
       console.warn(err);
     }
-  }, [isLoggedIn]);
+  }, []);
 
-  const goBack = () => {
-    // 1. If any modal is active, close the modal first without navigating screens
+  // Helper to keep history buffer primed in Android WebView
+  const ensureHistoryBuffer = (screenName: string) => {
+    try {
+      window.history.pushState({ zorotask_app: true, screen: screenName }, '', `#${screenName}`);
+    } catch {}
+  };
+
+  // Unified rock-solid back action handler for Hardware Back, Android Gestures, and UI Back
+  const handleBackAction = (source: 'hardware' | 'popstate') => {
+    const now = Date.now();
+    // 1. Debounce duplicate events triggered within 350ms by the same gesture or hardware press
+    if (now - lastHandledTimeRef.current < 350) {
+      return;
+    }
+    lastHandledTimeRef.current = now;
+
+    // 2. Priority 1: If ANY modal is active, close the modal first without leaving the screen!
     if (isPromoModalOpen) {
       setIsPromoModalOpen(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isSurveyModalOpen) {
       setIsSurveyModalOpen(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isUPIModalOpen) {
       setIsUPIModalOpen(false);
-      if (pendingPlanForUPI || selectedPlan) {
-        navigate('plan_detail');
-      }
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isWatchingVideo) {
       setIsWatchingVideo(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isTeamModalOpen) {
       setIsTeamModalOpen(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isNotificationsOpen) {
       setIsNotificationsOpen(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
     if (isEditProfileOpen) {
       setIsEditProfileOpen(false);
+      ensureHistoryBuffer(currentScreen);
       return;
     }
 
-    // 2. VIP Member or Mission: Back button MUST always go to Home
-    if (currentScreen === 'member_plans' || currentScreen === 'mission' || currentScreen === 'record' || currentScreen === 'profile') {
-      setCurrentScreen('home');
-      setActiveTab('home');
-      setHistoryStack(['home']);
-      try {
-        localStorage.setItem('taskvibe_screen', 'home');
-        window.history.pushState({ taskvibe: true, screen: 'home' }, '', '#home');
-      } catch {}
-      return;
-    }
-
-    // 3. If on Home (or unauthenticated Login): Double tap back within 2s to exit
-    if (currentScreen === 'home' || currentScreen === 'login') {
-      const now = Date.now();
-      if (now - lastBackPressTimeRef.current < 2000) {
-        // Double tap within 2 seconds: exit app
-        const capApp = (window as any).Capacitor?.Plugins?.App;
-        if (capApp && typeof capApp.exitApp === 'function') {
-          capApp.exitApp();
-        } else if ((navigator as any).app?.exitApp) {
-          (navigator as any).app.exitApp();
-        }
+    // 3. Priority 2: If on ANY sub-screen, navigate safely back to previous screen or Home!
+    // Never exit the app when on an inner screen!
+    if (currentScreen !== 'home' && (isLoggedIn || currentScreen !== 'login')) {
+      let targetScreen: ScreenType = 'home';
+      if (currentScreen === 'add_money' || currentScreen === 'withdraw') {
+        targetScreen = 'wallet';
+      } else if (currentScreen === 'plan_detail') {
+        targetScreen = 'member_plans';
+      } else if (currentScreen === 'register') {
+        targetScreen = 'login';
       } else {
-        lastBackPressTimeRef.current = now;
-        showToast('Press back again to exit');
+        targetScreen = 'home';
+      }
+
+      setCurrentScreen(targetScreen);
+      if (targetScreen === 'home') setActiveTab('home');
+      else if (targetScreen === 'member_plans') setActiveTab('member');
+      else if (targetScreen === 'wallet') setActiveTab('me');
+
+      try {
+        localStorage.setItem('taskvibe_screen', targetScreen);
+      } catch {}
+
+      ensureHistoryBuffer(targetScreen);
+
+      setHistoryStack((prev) => {
+        const next = [...prev];
+        if (next.length > 1) next.pop();
+        return next.length ? next : ['home'];
+      });
+      return;
+    }
+
+    // 4. Priority 3: Root Screen ('home' or 'login')
+    // Double back within 400ms - 2500ms required to exit, single back shows prompt!
+    const timeDiff = now - lastExitPressTimeRef.current;
+    if (timeDiff >= 400 && timeDiff <= 2500) {
+      // User deliberately pressed back a second time to exit!
+      const capApp = (window as any).Capacitor?.Plugins?.App;
+      if (capApp && typeof capApp.exitApp === 'function') {
+        capApp.exitApp();
+      } else if ((navigator as any).app && typeof (navigator as any).app.exitApp === 'function') {
+        (navigator as any).app.exitApp();
+      } else {
+        try {
+          window.close();
+        } catch {}
       }
       return;
-    }
-
-    // 4. Sub-screens (Add Money, Wallet, Withdraw, Plan Detail, Daily Survey, etc.):
-    // Call native window.history.back() to keep Android WebView and browser stack synchronized
-    try {
-      window.history.back();
-    } catch {
-      const prevScreen = (currentScreen === 'add_money' || currentScreen === 'withdraw') ? 'wallet' : 'home';
-      navigate(prevScreen);
+    } else {
+      // First back press on Home/Login: show friendly notice and re-prime history
+      lastExitPressTimeRef.current = now;
+      showToast('Press back again to exit / बाहर निकलने के लिए दोबारा बैक दबाएं');
+      ensureHistoryBuffer(currentScreen);
+      return;
     }
   };
 
-  const goBackRef = useRef(goBack);
-  goBackRef.current = goBack;
+  const handleBackActionRef = useRef(handleBackAction);
+  handleBackActionRef.current = handleBackAction;
 
-  // Hardware and browser back navigation listeners (Capacitor + Cordova + Browser PopState)
+  // Expose global bridge function so Android native code can call it directly
   useEffect(() => {
-    // 1. Modern Capacitor Hardware Back Button Listener
+    (window as any).__triggerZoroTaskBack = () => {
+      handleBackActionRef.current('hardware');
+    };
+  }, []);
+
+  const goBack = () => {
+    handleBackActionRef.current('hardware');
+  };
+
+  // Attach Hardware, WebView, and Browser listeners
+  useEffect(() => {
+    // 1. Capacitor Hardware Back Button Listener
     let capListenerHandle: any = null;
     const capApp = (window as any).Capacitor?.Plugins?.App;
     if (capApp && typeof capApp.addListener === 'function') {
       try {
         capListenerHandle = capApp.addListener('backButton', () => {
-          goBackRef.current();
+          handleBackActionRef.current('hardware');
         });
       } catch (err) {
-        console.warn('Capacitor backButton listener registration:', err);
+        console.warn('Capacitor backButton listener:', err);
       }
     }
 
-    // 2. Cordova / WebView backbutton event listener
+    // 2. Cordova / Android WebView backbutton event listener
     const handleHardwareBack = (e?: any) => {
       if (e && typeof e.preventDefault === 'function') {
         e.preventDefault();
       }
-      goBackRef.current();
+      handleBackActionRef.current('hardware');
     };
     document.addEventListener('backbutton', handleHardwareBack, false);
 
     // 3. Browser / Android WebView popstate event listener
-    const handlePopState = (e: PopStateEvent) => {
-      // If any modal was open, close modal and restore screen state
-      if (isPromoModalOpen) {
-        setIsPromoModalOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isSurveyModalOpen) {
-        setIsSurveyModalOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isUPIModalOpen) {
-        setIsUPIModalOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isWatchingVideo) {
-        setIsWatchingVideo(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isTeamModalOpen) {
-        setIsTeamModalOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isNotificationsOpen) {
-        setIsNotificationsOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-      if (isEditProfileOpen) {
-        setIsEditProfileOpen(false);
-        try { window.history.pushState({ taskvibe: true, screen: currentScreen }, '', `#${currentScreen}`); } catch {}
-        return;
-      }
-
-      const hash = window.location.hash.replace(/^#\/?/, '').trim();
-      const isBarrier = e.state?.taskvibe_barrier || hash === 'barrier' || !hash || hash === 'root';
-
-      // If user hit barrier or popped from home:
-      if (isBarrier || currentScreen === 'home') {
-        const now = Date.now();
-        if (now - lastBackPressTimeRef.current < 2000) {
-          const capApp = (window as any).Capacitor?.Plugins?.App;
-          if (capApp && typeof capApp.exitApp === 'function') {
-            capApp.exitApp();
-          } else if ((navigator as any).app?.exitApp) {
-            (navigator as any).app.exitApp();
-          } else {
-            window.history.back();
-          }
-          return;
-        } else {
-          lastBackPressTimeRef.current = now;
-          showToast('Press back again to exit');
-          const stayScreen: ScreenType = isLoggedIn ? 'home' : 'login';
-          try {
-            window.history.pushState({ taskvibe: true, screen: stayScreen }, '', `#${stayScreen}`);
-          } catch {}
-          setCurrentScreen(stayScreen);
-          setActiveTab('home');
-          setHistoryStack(['home']);
-          return;
-        }
-      }
-
-      // If user was on VIP Member or Mission, pressing back on Android MUST go to Home!
-      if (currentScreen === 'member_plans' || currentScreen === 'mission' || currentScreen === 'record' || currentScreen === 'profile') {
-        setCurrentScreen('home');
-        setActiveTab('home');
-        setHistoryStack(['home']);
-        try {
-          localStorage.setItem('taskvibe_screen', 'home');
-        } catch {}
-        return;
-      }
-
-      // Otherwise read target screen from popped history state or hash
-      const poppedScreen = (e.state?.screen || (hash in SCREEN_HASH_MAP ? hash : 'home')) as ScreenType;
-      setCurrentScreen(poppedScreen);
-      if (poppedScreen === 'home') setActiveTab('home');
-      else if (poppedScreen === 'member_plans') setActiveTab('member');
-      else if (poppedScreen === 'mission') setActiveTab('mission');
-      else if (poppedScreen === 'record') setActiveTab('record');
-      else if (poppedScreen === 'profile' || poppedScreen === 'wallet') setActiveTab('me');
-
-      try {
-        localStorage.setItem('taskvibe_screen', poppedScreen);
-      } catch {}
-
-      setHistoryStack((prev) => {
-        const next = [...prev];
-        if (next.length > 1) next.pop();
-        return next;
-      });
+    const handlePopState = (_e: PopStateEvent) => {
+      handleBackActionRef.current('popstate');
     };
     window.addEventListener('popstate', handlePopState);
 
@@ -1467,17 +1410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         capListenerHandle.remove();
       }
     };
-  }, [
-    currentScreen,
-    isPromoModalOpen,
-    isSurveyModalOpen,
-    isUPIModalOpen,
-    isWatchingVideo,
-    isTeamModalOpen,
-    isNotificationsOpen,
-    isEditProfileOpen,
-    isLoggedIn,
-  ]);
+  }, []);
 
   const navigate = (screen: ScreenType, plan?: PlanItem) => {
     if (plan) setSelectedPlan(plan);
@@ -1600,7 +1533,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('taskvibe_user', JSON.stringify(matched));
         localStorage.setItem('taskvibe_txs', JSON.stringify(matched.transactions || []));
         localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
-        window.history.replaceState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+        window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
       } catch (e) {
         console.warn(e);
       }
@@ -1664,7 +1597,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('taskvibe_user', JSON.stringify(matched));
       localStorage.setItem('taskvibe_txs', JSON.stringify(matched.transactions || []));
       localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
-      window.history.replaceState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+      window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
     } catch (e) {
       console.warn(e);
     }
@@ -1974,7 +1907,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('taskvibe_user', JSON.stringify(newUser));
       localStorage.setItem('taskvibe_txs', JSON.stringify(initialTxs));
       localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
-      window.history.replaceState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+      window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
     } catch (e) {
       console.warn(e);
     }
@@ -1996,7 +1929,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem('taskvibe_active_mobile');
       localStorage.removeItem('taskvibe_user');
       localStorage.removeItem('taskvibe_txs');
-      window.history.replaceState({ taskvibe: true, screen: 'login' }, '', window.location.pathname);
+      window.history.replaceState({ zorotask_app: true, screen: 'login' }, '', '#login');
     } catch (e) {
       console.warn(e);
     }

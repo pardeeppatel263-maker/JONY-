@@ -599,14 +599,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     whatsappAutoWelcome: true,
     whatsappAutoDepositNotify: true,
     whatsappAutoWithdrawNotify: true,
-    whatsappWelcomeMessage: 'Namaste {name}! Welcome to ZoroTask. Complete tasks daily and withdraw your rewards directly to UPI/Bank.',
+    whatsappWelcomeMessage: 'Hello {name}! Welcome to ZoroTask. Complete tasks daily and withdraw your rewards directly to UPI/Bank.',
     renflairApiKey: '417d155c4d7937dc6555a13a71f09ec0',
     renflairApiUrl: 'https://sms.renflair.in/V1.php',
     renflairMethod: 'GET',
     renflairSenderId: '',
     announcementEnabled: true,
     announcementTitle: '🎉 Welcome to ZoroTask 2.0 Update!',
-    announcementMessage: 'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!',
+    announcementMessage: 'New ZoroTask update is live! Higher video earnings and instant UPI payouts are now activated for VIP members. Complete daily video tasks and grow your wallet balance!',
     announcementTag: 'NOTICE',
     announcementButtonText: 'Check VIP Plans ⭐',
     announcementButtonAction: 'member_plans',
@@ -1214,7 +1214,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const lastBackPressTimeRef = useRef<number>(0);
 
-  // Initialize and handle mobile device physical / browser back button (popstate)
+  // Centralized robust back navigation handler for Web, Android hardware back, Capacitor, and in-app header back
+  const handleAppBack = () => {
+    // 1. First dismiss any open modal if active
+    if (isSurveyModalOpen) { setIsSurveyModalOpen(false); return; }
+    if (isUPIModalOpen) {
+      setIsUPIModalOpen(false);
+      if (pendingPlanForUPI || selectedPlan) {
+        setCurrentScreen('plan_detail');
+        setActiveTab('member');
+      }
+      return;
+    }
+    if (isWatchingVideo) { setIsWatchingVideo(false); return; }
+    if (isTeamModalOpen) { setIsTeamModalOpen(false); return; }
+    if (isNotificationsOpen) { setIsNotificationsOpen(false); return; }
+    if (isEditProfileOpen) { setIsEditProfileOpen(false); return; }
+
+    // 2. Logged in navigation
+    if (isLoggedIn) {
+      if (currentScreen === 'home') {
+        const now = Date.now();
+        if (now - lastBackPressTimeRef.current < 2000) {
+          // Double press back on home screen -> exit APK/Capacitor app
+          const capApp = (window as any).Capacitor?.Plugins?.App;
+          if (capApp && typeof capApp.exitApp === 'function') {
+            capApp.exitApp();
+          } else if ((navigator as any).app?.exitApp) {
+            (navigator as any).app.exitApp();
+          }
+          return;
+        } else {
+          lastBackPressTimeRef.current = now;
+          showToast('Press back again to exit');
+          try {
+            window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+          } catch {}
+          return;
+        }
+      }
+
+      // If user is on any other screen, navigate back through the history stack
+      setHistoryStack((prev) => {
+        const cleanStack = prev.filter((s) => s !== 'login' && s !== 'register' && s !== 'splash');
+        if (cleanStack.length > 1) {
+          const nextStack = [...cleanStack];
+          nextStack.pop(); // remove current screen
+          const target = nextStack[nextStack.length - 1] || 'home';
+          setCurrentScreen(target);
+
+          // sync active tab
+          if (target === 'home') setActiveTab('home');
+          else if (target === 'member_plans') setActiveTab('member');
+          else if (target === 'mission') setActiveTab('mission');
+          else if (target === 'record') setActiveTab('record');
+          else if (target === 'profile') setActiveTab('me');
+
+          try {
+            window.history.pushState({ taskvibe: true, screen: target }, '', window.location.pathname);
+          } catch {}
+          return nextStack;
+        } else {
+          // Return to home screen
+          setCurrentScreen('home');
+          setActiveTab('home');
+          try {
+            window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
+          } catch {}
+          return ['home'];
+        }
+      });
+    } else {
+      // Unauthenticated flows
+      if (currentScreen === 'register') {
+        setCurrentScreen('login');
+        setHistoryStack(['login']);
+        try {
+          window.history.pushState({ taskvibe: true, screen: 'login' }, '', window.location.pathname);
+        } catch {}
+      } else if (currentScreen === 'login') {
+        const now = Date.now();
+        if (now - lastBackPressTimeRef.current < 2000) {
+          const capApp = (window as any).Capacitor?.Plugins?.App;
+          if (capApp && typeof capApp.exitApp === 'function') {
+            capApp.exitApp();
+          } else if ((navigator as any).app?.exitApp) {
+            (navigator as any).app.exitApp();
+          }
+        } else {
+          lastBackPressTimeRef.current = now;
+          showToast('Press back again to exit');
+          try {
+            window.history.pushState({ taskvibe: true, screen: 'login' }, '', window.location.pathname);
+          } catch {}
+        }
+      }
+    }
+  };
+
+  const goBack = () => {
+    handleAppBack();
+  };
+
+  // Initialize and handle mobile device physical / browser back button and Android hardware back
   useEffect(() => {
     // Seed an initial history state
     if (!window.history.state || !window.history.state.taskvibe) {
@@ -1226,115 +1328,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const handlePopState = () => {
-      // 1. If any modal is currently open, dismiss modal on back press
-      if (isSurveyModalOpen) {
-        setIsSurveyModalOpen(false);
+      // Re-push state so history depth is never depleted in WebView
+      try {
         window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
-      if (isUPIModalOpen) {
-        setIsUPIModalOpen(false);
-        // User requested: "JAB KOI PAYMENT KARE KISI UPI AUR BACK AAYE TOO WAHI JAHA JOPALNE O BUY KAR RHA HO"
-        if (pendingPlanForUPI || selectedPlan) {
-          setCurrentScreen('plan_detail');
-          setActiveTab('member');
-          setHistoryStack((prev) => {
-            const clean = prev.filter((s) => s !== 'login' && s !== 'register');
-            return clean.includes('member_plans') ? ['home', 'member_plans', 'plan_detail'] : ['home', 'plan_detail'];
-          });
-          window.history.pushState({ taskvibe: true, screen: 'plan_detail' }, '', window.location.pathname);
-          showToast('✓ You are on the Plans page');
-          return;
-        }
-        window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
-      if (isWatchingVideo) {
-        setIsWatchingVideo(false);
-        window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
-      if (isTeamModalOpen) {
-        setIsTeamModalOpen(false);
-        window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
-      if (isNotificationsOpen) {
-        setIsNotificationsOpen(false);
-        window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
-      if (isEditProfileOpen) {
-        setIsEditProfileOpen(false);
-        window.history.pushState({ taskvibe: true, screen: currentScreen }, '', window.location.pathname);
-        return;
-      }
+      } catch {}
+      handleAppBack();
+    };
 
-      // 2. If logged in: User MUST NEVER see Login or Register on back button!
-      // Back navigates 1 step backwards, but stops at HomeScreen and never logs out!
-      if (isLoggedIn) {
-        if (currentScreen === 'home') {
-          // Home screen is the absolute end of back navigation!
-          window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
-          showToast('✓ You are on the Home screen');
-          return;
-        }
-
-        // On any sub-screen (wallet, withdraw, member_plans, mission, record, profile, etc.)
-        // Step back 1 step, but once reaching Home, stop at Home
-        setHistoryStack((prev) => {
-          const cleanStack = prev.filter((s) => s !== 'login' && s !== 'register' && s !== 'splash');
-          if (cleanStack.length > 1) {
-            const nextStack = [...cleanStack];
-            nextStack.pop(); // step back 1 step
-            const targetScreen = nextStack[nextStack.length - 1] || 'home';
-            setCurrentScreen(targetScreen);
-
-            // sync tab
-            if (targetScreen === 'home') setActiveTab('home');
-            else if (targetScreen === 'member_plans') setActiveTab('member');
-            else if (targetScreen === 'mission') setActiveTab('mission');
-            else if (targetScreen === 'record') setActiveTab('record');
-            else if (targetScreen === 'profile') setActiveTab('me');
-
-            if (targetScreen === 'home') {
-              window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
-            }
-            return nextStack;
-          } else {
-            // Reached Home screen! Stop here!
-            setCurrentScreen('home');
-            setActiveTab('home');
-            window.history.pushState({ taskvibe: true, screen: 'home' }, '', window.location.pathname);
-            showToast('✓ You are on the Home screen');
-            return ['home'];
-          }
-        });
-        return;
+    const handleHardwareBack = (e?: any) => {
+      if (e && typeof e.preventDefault === 'function') {
+        e.preventDefault();
       }
-
-      // 3. If unauthenticated
-      if (currentScreen === 'register') {
-        setCurrentScreen('login');
-        setHistoryStack(['login']);
-        return;
-      }
-
-      const now = Date.now();
-      if (now - lastBackPressTimeRef.current < 2000) {
-        return;
-      } else {
-        lastBackPressTimeRef.current = now;
-        window.history.pushState({ taskvibe: true, screen: 'login' }, '', window.location.pathname);
-        setToastMessage('Press back again to exit');
-        setTimeout(() => {
-          setToastMessage(null);
-        }, 2500);
-      }
+      handleAppBack();
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    document.addEventListener('backbutton', handleHardwareBack, false);
+
+    // Capacitor App backButton listener support
+    let capListenerHandle: any = null;
+    const capApp = (window as any).Capacitor?.Plugins?.App;
+    if (capApp && typeof capApp.addListener === 'function') {
+      try {
+        capApp.addListener('backButton', () => {
+          handleAppBack();
+        }).then((handle: any) => {
+          capListenerHandle = handle;
+        });
+      } catch (err) {
+        console.warn('Capacitor backButton init error:', err);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('backbutton', handleHardwareBack, false);
+      if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
+        capListenerHandle.remove();
+      }
+    };
   }, [
     isSurveyModalOpen,
     isUPIModalOpen,
@@ -1344,6 +1376,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isEditProfileOpen,
     currentScreen,
     isLoggedIn,
+    pendingPlanForUPI,
+    selectedPlan,
   ]);
 
   const navigate = (screen: ScreenType, plan?: PlanItem) => {
@@ -1380,53 +1414,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     else if (targetScreen === 'mission') setActiveTab('mission');
     else if (targetScreen === 'record') setActiveTab('record');
     else if (targetScreen === 'profile') setActiveTab('me');
-  };
-
-  const goBack = () => {
-    if (isSurveyModalOpen) { setIsSurveyModalOpen(false); return; }
-    if (isUPIModalOpen) {
-      setIsUPIModalOpen(false);
-      if (pendingPlanForUPI || selectedPlan) {
-        setCurrentScreen('plan_detail');
-        setActiveTab('member');
-      }
-      return;
-    }
-    if (isWatchingVideo) { setIsWatchingVideo(false); return; }
-    if (isTeamModalOpen) { setIsTeamModalOpen(false); return; }
-    if (isNotificationsOpen) { setIsNotificationsOpen(false); return; }
-    if (isEditProfileOpen) { setIsEditProfileOpen(false); return; }
-
-    if (isLoggedIn) {
-      if (currentScreen === 'home') {
-        showToast('✓ You are on the Home screen');
-        return;
-      }
-      setHistoryStack((prev) => {
-        const cleanStack = prev.filter((s) => s !== 'login' && s !== 'register' && s !== 'splash');
-        if (cleanStack.length > 1) {
-          const nextStack = [...cleanStack];
-          nextStack.pop();
-          const target = nextStack[nextStack.length - 1] || 'home';
-          setCurrentScreen(target);
-          if (target === 'home') setActiveTab('home');
-          else if (target === 'member_plans') setActiveTab('member');
-          else if (target === 'mission') setActiveTab('mission');
-          else if (target === 'record') setActiveTab('record');
-          else if (target === 'profile') setActiveTab('me');
-          return nextStack;
-        } else {
-          setCurrentScreen('home');
-          setActiveTab('home');
-          return ['home'];
-        }
-      });
-    } else {
-      if (currentScreen === 'register') {
-        setCurrentScreen('login');
-        setHistoryStack(['login']);
-      }
-    }
   };
 
   const switchTab = (tab: BottomTabType) => {
@@ -2837,7 +2824,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   ) => {
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Withdrawal request submit nahi ho sakti.');
+      showToast('❌ Your account is blocked by administration. Withdrawal requests cannot be submitted.');
       return { success: false, message: 'Account is blocked by admin' };
     }
     if (amount < 1000) {
@@ -2919,12 +2906,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const submitDailySurveyTask = (answers?: Record<number, string>) => {
     setIsSurveyModalOpen(false);
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Surveys submit nahi ho sakte.');
+      showToast('❌ Your account is blocked by administration. Surveys cannot be submitted.');
       return;
     }
     const hasPaidPlan = (activeUserPlans || []).some((p) => p.level > 0);
     if (!isFreeTrialActive && !hasPaidPlan) {
-      showToast('⚠️ Aapka 2 din ka Free Trial samapt ho chuka hai! Daily surveys & tasks jari rakhne ke liye VIP plan activate karein.');
+      showToast('⚠️ Your 2-day free trial has expired! Please activate a VIP plan to continue daily surveys and tasks.');
       navigate('member_plans');
       return;
     }
@@ -3185,7 +3172,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const openVideoTask = (taskNum?: number) => {
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Video tasks available nahi hain.');
+      showToast('❌ Your account is blocked by administration. Video tasks are not available.');
       return;
     }
     if (activeUserPlans.length === 0) {
@@ -3194,12 +3181,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     if (!canWatchMoreVideos || todayVideosWatched >= maxDailyVideos) {
-      showToast(`❌ Aaj ka video task quota pura ho chuka hai (${todayVideosWatched}/${maxDailyVideos})! Naye tasks kal milenge ya aur task pane ke liye VIP upgrade karein.`);
+      showToast(`❌ Today's video task quota is complete (${todayVideosWatched}/${maxDailyVideos})! New tasks unlock tomorrow, or upgrade your VIP plan for more tasks.`);
       return;
     }
     const chosenNum = taskNum || Math.min(maxDailyVideos, todayVideosWatched + 1);
     if (chosenNum <= todayVideosWatched) {
-      showToast(`✓ Task #${chosenNum} pehle hi complete ho chuka hai! Agla pending task dekhein.`);
+      showToast(`✓ Task #${chosenNum} is already completed! Please watch the next pending task.`);
       return;
     }
     setCurrentPlayingTaskNum(chosenNum);
@@ -3209,19 +3196,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const submitYouTubeVideoTask = async (videoTitle?: string, videoUrl?: string) => {
     setIsWatchingVideo(false);
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Tasks submit nahi ho sakte.');
+      showToast('❌ Your account is blocked by administration. Tasks cannot be submitted.');
       return;
     }
 
     // Strictly enforce mission daily limit
     if (!canWatchMoreVideos || todayVideosWatched >= maxDailyVideos) {
-      showToast(`❌ Aaj ka video task quota complete ho chuka hai (${todayVideosWatched}/${maxDailyVideos})! Aur task dekhne ke liye VIP upgrade karein.`);
+      showToast(`❌ Today's video task quota is complete (${todayVideosWatched}/${maxDailyVideos})! Upgrade to VIP to unlock more tasks.`);
       return;
     }
 
     const nextCount = todayVideosWatched + 1;
     if (nextCount > maxDailyVideos) {
-      showToast(`❌ Aaj ka video task quota complete ho chuka hai (${todayVideosWatched}/${maxDailyVideos})!`);
+      showToast(`❌ Today's video task quota is complete (${todayVideosWatched}/${maxDailyVideos})!`);
       return;
     }
 
@@ -3842,7 +3829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
 
-    showToast(`✓ User (+91 ${clean}) database se permanently DELETE ho gaya!`);
+    showToast(`✓ User (+91 ${clean}) was permanently deleted from the database!`);
     return true;
   };
 
@@ -3851,7 +3838,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!clean) return;
     await adminUpdateUser(clean, {
       isBlocked: true,
-      blockedReason: reason || 'Account blocked by admin. Tasks aur withdrawals suspended hain.',
+      blockedReason: reason || 'Account suspended by administration. Tasks and withdrawals are restricted.',
     });
   };
 

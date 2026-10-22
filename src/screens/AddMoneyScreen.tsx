@@ -74,7 +74,7 @@ export const AddMoneyScreen: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-amber-800 leading-snug">
-                Aapka UTR <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-amber-200">{pendingDeposit.utrNumber}</span> submission admin verification ke under hai. Approval milte hi balance add ho jayega.
+                Your UTR <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-amber-200">{pendingDeposit.utrNumber}</span> submission is under administrative verification. Balance will be updated upon approval.
               </p>
               <button
                 type="button"

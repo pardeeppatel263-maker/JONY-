@@ -138,7 +138,7 @@ export const ReferralEarnScreen: React.FC = () => {
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                Aapka Unique Invite Code
+                Your Unique Invite Code
               </span>
               <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                 Verified Code

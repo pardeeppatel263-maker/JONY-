@@ -150,10 +150,10 @@ export const VideoTaskModal: React.FC = () => {
           <div>
             <h3 className="text-lg font-black text-white">Daily Task Limit Reached!</h3>
             <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-              Aapne aaj ke saare <b className="text-amber-400">{maxDailyVideos}/{maxDailyVideos}</b> video tasks complete kar liye hain. Isse jyada video aaj nahi dekh sakte.
+              You have completed all <b className="text-amber-400">{maxDailyVideos}/{maxDailyVideos}</b> video tasks for today.
             </p>
             <p className="text-[11px] text-slate-400 mt-1">
-              Naye tasks kal unlock honge, ya aur daily tasks pane ke liye VIP Plan upgrade karein!
+              New tasks unlock tomorrow, or upgrade your VIP plan to unlock more daily tasks!
             </p>
           </div>
           <div className="space-y-2 pt-2">

@@ -29,7 +29,7 @@ export const DailySurveyScreen: React.FC = () => {
                 <span>Surveys Disabled - Account Blocked</span>
               </div>
               <p className="text-[11px] text-rose-700 leading-snug">
-                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Daily surveys available nahi hain. Kripya support se sampark karein.'}
+                {user.blockedReason || 'Your account has been blocked by administration. Daily surveys are currently unavailable. Please contact support.'}
               </p>
             </div>
           )}
@@ -40,9 +40,9 @@ export const DailySurveyScreen: React.FC = () => {
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <h3 className="text-xs font-black">2-Day Free Trial Samapt Ho Chuka Hai</h3>
+                  <h3 className="text-xs font-black">2-Day Free Trial Has Ended</h3>
                   <p className="text-[11px] text-rose-100 leading-relaxed">
-                    Registration ke baad keval 2 din hi free tasks &amp; surveys available the. Ab survey rewards continue karne ke liye kripya VIP plan active karein.
+                    Free tasks and surveys were available for 2 days after registration. Please activate a VIP plan to continue earning survey rewards.
                   </p>
                 </div>
               </div>
@@ -108,7 +108,7 @@ export const DailySurveyScreen: React.FC = () => {
             <button
               onClick={() => {
                 if (user.isBlocked) {
-                  showToast('❌ Aapka account admin dwara block hai. Surveys available nahi hain.');
+                  showToast('❌ Your account has been blocked by administration. Surveys are not available.');
                   return;
                 }
                 if (isTrialExpired) {

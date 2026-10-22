@@ -259,7 +259,7 @@ export const HomeScreen: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <span className="text-xs font-black block text-rose-800">Account Blocked by Admin</span>
                 <p className="text-[11px] text-rose-700 leading-snug">
-                  {user.blockedReason || 'Aapka account admin dwara block kiya gaya hai. Tasks aur withdrawals sthagit hain. Kripya help & support se sampark karein.'}
+                  {user.blockedReason || 'Your account has been suspended by administration. Tasks and withdrawals are restricted. Please contact Help & Support.'}
                 </p>
               </div>
             </div>
@@ -280,7 +280,7 @@ export const HomeScreen: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[10px] font-semibold text-slate-900 leading-tight">
-                    Aapko 2 din tak 2 Free videos rozana milenge!
+                    You receive 2 free videos daily for 2 days!
                   </p>
                 </div>
               </div>

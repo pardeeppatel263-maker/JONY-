@@ -79,7 +79,7 @@ export const MissionTasksScreen: React.FC = () => {
 
   const handleStartTask = (category: string, taskNum?: number) => {
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Tasks available nahi hain.');
+      showToast('❌ Your account has been suspended by administration. Tasks are not available.');
       return;
     }
     if (category === 'video') {
@@ -123,7 +123,7 @@ export const MissionTasksScreen: React.FC = () => {
                 <span>Tasks Disabled - Account Blocked</span>
               </div>
               <p className="text-[11px] text-rose-700 leading-snug">
-                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Tasks available nahi hain. Kripya support se sampark karein.'}
+                {user.blockedReason || 'Your account has been suspended by administration. Tasks are unavailable. Please contact support.'}
               </p>
             </div>
           )}
@@ -175,10 +175,10 @@ export const MissionTasksScreen: React.FC = () => {
                 </div>
                 <div className="flex-1">
                   <h4 className="text-xs font-black">
-                    2-Day Free Trial Samapt Ho Chuka Hai (Tasks Locked)
+                    2-Day Free Trial Has Ended (Tasks Locked)
                   </h4>
                   <p className="text-[11px] text-rose-100 leading-snug mt-0.5">
-                    Free starter quota keval 2 din ke liye tha. Daily video tasks continue karne aur earnings lene ke liye VIP plan activate karein.
+                    Free starter quota was valid for 2 days. To continue watching daily video tasks and earning rewards, please activate a VIP plan.
                   </p>
                 </div>
               </div>

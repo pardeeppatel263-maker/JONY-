@@ -126,7 +126,7 @@ export const WithdrawScreen: React.FC = () => {
 
   const handleWithdraw = () => {
     if (user.isBlocked) {
-      showToast('❌ Aapka account admin dwara block hai. Withdrawal request submit nahi ho sakti.');
+      showToast('❌ Your account is blocked by administration. Withdrawal requests cannot be submitted.');
       return;
     }
 
@@ -222,7 +222,7 @@ export const WithdrawScreen: React.FC = () => {
                 <span>Account Blocked by Admin</span>
               </div>
               <p className="text-[11px] text-rose-700 leading-snug">
-                {user.blockedReason || 'Aapka account admin dwara block kar diya gaya hai. Withdrawal suvidha sthagit hai. Kripya help & support se sampark karein.'}
+                {user.blockedReason || 'Your account has been suspended by administration. Withdrawal requests are restricted. Please contact Help & Support.'}
               </p>
             </div>
           )}

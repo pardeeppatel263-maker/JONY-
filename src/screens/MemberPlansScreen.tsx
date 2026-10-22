@@ -10,15 +10,14 @@ import {
   CheckCircle2,
   Crown,
   Calendar,
-  Layers,
   Sparkles,
   Table,
   CreditCard,
   Youtube,
   PlayCircle,
-  ShieldCheck,
-  Lock,
   Clock,
+  ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const MemberPlansScreen: React.FC = () => {
@@ -57,26 +56,71 @@ export const MemberPlansScreen: React.FC = () => {
     navigate('plan_detail', plan);
   };
 
-  const getLevelColorBadge = (level: number) => {
+  const getLevelTheme = (level: number) => {
     switch (level) {
       case 0:
-        return 'bg-slate-100 text-slate-700 border-slate-300';
+        return {
+          badge: 'bg-slate-100 text-slate-700 border-slate-300',
+          gradient: 'from-slate-500 to-slate-700',
+          border: 'border-slate-200',
+          accent: 'text-slate-700',
+        };
       case 1:
-        return 'bg-amber-100 text-amber-900 border-amber-300';
+        return {
+          badge: 'bg-amber-100 text-amber-900 border-amber-300',
+          gradient: 'from-amber-500 to-amber-700',
+          border: 'border-amber-200',
+          accent: 'text-amber-700',
+        };
       case 2:
-        return 'bg-slate-200 text-slate-800 border-slate-400';
+        return {
+          badge: 'bg-slate-200 text-slate-800 border-slate-400',
+          gradient: 'from-slate-600 to-slate-800',
+          border: 'border-slate-300',
+          accent: 'text-slate-800',
+        };
       case 3:
-        return 'bg-yellow-100 text-yellow-900 border-yellow-400';
+        return {
+          badge: 'bg-yellow-100 text-yellow-900 border-yellow-400',
+          gradient: 'from-yellow-500 to-amber-600',
+          border: 'border-yellow-200',
+          accent: 'text-yellow-800',
+        };
       case 4:
-        return 'bg-cyan-100 text-cyan-900 border-cyan-300';
+        return {
+          badge: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+          gradient: 'from-cyan-600 to-blue-700',
+          border: 'border-cyan-200',
+          accent: 'text-cyan-800',
+        };
       case 5:
-        return 'bg-indigo-100 text-indigo-900 border-indigo-300';
+        return {
+          badge: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+          gradient: 'from-indigo-600 to-indigo-800',
+          border: 'border-indigo-200',
+          accent: 'text-indigo-800',
+        };
       case 6:
-        return 'bg-purple-100 text-purple-900 border-purple-300';
+        return {
+          badge: 'bg-purple-100 text-purple-900 border-purple-300',
+          gradient: 'from-purple-600 to-purple-800',
+          border: 'border-purple-200',
+          accent: 'text-purple-800',
+        };
       case 7:
-        return 'bg-rose-100 text-rose-900 border-rose-300';
+        return {
+          badge: 'bg-rose-100 text-rose-900 border-rose-300',
+          gradient: 'from-rose-500 to-rose-700',
+          border: 'border-rose-200',
+          accent: 'text-rose-800',
+        };
       default:
-        return 'bg-blue-100 text-blue-900 border-blue-300';
+        return {
+          badge: 'bg-blue-100 text-blue-900 border-blue-300',
+          gradient: 'from-blue-600 to-indigo-700',
+          border: 'border-blue-200',
+          accent: 'text-blue-800',
+        };
     }
   };
 
@@ -91,9 +135,9 @@ export const MemberPlansScreen: React.FC = () => {
 
       {/* SCROLLABLE MIDDLE CONTENT */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
-        <main className="p-4 space-y-4 max-w-md mx-auto pb-6">
+        <main className="p-3.5 space-y-3 max-w-md mx-auto pb-6">
           {/* Top Banner with VIP Tier & User Wallet Balance */}
-          <div className="rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-2xl bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 text-white p-3.5 shadow-sm flex items-center justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] uppercase font-black text-amber-950 bg-white/40 px-2 py-0.5 rounded-full tracking-wider">
@@ -105,30 +149,30 @@ export const MemberPlansScreen: React.FC = () => {
                   Wallet: ₹{user.balance.toLocaleString('en-IN')}
                 </span>
               </div>
-              <h2 className="text-base font-black leading-tight text-white drop-shadow-xs">
+              <h2 className="text-sm font-black leading-tight text-white drop-shadow-xs">
                 VIP Membership Plans <br />
-                <span className="text-amber-100">Daily Video Tasks &amp; Income</span>
+                <span className="text-amber-100 font-semibold text-xs">Daily Video Tasks &amp; Earnings</span>
               </h2>
-              <p className="text-[11px] text-amber-50">
+              <p className="text-[10px] text-amber-100/90">
                 Each candidate can purchase each level once
               </p>
             </div>
-            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-inner backdrop-blur-xs shrink-0">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl shadow-inner backdrop-blur-xs shrink-0">
               👑
             </div>
           </div>
 
           {/* ACTIVE VIP PLAN & DAILY TASKS STATUS CARD */}
-          <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-xs space-y-3">
+          <div className="bg-white rounded-xl p-3 border border-amber-200 shadow-xs space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-amber-50 rounded-xl text-amber-600">
-                  <Crown className="w-4 h-4" />
+                <div className="p-1 bg-amber-50 rounded-lg text-amber-600">
+                  <Crown className="w-3.5 h-3.5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
-                      Aapke Active Plans: {activeUserPlans.map((p) => `Level ${p.level}`).join(' + ')}
+                      Your Active Plans: {activeUserPlans.map((p) => `Level ${p.level}`).join(' + ')}
                     </span>
                     <span className="text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-md">
                       {activeUserPlans.length > 1 ? `${activeUserPlans.length} Plans Active` : activeUserPlan.badge}
@@ -139,28 +183,28 @@ export const MemberPlansScreen: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
+              <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
                 ₹{totalDailyIncome}/day
               </span>
             </div>
 
             {/* Video Progress Tracker */}
-            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
+            <div className="p-2 bg-slate-50 rounded-lg border border-slate-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Youtube className="w-4 h-4 text-red-600" />
+                <Youtube className="w-3.5 h-3.5 text-red-600" />
                 <span className="text-[11px] font-bold text-slate-700">
-                  Aaj Ke Video Tasks: {todayVideosWatched} / {maxDailyVideos} Done
+                  Today's Video Tasks: {todayVideosWatched} / {maxDailyVideos} Done
                 </span>
               </div>
               {isAllVideosDone ? (
                 <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                   All Done
                 </span>
               ) : (
                 <button
                   onClick={() => openVideoTask()}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-3 py-1 rounded-lg shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-md shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                 >
                   <PlayCircle className="w-3 h-3" />
                   <span>Start Task</span>
@@ -197,7 +241,7 @@ export const MemberPlansScreen: React.FC = () => {
 
           {/* TABLE VIEW */}
           {viewMode === 'table' ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-black text-slate-800">VIP Membership Rates</h3>
@@ -211,7 +255,7 @@ export const MemberPlansScreen: React.FC = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-slate-50 text-[11px] font-bold text-slate-600 border-b border-slate-200">
+                    <tr className="bg-slate-50 text-[10px] font-bold text-slate-600 border-b border-slate-200">
                       <th className="p-2">Level</th>
                       <th className="p-2">Price</th>
                       <th className="p-2">Daily</th>
@@ -232,6 +276,7 @@ export const MemberPlansScreen: React.FC = () => {
                       );
                       const daysCount = parseInt(plan.validity) || (plan.level === 0 ? 2 : 365);
                       const totalValidityIncome = plan.dailyIncome * daysCount;
+                      const theme = getLevelTheme(plan.level);
 
                       return (
                         <tr
@@ -243,9 +288,7 @@ export const MemberPlansScreen: React.FC = () => {
                         >
                           <td className="p-2 font-bold text-slate-900">
                             <span
-                              className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-black border ${getLevelColorBadge(
-                                plan.level
-                              )}`}
+                              className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black border ${theme.badge}`}
                             >
                               LV {plan.level}
                             </span>
@@ -259,20 +302,20 @@ export const MemberPlansScreen: React.FC = () => {
                           <td className="p-2 text-center font-bold text-blue-700">
                             {plan.dailyMissions} VD
                           </td>
-                          <td className="p-2 font-medium text-slate-500 text-[11px]">
+                          <td className="p-2 font-medium text-slate-500 text-[10px]">
                             {plan.validity}
                           </td>
-                          <td className="p-2 font-black text-amber-900 bg-amber-50/50 text-[11px]">
+                          <td className="p-2 font-black text-amber-900 bg-amber-50/50 text-[10px]">
                             ₹{totalValidityIncome.toLocaleString('en-IN')}
                           </td>
                           <td className="p-2 text-right">
                             {isBought ? (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
                                 Active
                               </span>
                             ) : isPlanPending ? (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
                                 <Clock className="w-2.5 h-2.5 animate-spin text-amber-600" />
                                 In Process
                               </span>
@@ -282,7 +325,7 @@ export const MemberPlansScreen: React.FC = () => {
                                   e.stopPropagation();
                                   handleSelectPlan(plan);
                                 }}
-                                className="text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded shadow-2xs cursor-pointer"
+                                className="text-[9px] font-bold bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded shadow-2xs cursor-pointer"
                               >
                                 Buy
                               </button>
@@ -295,15 +338,15 @@ export const MemberPlansScreen: React.FC = () => {
                 </table>
               </div>
 
-              <div className="p-3 bg-slate-50 border-t border-slate-100 text-center">
-                <span className="text-[10px] text-slate-500">
-                  Ek baar khareeda gaya plan dobara buy nahi kiya ja sakta.
+              <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-center">
+                <span className="text-[10px] text-slate-500 font-medium">
+                  Each membership plan can be purchased once per candidate.
                 </span>
               </div>
             </div>
           ) : (
-            /* CARDS VIEW: Rich cards with distinct Video Quotas & Direct Buy */
-            <div className="space-y-3">
+            /* SLEEK, COMPACT, AESTHETIC VIP LEVEL CARDS SECTION */
+            <div className="space-y-2.5">
               {plans.map((plan) => {
                 const isBought = userPurchasedIds.includes(plan.id) && plan.level > 0;
                 const isPlanPending = paymentDeposits.some(
@@ -312,155 +355,112 @@ export const MemberPlansScreen: React.FC = () => {
                     d.depositType === 'plan_purchase' &&
                     (d.planLevel === plan.level || d.planTitle === plan.title)
                 );
+                const daysCount = parseInt(plan.validity) || (plan.level === 0 ? 2 : 365);
+                const totalValidityIncome = plan.dailyIncome * daysCount;
+                const theme = getLevelTheme(plan.level);
+
                 return (
                   <div
                     key={plan.id}
-                    className={`bg-white rounded-2xl p-4 border transition-all relative overflow-hidden shadow-xs ${
+                    onClick={() => handleSelectPlan(plan)}
+                    className={`group bg-white rounded-xl p-3 border transition-all duration-150 cursor-pointer shadow-xs hover:shadow-sm active:scale-[0.99] ${
                       isBought
-                        ? 'border-emerald-400 bg-emerald-50/20 ring-2 ring-emerald-500/20'
+                        ? 'border-emerald-400 bg-emerald-50/20 ring-1 ring-emerald-500/30'
                         : isPlanPending
-                        ? 'border-amber-400 bg-amber-50/30 ring-2 ring-amber-400/30'
-                        : 'border-slate-200 hover:border-amber-400'
+                        ? 'border-amber-400 bg-amber-50/25 ring-1 ring-amber-400/40'
+                        : 'border-slate-200/90 hover:border-amber-400'
                     }`}
                   >
-                    {/* Level Tag Ribbon */}
+                    {/* Header Row: Level + Tag + Price */}
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`text-xs font-black px-2.5 py-0.5 rounded-lg border shadow-2xs ${getLevelColorBadge(
-                            plan.level
-                          )}`}
+                          className={`text-[11px] font-black px-2 py-0.5 rounded-md border shadow-2xs ${theme.badge}`}
                         >
-                          Level {plan.level}
+                          LV {plan.level}
                         </span>
-                        <span className="text-xs font-bold text-slate-800">
-                          {plan.levelTag}
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xs font-bold text-slate-800">
+                            {plan.levelTag}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            • {plan.validity}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-sm font-black text-slate-900">
+                          {plan.price === 0 ? (
+                            <span className="text-blue-600">Free</span>
+                          ) : (
+                            `₹${plan.price.toLocaleString('en-IN')}`
+                          )}
                         </span>
+                      </div>
+                    </div>
+
+                    {/* Middle Row: Concise 3-Pill Key Metrics Strip */}
+                    <div className="grid grid-cols-3 gap-1.5 py-2">
+                      <div className="bg-slate-50/90 rounded-lg p-1.5 text-center border border-slate-100">
+                        <span className="text-[9px] uppercase font-semibold text-slate-400 block">Daily Income</span>
+                        <span className="text-xs font-black text-emerald-600 block mt-0.5">
+                          ₹{plan.dailyIncome.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-50/90 rounded-lg p-1.5 text-center border border-slate-100">
+                        <span className="text-[9px] uppercase font-semibold text-slate-400 block">Video Tasks</span>
+                        <span className="text-xs font-black text-blue-600 flex items-center justify-center gap-1 mt-0.5">
+                          <Youtube className="w-3 h-3 text-red-600" />
+                          <span>{plan.dailyMissions} Videos</span>
+                        </span>
+                      </div>
+
+                      <div className="bg-amber-50/60 rounded-lg p-1.5 text-center border border-amber-100">
+                        <span className="text-[9px] uppercase font-semibold text-amber-700 block">Total Return</span>
+                        <span className="text-xs font-black text-amber-900 block mt-0.5">
+                          ₹{totalValidityIncome.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Footer Row: Per Mission + Action Button */}
+                    <div className="flex items-center justify-between pt-1 text-[11px]">
+                      <span className="text-[10px] font-medium text-slate-500">
+                        Reward: <strong className="text-slate-700">₹{plan.perMission}/video</strong>
+                      </span>
+
+                      <div>
                         {plan.level === 0 ? (
                           isFreeTrialActive ? (
-                            <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
                               <Sparkles className="w-3 h-3 text-amber-600" />
-                              Free Active ({freeTrialHoursLeft}h left)
+                              <span>Free Active ({freeTrialHoursLeft}h)</span>
                             </span>
                           ) : (
-                            <span className="text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-300">
                               <Clock className="w-3 h-3 text-rose-600" />
-                              2-Day Trial Expired
+                              <span>Trial Expired</span>
                             </span>
                           )
                         ) : isBought ? (
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-300">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Active (Purchased)
+                            <span>Active Plan</span>
                           </span>
                         ) : isPlanPending ? (
-                          <span className="text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-amber-600 animate-spin" />
-                            Payment In-Process
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300">
+                            <Clock className="w-3 h-3 text-amber-700 animate-spin" />
+                            <span>In Process</span>
                           </span>
-                        ) : null}
-                      </div>
-
-                      <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-slate-400" />
-                        <span>{plan.validity}</span>
-                      </span>
-                    </div>
-
-                    {/* Pricing, Tasks, and Daily Income Grid */}
-                    <div className="grid grid-cols-3 gap-2 py-3">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase">
-                          Price
-                        </span>
-                        <p className="text-sm font-black text-slate-900">
-                          {plan.price === 0 ? 'Free' : `₹${plan.price.toLocaleString('en-IN')}`}
-                        </p>
-                      </div>
-
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase">
-                          Daily Videos
-                        </span>
-                        <p className="text-sm font-black text-blue-600 flex items-center gap-1">
-                          <Youtube className="w-3.5 h-3.5 text-red-600" />
-                          <span>{plan.dailyMissions} Videos</span>
-                        </p>
-                      </div>
-
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase">
-                          Daily Income
-                        </span>
-                        <p className="text-sm font-black text-emerald-600">
-                          ₹{plan.dailyIncome.toLocaleString('en-IN')}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Prominent Total Validity Income Banner */}
-                    <div className="my-2 p-2 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50 border border-amber-200/90 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base leading-none">💰</span>
-                        <div>
-                          <span className="text-[10px] font-bold text-amber-950 block leading-tight">
-                            Total Potential Income ({plan.validity}):
-                          </span>
-                          <span className="text-[11px] font-black text-emerald-700">
-                            ₹{plan.dailyIncome} × {parseInt(plan.validity) || (plan.level === 0 ? 2 : 365)} days
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-black text-slate-950 bg-amber-300/90 px-2.5 py-0.5 rounded-lg border border-amber-400 block shadow-2xs">
-                          ₹{(plan.dailyIncome * (parseInt(plan.validity) || (plan.level === 0 ? 2 : 365))).toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-[8px] font-bold text-amber-800 uppercase block mt-0.5">
-                          TOTAL INCOME
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Mission Details & Action Button right on card */}
-                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] font-medium text-slate-600">
-                        Per-Video Reward: <b>₹{plan.perMission}</b>
-                      </span>
-
-                      {plan.level === 0 ? (
-                        isFreeTrialActive ? (
-                          <div className="inline-flex items-center gap-1 text-[11px] font-black text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-300">
-                            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Free Active ({freeTrialHoursLeft}h)</span>
-                          </div>
                         ) : (
-                          <div className="inline-flex items-center gap-1 text-[11px] font-black text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-300">
-                            <Clock className="w-3.5 h-3.5 text-rose-600" />
-                            <span>2-Day Trial Expired</span>
-                          </div>
-                        )
-                      ) : isBought ? (
-                        <div className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-300">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Already Active</span>
-                        </div>
-                      ) : isPlanPending ? (
-                        <button
-                          onClick={() => handleSelectPlan(plan)}
-                          className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-xl shadow-xs active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Clock className="w-3.5 h-3.5 text-slate-950 animate-spin" />
-                          <span>In-Process (View)</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleSelectPlan(plan)}
-                          className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>Buy Level {plan.level}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-gradient-to-r from-amber-500 to-amber-600 group-hover:from-amber-600 group-hover:to-amber-700 px-3 py-1 rounded-lg shadow-2xs">
+                            <span>Get Level {plan.level}</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

@@ -285,7 +285,7 @@ export const AdminPanelScreen: React.FC = () => {
   const [noticeMessage, setNoticeMessage] = useState(
     (
       adminSettings.announcementMessage ||
-      'Naya ZoroTask update live hai! VIP members ke liye high video earning rewards aur instant UPI payout features activate kar diye gaye hain. Har roz naye video tasks complete karein aur wallet balance grow karein!'
+      'New ZoroTask update is live! Higher video earnings and instant UPI payouts are now activated for VIP members. Complete daily video tasks and grow your wallet balance!'
     ).replace(/TaskVibe/gi, 'ZoroTask')
   );
   const [noticeTag, setNoticeTag] = useState(
@@ -1187,7 +1187,7 @@ export const AdminPanelScreen: React.FC = () => {
   // WhatsApp Web QR Code Fetcher for Instance Connection
   const handleFetchWhatsAppQr = async () => {
     if (!whatsappInstanceIdInput.trim() || !whatsappApiTokenInput.trim()) {
-      showToast('⚠️ Kripya pehle Instance ID aur API Token dalein');
+      showToast('⚠️ Please enter Instance ID and API Token first');
       return;
     }
     setQrLoading(true);
@@ -1200,17 +1200,17 @@ export const AdminPanelScreen: React.FC = () => {
       const data = await res.json();
       if (data.type === 'alreadyLogged' || data.raw?.stateInstance === 'authorized') {
         setInstanceAuthStatus('authorized');
-        showToast('✓ WhatsApp Web pehle se connect aur active hai!');
+        showToast('✓ WhatsApp Web is already connected and active!');
       } else if (data.qrData) {
         setQrCodeData(data.qrData);
         setIsQrImageUrl(Boolean(data.isImageUrl));
         setInstanceAuthStatus('not_authorized');
-        showToast('✓ Naya QR Code load ho gaya! Apne WhatsApp se scan karein.');
+        showToast('✓ New QR Code loaded! Scan with your WhatsApp.');
       } else {
-        showToast(data.message || 'QR code generate nahi ho saka. Credentials check karein.');
+        showToast(data.message || 'Could not generate QR code. Please verify credentials.');
       }
     } catch (err: any) {
-      showToast('QR Code load karne me samasya: ' + err.message);
+      showToast('Error loading QR Code: ' + err.message);
     } finally {
       setQrLoading(false);
     }
@@ -1219,7 +1219,7 @@ export const AdminPanelScreen: React.FC = () => {
   // Check WhatsApp Web Connection Status
   const handleCheckInstanceStatus = async () => {
     if (!whatsappInstanceIdInput.trim() || !whatsappApiTokenInput.trim()) {
-      showToast('⚠️ Kripya pehle Instance ID aur API Token dalein');
+      showToast('⚠️ Please enter Instance ID and API Token first');
       return;
     }
     setIsCheckingStatus(true);
@@ -1235,7 +1235,7 @@ export const AdminPanelScreen: React.FC = () => {
         showToast('🟢 WhatsApp Web Successfully Connected! Status: AUTHORIZED');
       } else {
         setInstanceAuthStatus('not_authorized');
-        showToast(`🟡 Status: ${data.state || 'Not Authorized'}. Kripya QR code scan karein.`);
+        showToast(`🟡 Status: ${data.state || 'Not Authorized'}. Please scan the QR code.`);
       }
     } catch (err: any) {
       showToast('Status check error: ' + err.message);
@@ -4095,7 +4095,7 @@ export const AdminPanelScreen: React.FC = () => {
                       <span>Add Money Extra Bonus &amp; Tiers Manager</span>
                     </label>
                     <p className="text-[10px] text-slate-400">
-                      Control kitna extra bonus har deposit amount par users ko milega. Yahan se bonus change karein ya new tiers add karein.
+                      Control the bonus awarded on user deposits. Customize bonus percentages or add new tiers.
                     </p>
                   </div>
                   <button
@@ -4810,7 +4810,7 @@ export const AdminPanelScreen: React.FC = () => {
                     <div className="p-3.5 bg-gradient-to-br from-slate-900 to-amber-950/30 rounded-xl border border-amber-500/30 text-[11px] text-slate-300 space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="font-bold text-amber-400 flex items-center gap-1.5">
-                          <span>💡 Renflair Me Credit Hai Par OTP Nahi Jaa Raha? In 3 Cheezon Ko Check Karein:</span>
+                          <span>💡 Have Renflair Credits but OTP is Not Delivering? Check These 3 Items:</span>
                         </p>
                         <button
                           type="button"
@@ -4826,19 +4826,19 @@ export const AdminPanelScreen: React.FC = () => {
                         <li className="flex items-start gap-1.5">
                           <span className="text-amber-400 font-bold shrink-0">1.</span>
                           <span>
-                            <strong className="text-white">Personal API Key:</strong> Demo key <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">417d155c4d79...</code> sirf test account hai. Apna Renflair dashboard login karke apna <strong>Personal API Key</strong> yahan paste karein jisme aapka balance hai.
+                            <strong className="text-white">Personal API Key:</strong> Demo key <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">417d155c4d79...</code> is for testing only. Log in to your Renflair dashboard and paste your <strong>Personal API Key</strong> that contains your active credits.
                           </span>
                         </li>
                         <li className="flex items-start gap-1.5">
                           <span className="text-amber-400 font-bold shrink-0">2.</span>
                           <span>
-                            <strong className="text-white">Recommended Endpoint:</strong> <code className="text-emerald-400 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">https://sms.renflair.in/V1.php</code> use karein — yeh WhatsApp aur SMS dono par 100% guarantee ke saath OTP deliver karta hai.
+                            <strong className="text-white">Recommended Endpoint:</strong> Use <code className="text-emerald-400 bg-black/40 px-1 py-0.5 rounded font-mono text-[10px]">https://sms.renflair.in/V1.php</code> — it reliably delivers OTP via both WhatsApp and SMS.
                           </span>
                         </li>
                         <li className="flex items-start gap-1.5">
                           <span className="text-amber-400 font-bold shrink-0">3.</span>
                           <span>
-                            <strong className="text-white">Method GET:</strong> Renflair V1 API query parameters (GET) use karta hai. POST select mat karein.
+                            <strong className="text-white">Method GET:</strong> Renflair V1 API uses query parameters (GET). Do not select POST.
                           </span>
                         </li>
                       </ul>
@@ -4871,7 +4871,7 @@ export const AdminPanelScreen: React.FC = () => {
                           className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-emerald-400 font-mono"
                         />
                         <span className="text-[9px] text-slate-400">
-                          Apna Renflair dashboard se API key yahan daalein taaki aapka khareeda hua credit use ho sake.
+                          Paste your API key from the Renflair dashboard so that your purchased balance is utilized.
                         </span>
                       </div>
 
@@ -5036,7 +5036,7 @@ export const AdminPanelScreen: React.FC = () => {
                               </span>
                             </h4>
                             <p className="text-[10px] text-slate-400">
-                              Apne WhatsApp se yeh QR scan karein — OTP aapke usi linked phone se automatic bheja jayega!
+                              Scan this QR with your WhatsApp — OTPs will be dispatched directly through your linked phone!
                             </p>
                           </div>
                         </div>
@@ -5061,12 +5061,12 @@ export const AdminPanelScreen: React.FC = () => {
                       <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-300 space-y-1.5">
                         <p className="font-bold text-emerald-400 text-xs flex items-center gap-1.5">
                           <Smartphone className="w-3.5 h-3.5" />
-                          <span>WhatsApp Web Login Kaise Karein (3 Simple Steps):</span>
+                          <span>How to Link WhatsApp Web (3 Simple Steps):</span>
                         </p>
                         <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-300 text-[11px]">
-                          <li>Apne phone me WhatsApp open karein aur <strong className="text-white">Settings / Menu (⋮)</strong> me jayein.</li>
-                          <li><strong className="text-emerald-300">"Linked Devices" (लिंक्ड डिवाइसेस)</strong> option par tap karein aur <strong className="text-white">"Link a Device"</strong> chunein.</li>
-                          <li>Niche diye gaye button par click karke <strong className="text-emerald-300">QR Code load karein</strong> aur phone se scan karein!</li>
+                          <li>Open WhatsApp on your phone and tap <strong className="text-white">Settings / Menu (⋮)</strong>.</li>
+                          <li>Select <strong className="text-emerald-300">"Linked Devices"</strong> and tap <strong className="text-white">"Link a Device"</strong>.</li>
+                          <li>Click the button below to <strong className="text-emerald-300">load the QR Code</strong> and scan with your camera!</li>
                         </ol>
                       </div>
 
@@ -5079,7 +5079,7 @@ export const AdminPanelScreen: React.FC = () => {
                             </div>
                             <h5 className="text-sm font-bold text-white">WhatsApp Account Successfully Connected!</h5>
                             <p className="text-xs text-slate-400 max-w-sm">
-                              Aapka WhatsApp session live aur active hai. Jab bhi koi user register ya OTP request karega, aapke phone se automatic WhatsApp OTP message deliver hoga.
+                              Your WhatsApp session is active. Whenever a user registers or requests an OTP, messages will be delivered automatically through your phone.
                             </p>
                           </div>
                         ) : qrCodeData ? (
@@ -5093,14 +5093,14 @@ export const AdminPanelScreen: React.FC = () => {
                             </div>
                             <p className="text-xs text-amber-300 font-bold flex items-center gap-1.5">
                               <Clock className="w-3.5 h-3.5" />
-                              <span>QR code active hai. Turant WhatsApp camera se scan karein!</span>
+                              <span>QR code is active. Scan immediately with your WhatsApp camera!</span>
                             </p>
                           </div>
                         ) : (
                           <div className="py-6 space-y-2 flex flex-col items-center">
                             <QrCode className="w-12 h-12 text-slate-600" />
                             <p className="text-xs text-slate-400">
-                              QR Code generate karne ke liye upar Instance ID aur API Token daal kar niche button par click karein.
+                              To generate a QR Code, enter your Instance ID and API Token above and click the button below.
                             </p>
                           </div>
                         )}
@@ -5546,7 +5546,7 @@ export const AdminPanelScreen: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setReplyingTicket(t);
-                            setReplyText('✓ Payout Transferred: Aapka withdrawal request process kar diya gaya hai. Kripya bank statement check karein.');
+                            setReplyText('✓ Payout Transferred: Your withdrawal request has been processed. Please check your bank account or UPI statement.');
                             setReplyStatus('resolved');
                           }}
                           className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium whitespace-nowrap cursor-pointer transition"
@@ -5557,7 +5557,7 @@ export const AdminPanelScreen: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setReplyingTicket(t);
-                            setReplyText('⚠️ Valid Screenshot Required: Kripya banking app ka clear 12-digit UTR number wala screenshot dubara upload karein.');
+                            setReplyText('⚠️ Valid Screenshot Required: Please re-upload a clear screenshot showing the 12-digit bank UTR reference number.');
                             setReplyStatus('in_progress');
                           }}
                           className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium whitespace-nowrap cursor-pointer transition"
@@ -6374,7 +6374,7 @@ export const AdminPanelScreen: React.FC = () => {
                   <div>
                     <span className="text-xs font-bold text-white block">Account Access Status</span>
                     <span className="text-[10px] text-slate-400">
-                      Block karne par user ko koi task nahi milega aur withdrawal band ho jayega.
+                      Blocking this user suspends all task access and disables withdrawal requests.
                     </span>
                   </div>
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
@@ -7259,12 +7259,12 @@ export const AdminPanelScreen: React.FC = () => {
                 <div className="bg-rose-950/40 border border-rose-500/30 rounded-2xl p-3.5 space-y-2 text-xs text-rose-200">
                   <div className="font-bold flex items-center gap-1.5 text-rose-300">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>Block karne par user par ye asar hoga:</span>
+                    <span>Blocking will apply the following restrictions:</span>
                   </div>
                   <ul className="space-y-1.5 text-[11px] text-rose-300/90 list-disc list-inside">
-                    <li><b>No Tasks:</b> User ko koi bhi video task ya daily survey nahi milega (Disabled).</li>
-                    <li><b>No Withdrawals:</b> User ka withdrawal request turant suspend ho jayega (Disabled).</li>
-                    <li>User ki screen par Red Notice aayega ki account block hai.</li>
+                    <li><b>No Tasks:</b> User will not be able to access video tasks or daily surveys (Disabled).</li>
+                    <li><b>No Withdrawals:</b> User withdrawal requests are immediately suspended (Disabled).</li>
+                    <li>A warning notice will be displayed on the user's dashboard stating the account is blocked.</li>
                   </ul>
                 </div>
 
@@ -7285,11 +7285,11 @@ export const AdminPanelScreen: React.FC = () => {
               <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-3.5 space-y-2 text-xs text-emerald-200">
                 <div className="font-bold flex items-center gap-1.5 text-emerald-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Unblock karne par:</span>
+                  <span>Upon unblocking:</span>
                 </div>
                 <ul className="space-y-1 text-[11px] text-emerald-300/90 list-disc list-inside">
-                  <li>User phir se normal tarike se daily video tasks aur surveys kar sakega.</li>
-                  <li>User ka withdrawal option phir se enable ho jayega.</li>
+                  <li>User will regain normal access to daily video tasks and surveys.</li>
+                  <li>User withdrawal facility will be re-enabled.</li>
                 </ul>
               </div>
             )}
@@ -7301,7 +7301,7 @@ export const AdminPanelScreen: React.FC = () => {
                   <span>🚨 Permanent Delete Warning:</span>
                 </div>
                 <p className="text-[11px] text-red-300/90 leading-relaxed">
-                  Ye user account database se hamesha ke liye delete ho jayega. User ka balance (₹{(userConfirmAction.user.balance || 0).toLocaleString('en-IN')}) aur saara data remove ho jayega. Agar user abhi login hai to uska session turant logout ho jayega.
+                  This user account will be permanently deleted from the database. The user's balance (₹{(userConfirmAction.user.balance || 0).toLocaleString('en-IN')}) and all records will be deleted. If currently logged in, their session will be terminated immediately.
                 </p>
               </div>
             )}

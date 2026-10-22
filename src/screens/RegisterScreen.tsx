@@ -103,12 +103,12 @@ export const RegisterScreen: React.FC = () => {
   const handleSendOtp = async () => {
     const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length < 10) {
-      showToast('Kripya 10-digit mobile number enter karein');
+      showToast('Please enter a 10-digit mobile number');
       return;
     }
 
     if (isPhoneAlreadyRegistered(cleanMobile)) {
-      showToast(`❌ Yeh phone number (+91 ${cleanMobile}) pehle se registered hai! Kripya login karein.`);
+      showToast(`❌ This phone number (+91 ${cleanMobile}) is already registered! Please log in.`);
       return;
     }
 
@@ -133,7 +133,7 @@ export const RegisterScreen: React.FC = () => {
         adminSettings,
       });
       if (res?.fallbackLink) {
-        setWhatsappFallbackUrl(res.fallbackLink);
+        setWhatsappFallbackUrl(res?.fallbackLink);
       }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
@@ -145,7 +145,7 @@ export const RegisterScreen: React.FC = () => {
   const handleVerifyOtp = () => {
     const entered = otpCode.trim();
     if (!entered || entered.length < 4) {
-      setOtpError('Kripya 4-digit OTP code enter karein');
+      setOtpError('Please enter the 4-digit OTP code');
       return;
     }
 
@@ -154,9 +154,9 @@ export const RegisterScreen: React.FC = () => {
       setIsMobileVerified(true);
       setOtpError('');
       setGatewayError('');
-      showToast('✓ Mobile number WhatsApp OTP se verify ho gaya!');
+      showToast('✓ Mobile number verified via WhatsApp OTP!');
     } else {
-      setOtpError('❌ Galat OTP! Kripya WhatsApp par bheja gaya sahi 4-digit OTP enter karein.');
+      setOtpError('❌ Incorrect OTP! Please enter the valid 4-digit OTP received on WhatsApp.');
     }
   };
 
@@ -365,7 +365,7 @@ export const RegisterScreen: React.FC = () => {
                   className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
-                  <span>{isSendingOtp ? 'Bhej rahe...' : otpSent ? (resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP') : 'WhatsApp OTP'}</span>
+                  <span>{isSendingOtp ? 'Sending...' : otpSent ? (resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP') : 'WhatsApp OTP'}</span>
                 </button>
               </div>
             )}
@@ -385,10 +385,10 @@ export const RegisterScreen: React.FC = () => {
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-900">
                   <p className="font-bold">
-                    Yeh phone number (+91 {cleanMobileDigits}) pehle se registered hai!
+                    This phone number (+91 {cleanMobileDigits}) is already registered!
                   </p>
                   <p className="text-[11px] text-amber-700 mt-0.5">
-                    1 phone number par keval 1 account ban sakta hai. Kripya login karein.
+                    Only 1 account is permitted per mobile number. Please log in.
                   </p>
                 </div>
               </div>
@@ -599,7 +599,7 @@ export const RegisterScreen: React.FC = () => {
             })()}
           </div>
           <p className="text-[10px] text-slate-500 font-medium">
-            Invite code enter karne par aapke inviter ko referral reward prapt hoga.
+            Entering an invite code awards referral rewards to your inviter.
           </p>
         </div>
 

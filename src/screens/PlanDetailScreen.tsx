@@ -386,7 +386,7 @@ export const PlanDetailScreen: React.FC = () => {
                 Payment Proof Submitted
               </h4>
               <p className="text-xs text-amber-900 leading-relaxed font-medium">
-                Aapka UTR <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-amber-200">{pendingDeposit?.utrNumber}</span> aur screenshot submit ho chuka hai. Admin verify kar ke ise approve karenge, jiske baad plan automatically activate ho jayega.
+                Your UTR <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-amber-200">{pendingDeposit?.utrNumber}</span> and payment screenshot have been submitted. Administration will verify and approve your payment, and your plan will automatically activate.
               </p>
               <button
                 onClick={() => navigate('record')}
@@ -406,7 +406,7 @@ export const PlanDetailScreen: React.FC = () => {
                 Free Starter Quota Completed
               </h4>
               <p className="text-xs text-rose-800 leading-relaxed font-medium">
-                Aapka 2 din ka Free Starter trial samapt ho chuka hai. Daily video tasks continue karne ke liye VIP plan activate karein.
+                Your 2-day Free Starter trial has ended. Please activate a VIP plan to continue daily video tasks and rewards.
               </p>
               <button
                 onClick={() => navigate('member_plans')}

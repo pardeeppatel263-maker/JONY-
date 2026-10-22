@@ -1242,21 +1242,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const lastBackPressTimeRef = useRef<number>(0);
 
-  // Seed root barrier on startup so Android WebView's canGoBack() is always true
-  useEffect(() => {
-    const defaultScreen: ScreenType = isLoggedIn ? 'home' : 'login';
-    const currentHash = window.location.hash.replace(/^#\/?/, '').trim();
-    const targetScreen = (currentHash in SCREEN_HASH_MAP ? currentHash : defaultScreen) as ScreenType;
-
-    if (!window.history.state || !window.history.state.taskvibe_barrier) {
-      window.history.replaceState({ taskvibe_barrier: true }, '', '#root');
-      window.history.pushState({ taskvibe: true, screen: targetScreen }, '', `#${targetScreen}`);
-    }
-  }, [isLoggedIn]);
-
   const goBack = () => {
-    // 1. If any modal is active, close the modal first
-    if (isSurveyModalOpen) { setIsSurveyModalOpen(false); return; }
+    // 1. If any modal is active, close the modal first without navigating screens
+    if (isPromoModalOpen) {
+      setIsPromoModalOpen(false);
+      return;
+    }
+    if (isSurveyModalOpen) {
+      setIsSurveyModalOpen(false);
+      return;
+    }
     if (isUPIModalOpen) {
       setIsUPIModalOpen(false);
       if (pendingPlanForUPI || selectedPlan) {
@@ -1264,15 +1259,107 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return;
     }
-    if (isWatchingVideo) { setIsWatchingVideo(false); return; }
-    if (isTeamModalOpen) { setIsTeamModalOpen(false); return; }
-    if (isNotificationsOpen) { setIsNotificationsOpen(false); return; }
-    if (isEditProfileOpen) { setIsEditProfileOpen(false); return; }
+    if (isWatchingVideo) {
+      setIsWatchingVideo(false);
+      return;
+    }
+    if (isTeamModalOpen) {
+      setIsTeamModalOpen(false);
+      return;
+    }
+    if (isNotificationsOpen) {
+      setIsNotificationsOpen(false);
+      return;
+    }
+    if (isEditProfileOpen) {
+      setIsEditProfileOpen(false);
+      return;
+    }
 
-    // 2. If already on home screen, handle double-tap to exit
-    if (currentScreen === 'home') {
+    // 2. VIP Member or Mission: Back button MUST always go to Home
+    if (currentScreen === 'member_plans' || currentScreen === 'mission') {
+      setCurrentScreen('home');
+      setActiveTab('home');
+      setHistoryStack(['home']);
+      try {
+        localStorage.setItem('taskvibe_screen', 'home');
+        window.history.pushState({ taskvibe: true, screen: 'home' }, '', '#home');
+      } catch {}
+      return;
+    }
+
+    // 3. Other bottom tabs (Record, Profile/Me): Back button goes to Home
+    if (currentScreen === 'record' || currentScreen === 'profile') {
+      setCurrentScreen('home');
+      setActiveTab('home');
+      setHistoryStack(['home']);
+      try {
+        localStorage.setItem('taskvibe_screen', 'home');
+        window.history.pushState({ taskvibe: true, screen: 'home' }, '', '#home');
+      } catch {}
+      return;
+    }
+
+    // 4. Sub-screens (Add Money, Wallet, Withdraw, Plan Detail, Daily Survey, etc.):
+    // Go back to the previous screen in historyStack!
+    if (
+      currentScreen === 'add_money' ||
+      currentScreen === 'wallet' ||
+      currentScreen === 'withdraw' ||
+      currentScreen === 'plan_detail' ||
+      currentScreen === 'daily_survey' ||
+      currentScreen === 'purchase_confirmed' ||
+      currentScreen === 'referral_earn' ||
+      currentScreen === 'help_center' ||
+      currentScreen === 'admin'
+    ) {
+      const filteredStack = historyStack.filter(
+        (s) => s !== 'login' && s !== 'register' && s !== 'splash'
+      );
+
+      let targetScreen: ScreenType = 'home';
+      if (filteredStack.length > 1) {
+        const newStack = [...filteredStack];
+        newStack.pop(); // remove current screen
+        targetScreen = newStack[newStack.length - 1] || 'home';
+        // If previous screen was also currentScreen for any reason, fallback logically
+        if (targetScreen === currentScreen) {
+          targetScreen = (currentScreen === 'add_money' || currentScreen === 'withdraw') ? 'wallet' : 'home';
+        }
+        setHistoryStack(newStack);
+      } else {
+        // Fallback default previous screen based on context
+        if (currentScreen === 'add_money' || currentScreen === 'withdraw') {
+          targetScreen = 'wallet';
+        } else if (currentScreen === 'plan_detail') {
+          targetScreen = 'member_plans';
+        } else {
+          targetScreen = 'home';
+        }
+        setHistoryStack(['home', targetScreen]);
+      }
+
+      setCurrentScreen(targetScreen);
+
+      // Sync active tab
+      if (targetScreen === 'home') setActiveTab('home');
+      else if (targetScreen === 'member_plans') setActiveTab('member');
+      else if (targetScreen === 'mission') setActiveTab('mission');
+      else if (targetScreen === 'record') setActiveTab('record');
+      else if (targetScreen === 'profile' || targetScreen === 'wallet') setActiveTab('me');
+
+      try {
+        localStorage.setItem('taskvibe_screen', targetScreen);
+        window.history.pushState({ taskvibe: true, screen: targetScreen }, '', `#${targetScreen}`);
+      } catch {}
+      return;
+    }
+
+    // 5. If on Home (or unauthenticated Login): Double tap back within 2s to exit
+    if (currentScreen === 'home' || currentScreen === 'login') {
       const now = Date.now();
       if (now - lastBackPressTimeRef.current < 2000) {
+        // Double tap within 2 seconds: exit app
         const capApp = (window as any).Capacitor?.Plugins?.App;
         if (capApp && typeof capApp.exitApp === 'function') {
           capApp.exitApp();
@@ -1286,96 +1373,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    // 3. Otherwise pop back via native browser/WebView history
-    window.history.back();
+    // Default fallback: return to Home
+    setCurrentScreen('home');
+    setActiveTab('home');
+    setHistoryStack(['home']);
+    try {
+      localStorage.setItem('taskvibe_screen', 'home');
+      window.history.pushState({ taskvibe: true, screen: 'home' }, '', '#home');
+    } catch {}
   };
 
-  // Hardware and browser popstate listener
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
+  // Hardware and browser back navigation listeners (Capacitor + Cordova + Browser PopState)
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      // 1. If any modal was open, close modal and stay on screen
-      if (isSurveyModalOpen) { setIsSurveyModalOpen(false); return; }
-      if (isUPIModalOpen) {
-        setIsUPIModalOpen(false);
-        if (pendingPlanForUPI || selectedPlan) {
-          navigate('plan_detail');
-        }
-        return;
+    // 1. Modern Capacitor Hardware Back Button Listener
+    let capListenerHandle: any = null;
+    const capApp = (window as any).Capacitor?.Plugins?.App;
+    if (capApp && typeof capApp.addListener === 'function') {
+      try {
+        capListenerHandle = capApp.addListener('backButton', () => {
+          goBackRef.current();
+        });
+      } catch (err) {
+        console.warn('Capacitor backButton listener registration:', err);
       }
-      if (isWatchingVideo) { setIsWatchingVideo(false); return; }
-      if (isTeamModalOpen) { setIsTeamModalOpen(false); return; }
-      if (isNotificationsOpen) { setIsNotificationsOpen(false); return; }
-      if (isEditProfileOpen) { setIsEditProfileOpen(false); return; }
+    }
 
-      // 2. Read screen from popped hash
-      const hash = window.location.hash.replace(/^#\/?/, '').trim();
-      const screenFromHash = getScreenFromHash(hash);
-
-      // Check if we hit the root barrier (user pressed back on Home or base screen)
-      if (!screenFromHash || hash === 'root' || e.state?.taskvibe_barrier) {
-        const now = Date.now();
-        if (now - lastBackPressTimeRef.current < 2000) {
-          // Double tap within 2 seconds: exit APK app
-          const capApp = (window as any).Capacitor?.Plugins?.App;
-          if (capApp && typeof capApp.exitApp === 'function') {
-            capApp.exitApp();
-          } else if ((navigator as any).app?.exitApp) {
-            (navigator as any).app.exitApp();
-          }
-          return;
-        } else {
-          // First tap: prompt user and restore #home
-          lastBackPressTimeRef.current = now;
-          showToast('Press back again to exit');
-          const stayScreen: ScreenType = isLoggedIn ? 'home' : 'login';
-          window.history.pushState({ taskvibe: true, screen: stayScreen }, '', `#${stayScreen}`);
-          setCurrentScreen(stayScreen);
-          if (stayScreen === 'home') setActiveTab('home');
-          return;
-        }
-      }
-
-      // 3. User popped to a previous screen in the stack!
-      setCurrentScreen(screenFromHash);
-      if (screenFromHash === 'home') setActiveTab('home');
-      else if (screenFromHash === 'member_plans') setActiveTab('member');
-      else if (screenFromHash === 'mission') setActiveTab('mission');
-      else if (screenFromHash === 'record') setActiveTab('record');
-      else if (screenFromHash === 'profile') setActiveTab('me');
-
-      setHistoryStack((prev) => {
-        const next = [...prev];
-        if (next.length > 1) next.pop();
-        return next;
-      });
-    };
-
+    // 2. Cordova / WebView backbutton event listener
     const handleHardwareBack = (e?: any) => {
       if (e && typeof e.preventDefault === 'function') {
         e.preventDefault();
       }
-      goBack();
+      goBackRef.current();
     };
-
-    window.addEventListener('popstate', handlePopState);
     document.addEventListener('backbutton', handleHardwareBack, false);
+
+    // 3. Browser / Android WebView popstate event listener
+    const handlePopState = (e: PopStateEvent) => {
+      if (e && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+      // Re-push a buffer state so the WebView/browser does NOT leave the app
+      try {
+        window.history.pushState({ taskvibe: true, ts: Date.now() }, '', window.location.href);
+      } catch {}
+
+      // Execute custom back navigation
+      goBackRef.current();
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    // Seed history buffer state on start so browser always has an entry to pop
+    try {
+      if (!window.history.state || !window.history.state.taskvibe) {
+        window.history.replaceState({ taskvibe: true, root: true }, '', window.location.href);
+        window.history.pushState({ taskvibe: true, active: true }, '', window.location.href);
+      }
+    } catch {}
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
       document.removeEventListener('backbutton', handleHardwareBack, false);
+      if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
+        capListenerHandle.remove();
+      }
     };
-  }, [
-    isSurveyModalOpen,
-    isUPIModalOpen,
-    isWatchingVideo,
-    isTeamModalOpen,
-    isNotificationsOpen,
-    isEditProfileOpen,
-    currentScreen,
-    isLoggedIn,
-    pendingPlanForUPI,
-    selectedPlan,
-  ]);
+  }, []);
 
   const navigate = (screen: ScreenType, plan?: PlanItem) => {
     if (plan) setSelectedPlan(plan);
@@ -1394,16 +1459,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
 
     // Push new hash entry — adds an entry to Android WebView's WebBackForwardList
-    window.history.pushState(
-      { taskvibe: true, screen: targetScreen, planId: plan?.id },
-      '',
-      `#${targetScreen}`
-    );
+    try {
+      window.history.pushState(
+        { taskvibe: true, screen: targetScreen, planId: plan?.id },
+        '',
+        `#${targetScreen}`
+      );
+    } catch {}
 
     setHistoryStack((prev) => {
       const clean = isLoggedIn
         ? prev.filter((s) => s !== 'login' && s !== 'register' && s !== 'splash')
         : prev;
+      if (targetScreen === 'home') {
+        return ['home'];
+      }
+      if (clean[clean.length - 1] === targetScreen) {
+        return clean;
+      }
       return [...clean, targetScreen];
     });
     setCurrentScreen(targetScreen);
@@ -1425,13 +1498,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     else if (tab === 'record') targetScreen = 'record';
     else if (tab === 'me') targetScreen = 'profile';
 
-    window.history.pushState({ taskvibe: true, screen: targetScreen }, '', `#${targetScreen}`);
+    try {
+      localStorage.setItem('taskvibe_screen', targetScreen);
+      window.history.pushState({ taskvibe: true, screen: targetScreen }, '', `#${targetScreen}`);
+    } catch {}
 
     setHistoryStack((prev) => {
-      const clean = isLoggedIn
-        ? prev.filter((s) => s !== 'login' && s !== 'register' && s !== 'splash')
-        : prev;
-      return [...clean, targetScreen];
+      if (targetScreen === 'home') {
+        return ['home'];
+      }
+      // When switching to a bottom tab from anywhere, stack becomes ['home', targetScreen]
+      // so if back is pressed, it returns to 'home'!
+      return ['home', targetScreen];
     });
     setCurrentScreen(targetScreen);
   };

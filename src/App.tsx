@@ -36,6 +36,7 @@ import { TeamModal } from './components/modals/TeamModal';
 import { NotificationsModal } from './components/modals/NotificationsModal';
 import { EditProfileModal } from './components/modals/EditProfileModal';
 import { PromoCodeModal } from './components/modals/PromoCodeModal';
+import { ExitConfirmationModal } from './components/modals/ExitConfirmationModal';
 import { Wrench, ShieldCheck, Download, Sparkles, RefreshCw, Lock, MessageSquare } from 'lucide-react';
 
 const ScreenRouter: React.FC = () => {
@@ -151,7 +152,16 @@ const ScreenRouter: React.FC = () => {
 };
 
 const MainApp: React.FC = () => {
-  const { currentScreen, navigate, adminSettings, isPromoModalOpen, setIsPromoModalOpen } = useApp();
+  const {
+    currentScreen,
+    navigate,
+    adminSettings,
+    isPromoModalOpen,
+    setIsPromoModalOpen,
+    isExitModalOpen,
+    setIsExitModalOpen,
+    exitApp,
+  } = useApp();
   const [dismissUpdateModal, setDismissUpdateModal] = React.useState(false);
 
   // Check if URL has ?admin or #admin or /admin on initial mount for direct admin access
@@ -198,6 +208,11 @@ const MainApp: React.FC = () => {
       <PromoCodeModal
         isOpen={isPromoModalOpen}
         onClose={() => setIsPromoModalOpen(false)}
+      />
+      <ExitConfirmationModal
+        isOpen={isExitModalOpen}
+        onClose={() => setIsExitModalOpen(false)}
+        onConfirmExit={exitApp}
       />
 
       {/* App Update Prompt Modal if enabled by admin */}

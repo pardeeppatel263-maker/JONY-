@@ -31,7 +31,7 @@ interface BranchLookupResult {
 }
 
 export const WithdrawScreen: React.FC = () => {
-  const { user, requestWithdrawal, showToast, adminSettings } = useApp();
+  const { user, requestWithdrawal, showToast, adminSettings, registerBackHandler } = useApp();
   const [selectedAmount, setSelectedAmount] = useState<number>(1000);
   const [payoutMethod, setPayoutMethod] = useState<'upi' | 'bank'>('bank');
 
@@ -60,6 +60,15 @@ export const WithdrawScreen: React.FC = () => {
   // Bank Picker Modal / Search State
   const [isBankPickerOpen, setIsBankPickerOpen] = useState(false);
   const [bankSearch, setBankSearch] = useState('');
+
+  // Register hardware back button listener to close bank picker modal first
+  useEffect(() => {
+    if (!isBankPickerOpen) return;
+    return registerBackHandler?.(() => {
+      setIsBankPickerOpen(false);
+      return true;
+    });
+  }, [isBankPickerOpen, registerBackHandler]);
 
   // IFSC Branch Auto-Lookup State
   const [branchInfo, setBranchInfo] = useState<BranchLookupResult | null>(null);

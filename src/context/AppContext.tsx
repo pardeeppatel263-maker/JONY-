@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
+import { App as CapacitorApp } from '@capacitor/app';
 import { db } from '../lib/firebase';
 import {
   collection,
@@ -81,6 +82,10 @@ interface AppContextType {
   isTeamModalOpen: boolean;
   isNotificationsOpen: boolean;
   isEditProfileOpen: boolean;
+  isExitModalOpen: boolean;
+  setIsExitModalOpen: (open: boolean) => void;
+  exitApp: () => void;
+  registerBackHandler: (handler: () => boolean) => () => void;
   
   // Actions
   navigate: (screen: ScreenType, plan?: PlanItem) => void;
@@ -703,6 +708,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+
+  // Dynamic stack of screen-level back button handlers (e.g., bank picker, forgot password modal, notice popup)
+  const registeredBackHandlersRef = useRef<(() => boolean)[]>([]);
+
+  const registerBackHandler = (handler: () => boolean) => {
+    registeredBackHandlersRef.current.push(handler);
+    return () => {
+      registeredBackHandlersRef.current = registeredBackHandlersRef.current.filter((h) => h !== handler);
+    };
+  };
+
+  const exitApp = () => {
+    // 1. AndroidBridge from native Android WebView
+    if (typeof (window as any).AndroidBridge?.exitApp === 'function') {
+      try {
+        (window as any).AndroidBridge.exitApp();
+        return;
+      } catch (e) {
+        console.warn('AndroidBridge.exitApp error:', e);
+      }
+    }
+    // 2. Capacitor Official App Plugin
+    try {
+      CapacitorApp.exitApp();
+      return;
+    } catch {}
+    // 3. Cordova / Phonegap
+    if (typeof (navigator as any).app?.exitApp === 'function') {
+      try {
+        (navigator as any).app.exitApp();
+        return;
+      } catch (e) {
+        console.warn('navigator.app.exitApp error:', e);
+      }
+    }
+    // 4. Browser fallback
+    try {
+      window.close();
+    } catch {}
+  };
 
   // Save changes to localStorage - only write auth session if logged in
   useEffect(() => {
@@ -1255,62 +1301,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   };
 
-  // Unified rock-solid back action handler for Hardware Back, Android Gestures, and UI Back
-  const handleBackAction = (source: 'hardware' | 'popstate') => {
+  // Unified rock-solid back action handler for Hardware Back, Android Gestures, Capacitor, and UI Back
+  const handleBackAction = (source: 'hardware' | 'popstate' | 'capacitor'): string => {
     const now = Date.now();
-    // 1. Debounce duplicate events triggered within 350ms by the same gesture or hardware press
-    if (now - lastHandledTimeRef.current < 350) {
-      return;
+    // 1. Debounce rapid duplicate events (300ms window)
+    if (now - lastHandledTimeRef.current < 300) {
+      return 'DEBOUNCED';
     }
     lastHandledTimeRef.current = now;
 
-    // 2. Priority 1: If ANY modal is active, close the modal first without leaving the screen!
-    if (isPromoModalOpen) {
-      setIsPromoModalOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isSurveyModalOpen) {
-      setIsSurveyModalOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isUPIModalOpen) {
-      setIsUPIModalOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isWatchingVideo) {
-      setIsWatchingVideo(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isTeamModalOpen) {
-      setIsTeamModalOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isNotificationsOpen) {
-      setIsNotificationsOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
-    }
-    if (isEditProfileOpen) {
-      setIsEditProfileOpen(false);
-      ensureHistoryBuffer(currentScreen);
-      return;
+    // 2. Priority 1: Check screen-registered back handlers (LIFO: topmost modal/dialog first)
+    const handlers = registeredBackHandlersRef.current;
+    for (let i = handlers.length - 1; i >= 0; i--) {
+      try {
+        if (handlers[i]()) {
+          if (source === 'popstate') {
+            ensureHistoryBuffer(currentScreen);
+          }
+          return 'MODAL_CLOSED';
+        }
+      } catch (err) {
+        console.warn('Error in registered back handler:', err);
+      }
     }
 
-    // 3. Priority 2: If on ANY sub-screen, navigate safely back to previous screen or Home!
-    // Never exit the app when on an inner screen!
+    // 3. Priority 2: Check Exit Confirmation Modal
+    if (isExitModalOpen) {
+      exitApp();
+      return 'APP_EXIT';
+    }
+
+    // 4. Priority 3: Check all global App modals
+    let modalClosed = false;
+    if (isPromoModalOpen) {
+      setIsPromoModalOpen(false);
+      modalClosed = true;
+    } else if (isSurveyModalOpen) {
+      setIsSurveyModalOpen(false);
+      modalClosed = true;
+    } else if (isUPIModalOpen) {
+      setIsUPIModalOpen(false);
+      modalClosed = true;
+    } else if (isWatchingVideo) {
+      setIsWatchingVideo(false);
+      modalClosed = true;
+    } else if (isTeamModalOpen) {
+      setIsTeamModalOpen(false);
+      modalClosed = true;
+    } else if (isNotificationsOpen) {
+      setIsNotificationsOpen(false);
+      modalClosed = true;
+    } else if (isEditProfileOpen) {
+      setIsEditProfileOpen(false);
+      modalClosed = true;
+    }
+
+    if (modalClosed) {
+      if (source === 'popstate') {
+        ensureHistoryBuffer(currentScreen);
+      }
+      return 'MODAL_CLOSED';
+    }
+
+    // 5. Priority 4: Sub-screens / inner pages (navigate safely back to parent or home)
     if (currentScreen !== 'home' && (isLoggedIn || currentScreen !== 'login')) {
       let targetScreen: ScreenType = 'home';
       if (currentScreen === 'add_money' || currentScreen === 'withdraw') {
         targetScreen = 'wallet';
-      } else if (currentScreen === 'plan_detail') {
+      } else if (currentScreen === 'wallet') {
+        targetScreen = 'profile';
+      } else if (currentScreen === 'plan_detail' || currentScreen === 'purchase_confirmed') {
         targetScreen = 'member_plans';
+      } else if (currentScreen === 'daily_survey') {
+        targetScreen = 'mission';
+      } else if (currentScreen === 'referral_earn' || currentScreen === 'help_center') {
+        targetScreen = 'profile';
+      } else if (currentScreen === 'record') {
+        targetScreen = 'home';
       } else if (currentScreen === 'register') {
         targetScreen = 'login';
+      } else if (currentScreen === 'admin') {
+        targetScreen = 'home';
       } else {
         targetScreen = 'home';
       }
@@ -1318,7 +1389,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentScreen(targetScreen);
       if (targetScreen === 'home') setActiveTab('home');
       else if (targetScreen === 'member_plans') setActiveTab('member');
-      else if (targetScreen === 'wallet') setActiveTab('me');
+      else if (targetScreen === 'mission') setActiveTab('mission');
+      else if (targetScreen === 'profile' || targetScreen === 'wallet') setActiveTab('me');
 
       try {
         localStorage.setItem('taskvibe_screen', targetScreen);
@@ -1331,41 +1403,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (next.length > 1) next.pop();
         return next.length ? next : ['home'];
       });
-      return;
+
+      return 'NAVIGATED_BACK';
     }
 
-    // 4. Priority 3: Root Screen ('home' or 'login')
-    // Double back within 400ms - 2500ms required to exit, single back shows prompt!
+    // 6. Priority 5: User is on Root Screen ('home' or 'login')
     const timeDiff = now - lastExitPressTimeRef.current;
-    if (timeDiff >= 400 && timeDiff <= 2500) {
-      // User deliberately pressed back a second time to exit!
-      const capApp = (window as any).Capacitor?.Plugins?.App;
-      if (capApp && typeof capApp.exitApp === 'function') {
-        capApp.exitApp();
-      } else if ((navigator as any).app && typeof (navigator as any).app.exitApp === 'function') {
-        (navigator as any).app.exitApp();
-      } else {
-        try {
-          window.close();
-        } catch {}
-      }
-      return;
-    } else {
-      // First back press on Home/Login: show friendly notice and re-prime history
-      lastExitPressTimeRef.current = now;
-      showToast('Press back again to exit / बाहर निकलने के लिए दोबारा बैक दबाएं');
-      ensureHistoryBuffer(currentScreen);
-      return;
+    if (timeDiff <= 2000 && timeDiff >= 150) {
+      // Rapid second press: exit directly
+      exitApp();
+      return 'APP_EXIT';
     }
+
+    // First back press on Home: show confirmation modal & toast
+    lastExitPressTimeRef.current = now;
+    setIsExitModalOpen(true);
+    showToast('Press back again to exit / बाहर निकलने के लिए दोबारा बैक दबाएं');
+    ensureHistoryBuffer(currentScreen);
+
+    return 'SHOWED_EXIT_PROMPT';
   };
 
   const handleBackActionRef = useRef(handleBackAction);
   handleBackActionRef.current = handleBackAction;
 
-  // Expose global bridge function so Android native code can call it directly
+  // Global Bridge function for Native Android WebView
   useEffect(() => {
     (window as any).__triggerZoroTaskBack = () => {
-      handleBackActionRef.current('hardware');
+      return handleBackActionRef.current('hardware');
     };
   }, []);
 
@@ -1375,17 +1440,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Attach Hardware, WebView, and Browser listeners
   useEffect(() => {
-    // 1. Capacitor Hardware Back Button Listener
-    let capListenerHandle: any = null;
-    const capApp = (window as any).Capacitor?.Plugins?.App;
-    if (capApp && typeof capApp.addListener === 'function') {
-      try {
-        capListenerHandle = capApp.addListener('backButton', () => {
-          handleBackActionRef.current('hardware');
+    // 1. Capacitor Official App Plugin Back Button Listener
+    let capRemoveFn: (() => void) | null = null;
+    try {
+      if (CapacitorApp && typeof CapacitorApp.addListener === 'function') {
+        const promise = CapacitorApp.addListener('backButton', () => {
+          handleBackActionRef.current('capacitor');
         });
-      } catch (err) {
-        console.warn('Capacitor backButton listener:', err);
+        if (promise && typeof promise.then === 'function') {
+          promise.then((handle: any) => {
+            if (handle && typeof handle.remove === 'function') {
+              capRemoveFn = () => handle.remove();
+            }
+          }).catch(() => {});
+        }
       }
+    } catch (err) {
+      console.warn('Capacitor backButton init error:', err);
     }
 
     // 2. Cordova / Android WebView backbutton event listener
@@ -1398,7 +1469,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.addEventListener('backbutton', handleHardwareBack, false);
 
     // 3. Browser / Android WebView popstate event listener
-    const handlePopState = (_e: PopStateEvent) => {
+    const handlePopState = (e: PopStateEvent) => {
+      const stateScreen = e?.state?.screen;
+      if (stateScreen && stateScreen in SCREEN_HASH_MAP) {
+        // Check if any modal was open first
+        let modalClosed = false;
+        const handlers = registeredBackHandlersRef.current;
+        for (let i = handlers.length - 1; i >= 0; i--) {
+          try {
+            if (handlers[i]()) {
+              modalClosed = true;
+              break;
+            }
+          } catch {}
+        }
+        if (!modalClosed) {
+          if (isExitModalOpen) { setIsExitModalOpen(false); modalClosed = true; }
+          else if (isPromoModalOpen) { setIsPromoModalOpen(false); modalClosed = true; }
+          else if (isSurveyModalOpen) { setIsSurveyModalOpen(false); modalClosed = true; }
+          else if (isUPIModalOpen) { setIsUPIModalOpen(false); modalClosed = true; }
+          else if (isWatchingVideo) { setIsWatchingVideo(false); modalClosed = true; }
+          else if (isTeamModalOpen) { setIsTeamModalOpen(false); modalClosed = true; }
+          else if (isNotificationsOpen) { setIsNotificationsOpen(false); modalClosed = true; }
+          else if (isEditProfileOpen) { setIsEditProfileOpen(false); modalClosed = true; }
+        }
+
+        if (modalClosed) {
+          ensureHistoryBuffer(currentScreen);
+          return;
+        }
+
+        setCurrentScreen(stateScreen);
+        if (stateScreen === 'home') setActiveTab('home');
+        else if (stateScreen === 'member_plans') setActiveTab('member');
+        else if (stateScreen === 'mission') setActiveTab('mission');
+        else if (stateScreen === 'record') setActiveTab('record');
+        else if (stateScreen === 'profile' || stateScreen === 'wallet') setActiveTab('me');
+
+        try {
+          localStorage.setItem('taskvibe_screen', stateScreen);
+        } catch {}
+
+        setHistoryStack((prev) => {
+          const next = [...prev];
+          if (next.length > 1) next.pop();
+          return next.length ? next : [stateScreen];
+        });
+        return;
+      }
+
       handleBackActionRef.current('popstate');
     };
     window.addEventListener('popstate', handlePopState);
@@ -1406,8 +1525,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       window.removeEventListener('popstate', handlePopState);
       document.removeEventListener('backbutton', handleHardwareBack, false);
-      if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
-        capListenerHandle.remove();
+      if (capRemoveFn) {
+        try {
+          capRemoveFn();
+        } catch {}
       }
     };
   }, []);
@@ -4507,6 +4628,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         redeemPromoCode,
         isPromoModalOpen,
         setIsPromoModalOpen,
+        isExitModalOpen,
+        setIsExitModalOpen,
+        exitApp,
+        registerBackHandler,
       }}
     >
       {children}

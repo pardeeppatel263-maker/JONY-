@@ -65,6 +65,15 @@ export const HomeScreen: React.FC = () => {
     } catch {}
   };
 
+  // Register hardware back button listener to dismiss announcement notice modal first
+  useEffect(() => {
+    if (!isNoticeModalOpen) return;
+    return app.registerBackHandler?.(() => {
+      handleDismissNotice();
+      return true;
+    });
+  }, [isNoticeModalOpen, app.registerBackHandler]);
+
   // Pull / Slide Down to Refresh states
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);

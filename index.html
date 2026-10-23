@@ -25,9 +25,11 @@
       // Instant Android WebView & browser history guard so canGoBack() is NEVER false on launch
       (function() {
         try {
+          var hash = window.location.hash || '';
+          var initialScreen = hash.replace(/^#\/?/, '').split('?')[0].trim() || 'home';
           if (!window.history.state || !window.history.state.zorotask_guard) {
-            window.history.replaceState({ zorotask_guard: true }, '', '#guard');
-            window.history.pushState({ zorotask_app: true, screen: 'home' }, '', window.location.hash || '#home');
+            window.history.replaceState({ zorotask_guard: true, isRoot: true }, '', '#guard');
+            window.history.pushState({ zorotask_app: true, screen: initialScreen }, '', hash || ('#' + initialScreen));
           }
         } catch (e) {}
       })();

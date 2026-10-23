@@ -29,6 +29,7 @@ export const LoginScreen: React.FC = () => {
     isPhoneAlreadyRegistered,
     checkPhoneExistsInFirestore,
     resetUserPassword,
+    registerBackHandler,
   } = useApp();
 
   // If already logged in, redirect straight to home!
@@ -63,6 +64,22 @@ export const LoginScreen: React.FC = () => {
 
   // Forgot Password via WhatsApp OTP Modal state
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+
+  // Register hardware back button listener to close modals first before app exit on login screen
+  React.useEffect(() => {
+    if (!isDownloadModalOpen && !isForgotModalOpen) return;
+    return registerBackHandler?.(() => {
+      if (isDownloadModalOpen) {
+        setIsDownloadModalOpen(false);
+        return true;
+      }
+      if (isForgotModalOpen) {
+        setIsForgotModalOpen(false);
+        return true;
+      }
+      return false;
+    });
+  }, [isDownloadModalOpen, isForgotModalOpen, registerBackHandler]);
   const [resetMobile, setResetMobile] = useState('');
   const [resetOtpSent, setResetOtpSent] = useState(false);
   const [resetOtpCode, setResetOtpCode] = useState('');

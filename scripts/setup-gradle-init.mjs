@@ -96,6 +96,7 @@ public class MainActivity extends BridgeActivity {
                     });
                 }
             }
+        } catch (Exception ignored) {}
     }
 
     @Override

@@ -1302,10 +1302,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Unified rock-solid back action handler for Hardware Back, Android Gestures, Capacitor, and UI Back
+  // Unified rock-solid back action handler for Hardware Back, Android Gestures, Capacitor, and UI Back
   const handleBackAction = (source: 'hardware' | 'popstate' | 'capacitor'): string => {
     const now = Date.now();
-    // 1. Debounce rapid duplicate events (300ms window)
-    if (now - lastHandledTimeRef.current < 300) {
+    // 1. Debounce rapid duplicate events (150ms window)
+    if (now - lastHandledTimeRef.current < 150) {
       return 'DEBOUNCED';
     }
     lastHandledTimeRef.current = now;
@@ -1363,33 +1364,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return 'MODAL_CLOSED';
     }
 
-    // 5. Priority 4: Sub-screens / inner pages (navigate safely back to parent or home)
+    // 5. Priority 4: Sub-screens / inner pages (navigate safely back to parent or previous screen)
     if (currentScreen !== 'home' && (isLoggedIn || currentScreen !== 'login')) {
       let targetScreen: ScreenType = 'home';
-      if (currentScreen === 'add_money' || currentScreen === 'withdraw') {
-        targetScreen = 'wallet';
-      } else if (currentScreen === 'wallet') {
-        targetScreen = 'profile';
-      } else if (currentScreen === 'plan_detail' || currentScreen === 'purchase_confirmed') {
-        targetScreen = 'member_plans';
-      } else if (currentScreen === 'daily_survey') {
-        targetScreen = 'mission';
-      } else if (currentScreen === 'referral_earn' || currentScreen === 'help_center') {
-        targetScreen = 'profile';
-      } else if (currentScreen === 'record') {
-        targetScreen = 'home';
-      } else if (currentScreen === 'register') {
-        targetScreen = 'login';
-      } else if (currentScreen === 'admin') {
-        targetScreen = 'home';
-      } else {
-        targetScreen = 'home';
+      if (historyStack.length > 1) {
+        const prevCandidate = historyStack[historyStack.length - 2];
+        if (prevCandidate && prevCandidate !== currentScreen) {
+          targetScreen = prevCandidate;
+        }
+      }
+      if (!targetScreen || targetScreen === currentScreen) {
+        if (currentScreen === 'add_money' || currentScreen === 'withdraw') {
+          targetScreen = 'wallet';
+        } else if (currentScreen === 'wallet') {
+          targetScreen = 'profile';
+        } else if (currentScreen === 'plan_detail' || currentScreen === 'purchase_confirmed') {
+          targetScreen = 'member_plans';
+        } else if (currentScreen === 'daily_survey') {
+          targetScreen = 'mission';
+        } else if (currentScreen === 'referral_earn' || currentScreen === 'help_center') {
+          targetScreen = 'profile';
+        } else if (currentScreen === 'record') {
+          targetScreen = 'home';
+        } else if (currentScreen === 'register') {
+          targetScreen = 'login';
+        } else if (currentScreen === 'admin') {
+          targetScreen = 'home';
+        } else {
+          targetScreen = 'home';
+        }
       }
 
       setCurrentScreen(targetScreen);
       if (targetScreen === 'home') setActiveTab('home');
       else if (targetScreen === 'member_plans') setActiveTab('member');
       else if (targetScreen === 'mission') setActiveTab('mission');
+      else if (targetScreen === 'record') setActiveTab('record');
       else if (targetScreen === 'profile' || targetScreen === 'wallet') setActiveTab('me');
 
       try {
@@ -1409,7 +1419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 6. Priority 5: User is on Root Screen ('home' or 'login')
     const timeDiff = now - lastExitPressTimeRef.current;
-    if (timeDiff <= 2000 && timeDiff >= 150) {
+    if (timeDiff <= 2500 && timeDiff >= 150) {
       // Rapid second press: exit directly
       exitApp();
       return 'APP_EXIT';
@@ -1427,18 +1437,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const handleBackActionRef = useRef(handleBackAction);
   handleBackActionRef.current = handleBackAction;
 
-  // Global Bridge function for Native Android WebView
+  // Global Bridge functions for Native Android WebView, Cordova, and Capacitor
   useEffect(() => {
-    (window as any).__triggerZoroTaskBack = () => {
+    const triggerBack = () => {
       return handleBackActionRef.current('hardware');
     };
+    (window as any).__triggerZoroTaskBack = triggerBack;
+    (window as any).onBackPressed = triggerBack;
+    (window as any).AndroidBridgeBack = triggerBack;
+    (window as any).handleAndroidBack = triggerBack;
   }, []);
 
   const goBack = () => {
     handleBackActionRef.current('hardware');
   };
 
-  // Attach Hardware, WebView, and Browser listeners
+  // Attach Hardware, WebView, Android Keycode, and Browser listeners
   useEffect(() => {
     // 1. Capacitor Official App Plugin Back Button Listener
     let capRemoveFn: (() => void) | null = null;
@@ -1468,7 +1482,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     document.addEventListener('backbutton', handleHardwareBack, false);
 
-    // 3. Browser / Android WebView popstate event listener
+    // 3. Android Hardware Back Button Key Listener (KEYCODE_BACK = 4, ESC = 27)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.keyCode === 27 || e.keyCode === 4 || e.key === 'GoBack') {
+        e.preventDefault();
+        handleBackActionRef.current('hardware');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 4. Browser / Android WebView popstate event listener
     const handlePopState = (e: PopStateEvent) => {
       const stateScreen = e?.state?.screen;
       if (stateScreen && stateScreen in SCREEN_HASH_MAP) {
@@ -1524,6 +1547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('backbutton', handleHardwareBack, false);
       if (capRemoveFn) {
         try {

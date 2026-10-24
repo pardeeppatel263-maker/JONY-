@@ -118,6 +118,7 @@ export interface UserProfile {
   freeTrialOverride?: 'auto' | 'enabled' | 'disabled';
   referralEarnings?: number;
   teamTaskEarnings?: number;
+  firstPlanReferralBonusPaid?: boolean;
   bankAccountHolder?: string;
   bankName?: string;
   bankAccountNumber?: string;

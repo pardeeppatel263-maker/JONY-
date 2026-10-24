@@ -2132,23 +2132,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!buyerUser.referredBy || planPrice <= 0) return;
 
     try {
-      // 1. Level 1 Upline (Direct Referrer) - 4.5%
+      // 1. Level 1 Upline (Direct Referrer) - 4.5% Commission + ₹100 Referral Bonus on VIP Plan Purchase!
       const upline1Data = await findUserByReferralCode(buyerUser.referredBy);
       if (upline1Data) {
         const upline1 = upline1Data.user;
+        const u1Clean = upline1Data.docId;
+
+        // 4.5% VIP Plan Commission
         const comm1 = Math.round(planPrice * 0.045 * 100) / 100;
-        if (comm1 > 0) {
-          const u1Clean = upline1Data.docId;
-          const u1Tx: TransactionItem = {
-            id: `tx_ref1_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            type: 'referral_reward',
-            title: `Level 1 Referral Commission (4.5%)`,
-            date: 'Today',
-            amount: comm1,
-            isCredit: true,
-            status: 'verified',
-            note: `Direct referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 4.5% commission credited (+₹${comm1})!`,
-          };
+
+        // ₹100 Referral Bonus awarded when invited user buys a VIP plan!
+        const isFirstPlan = !buyerUser.firstPlanReferralBonusPaid;
+        const refBonus = isFirstPlan ? (adminSettings.referralBonus || 100) : 0;
+        const totalU1Reward = comm1 + refBonus;
+
+        if (totalU1Reward > 0) {
+          const u1Txs: TransactionItem[] = [];
+
+          if (comm1 > 0) {
+            u1Txs.push({
+              id: `tx_ref1_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              type: 'referral_reward',
+              title: `Level 1 Referral Commission (4.5%)`,
+              date: 'Today',
+              amount: comm1,
+              isCredit: true,
+              status: 'verified',
+              note: `Direct referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 4.5% commission credited (+₹${comm1})!`,
+            });
+          }
+
+          if (refBonus > 0) {
+            u1Txs.push({
+              id: `tx_ref_bonus_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              type: 'referral_reward',
+              title: `Referral Plan Activation Bonus (+₹${refBonus})`,
+              date: 'Today',
+              amount: refBonus,
+              isCredit: true,
+              status: 'verified',
+              note: `Referral ${buyerUser.name} purchased their VIP plan! ₹${refBonus} referral bonus credited to your wallet.`,
+            });
+          }
 
           // Update in registeredUsers memory and localStorage
           setRegisteredUsers((prev) => {
@@ -2158,10 +2183,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 found = true;
                 return {
                   ...u,
-                  balance: (u.balance || 0) + comm1,
-                  totalEarned: (u.totalEarned || 0) + comm1,
-                  referralEarnings: (u.referralEarnings || 0) + comm1,
-                  transactions: [u1Tx, ...(u.transactions || [])],
+                  balance: (u.balance || 0) + totalU1Reward,
+                  totalEarned: (u.totalEarned || 0) + totalU1Reward,
+                  referralEarnings: (u.referralEarnings || 0) + totalU1Reward,
+                  transactions: [...u1Txs, ...(u.transactions || [])],
                 };
               }
               return u;
@@ -2169,10 +2194,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (!found) {
               updated.push({
                 ...upline1,
-                balance: (upline1.balance || 0) + comm1,
-                totalEarned: (upline1.totalEarned || 0) + comm1,
-                referralEarnings: (upline1.referralEarnings || 0) + comm1,
-                transactions: [u1Tx, ...(upline1.transactions || [])],
+                balance: (upline1.balance || 0) + totalU1Reward,
+                totalEarned: (upline1.totalEarned || 0) + totalU1Reward,
+                referralEarnings: (upline1.referralEarnings || 0) + totalU1Reward,
+                transactions: [...u1Txs, ...(upline1.transactions || [])],
               });
             }
             try {
@@ -2185,16 +2210,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (normalizeMobile(user.mobile) === u1Clean) {
             setUser((curr) => ({
               ...curr,
-              balance: curr.balance + comm1,
-              totalEarned: curr.totalEarned + comm1,
-              referralEarnings: (curr.referralEarnings || 0) + comm1,
+              balance: curr.balance + totalU1Reward,
+              totalEarned: curr.totalEarned + totalU1Reward,
+              referralEarnings: (curr.referralEarnings || 0) + totalU1Reward,
             }));
-            setTransactions((prev) => [u1Tx, ...prev]);
+            setTransactions((prev) => [...u1Txs, ...prev]);
             setNotifications((prev) => [
               {
                 id: `notif_${Date.now()}`,
-                title: `🎉 Level 1 Commission (+₹${comm1})!`,
-                message: `Direct referral ${buyerUser.name} purchased Level ${planLevel} plan. ₹${comm1} (4.5%) credited to your wallet!`,
+                title: `🎉 VIP Commission & Referral Bonus (+₹${totalU1Reward})!`,
+                message: `Direct referral ${buyerUser.name} ne VIP Plan khareeda! 4.5% commission (₹${comm1}) ${refBonus > 0 ? `+ ₹${refBonus} Referral Bonus` : ''} aapke wallet me add ho gaya!`,
                 time: 'Just now',
                 read: false,
                 type: 'reward',
@@ -2212,15 +2237,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             await setDoc(
               u1Ref,
               {
-                balance: increment(comm1),
-                totalEarned: increment(comm1),
-                referralEarnings: increment(comm1),
-                transactions: [u1Tx, ...existingU1Txs],
+                balance: increment(totalU1Reward),
+                totalEarned: increment(totalU1Reward),
+                referralEarnings: increment(totalU1Reward),
+                transactions: [...u1Txs, ...existingU1Txs],
               },
               { merge: true }
             );
           } catch (e) {
             console.warn('Failed to update Level 1 upline in Firestore:', e);
+          }
+
+          // Mark firstPlanReferralBonusPaid on buyer in Firestore and state
+          if (isFirstPlan && refBonus > 0) {
+            try {
+              const buyerClean = normalizeMobile(buyerUser.mobile);
+              if (buyerClean) {
+                await setDoc(doc(db, 'users', buyerClean), { firstPlanReferralBonusPaid: true }, { merge: true });
+                setRegisteredUsers((prev) =>
+                  prev.map((u) =>
+                    normalizeMobile(u.mobile) === buyerClean ? { ...u, firstPlanReferralBonusPaid: true } : u
+                  )
+                );
+                if (normalizeMobile(user.mobile) === buyerClean) {
+                  setUser((prev) => ({ ...prev, firstPlanReferralBonusPaid: true }));
+                }
+              }
+            } catch (bErr) {
+              console.warn('Failed to mark firstPlanReferralBonusPaid:', bErr);
+            }
           }
         }
 

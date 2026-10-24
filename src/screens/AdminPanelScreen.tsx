@@ -148,6 +148,7 @@ export const AdminPanelScreen: React.FC = () => {
     adminDeleteUser,
     adminBlockUser,
     adminUnblockUser,
+    adminResetAllUsersBalanceAndTransactions,
     updatePlan,
     addVIPPlan,
     updateVIPPlan,
@@ -3068,8 +3069,26 @@ export const AdminPanelScreen: React.FC = () => {
         {activeTab === 'users' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800">
-              <div className="text-xs font-bold text-slate-300">
-                Total Registered Users: <span className="text-amber-400 font-mono text-sm">{registeredUsers.length}</span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="text-xs font-bold text-slate-300">
+                  Total Registered Users: <span className="text-amber-400 font-mono text-sm">{registeredUsers.length}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const confirmed = window.confirm(
+                      '🚨 CAUTION: Are you sure you want to reset ALL users balances, earnings, and transaction histories to ₹0 in the database?'
+                    );
+                    if (confirmed) {
+                      await adminResetAllUsersBalanceAndTransactions();
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  title="Reset all user balances to 0 and clear transactions"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reset All to ₹0</span>
+                </button>
               </div>
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />

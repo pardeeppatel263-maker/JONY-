@@ -165,6 +165,7 @@ interface AppContextType {
   adminDeleteUser: (mobile: string) => Promise<boolean>;
   adminBlockUser: (mobile: string, reason?: string) => Promise<void>;
   adminUnblockUser: (mobile: string) => Promise<void>;
+  adminResetAllUsersBalanceAndTransactions: () => Promise<boolean>;
   updatePlan: (planId: string, updates: Partial<PlanItem>) => void;
   addVIPPlan: (newPlan: PlanItem) => Promise<boolean>;
   updateVIPPlan: (planId: string, updates: Partial<PlanItem>) => Promise<boolean>;
@@ -220,8 +221,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         mobile: '+91 9876543210',
         email: 'pardeep@zorotask.in',
         referralCode: 'ZT982143',
-        balance: 500,
-        totalEarned: 500,
+        balance: 0,
+        totalEarned: 0,
         withdrawn: 0,
         upiId: '9876543210@upi',
         joinedDate: '27 Sep 2026',
@@ -4004,6 +4005,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const adminResetAllUsersBalanceAndTransactions = async (): Promise<boolean> => {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      for (const d of snap.docs) {
+        await setDoc(
+          doc(db, 'users', d.id),
+          {
+            balance: 0,
+            totalEarned: 0,
+            todayEarnings: 0,
+            totalEarnings: 0,
+            withdrawn: 0,
+            referralEarnings: 0,
+            teamTaskEarnings: 0,
+            transactions: [],
+          },
+          { merge: true }
+        );
+      }
+      setRegisteredUsers((prev) => {
+        const next = prev.map((u) => ({
+          ...u,
+          balance: 0,
+          totalEarned: 0,
+          todayEarnings: 0,
+          totalEarnings: 0,
+          withdrawn: 0,
+          referralEarnings: 0,
+          teamTaskEarnings: 0,
+          transactions: [],
+        }));
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      setUser((curr) => ({
+        ...curr,
+        balance: 0,
+        totalEarned: 0,
+        todayEarnings: 0,
+        totalEarnings: 0,
+        withdrawn: 0,
+        referralEarnings: 0,
+        teamTaskEarnings: 0,
+      }));
+      setTransactions([]);
+      try {
+        localStorage.setItem('taskvibe_txs', JSON.stringify([]));
+      } catch {}
+      showToast('✓ All user balances and transactions have been reset to 0 in Cloud database!');
+      return true;
+    } catch (e) {
+      console.warn('adminResetAllUsersBalanceAndTransactions failed:', e);
+      showToast('Failed to reset all users');
+      return false;
+    }
+  };
+
   const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {
     try {
       await setDoc(doc(db, 'vip_plans', newPlan.id), newPlan, { merge: true });
@@ -4595,6 +4655,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminDeleteUser,
         adminBlockUser,
         adminUnblockUser,
+        adminResetAllUsersBalanceAndTransactions,
         updatePlan,
         addVIPPlan,
         updateVIPPlan,

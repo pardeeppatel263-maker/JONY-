@@ -27,7 +27,6 @@ export function downloadApkToDevice(
     link.download = appName;
     link.setAttribute('download', appName);
     link.setAttribute('rel', 'noopener noreferrer');
-    link.target = '_blank';
     link.style.position = 'fixed';
     link.style.top = '-9999px';
     link.style.left = '-9999px';
@@ -41,17 +40,7 @@ export function downloadApkToDevice(
           document.body.removeChild(link);
         }
       } catch {}
-    }, 1500);
-
-    // 2. Direct browser navigation fallback for mobile Chrome/Firefox
-    setTimeout(() => {
-      try {
-        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        if (isMobile) {
-          window.location.assign(freshUrl);
-        }
-      } catch {}
-    }, 300);
+    }, 2000);
 
     return true;
   } catch (error) {

@@ -18,11 +18,12 @@ async function startServer() {
   app.get(['/ZoroTask-Official.apk', '/api/download-apk'], (_req, res) => {
     const apkPath = path.resolve(__dirname, 'public', 'ZoroTask-Official.apk');
     if (fs.existsSync(apkPath)) {
+      const stat = fs.statSync(apkPath);
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
       res.setHeader('Content-Disposition', 'attachment; filename="ZoroTask-Official-v2.6.apk"');
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=60');
       return res.sendFile(apkPath);
     }
     return res.status(404).send('APK file not found');

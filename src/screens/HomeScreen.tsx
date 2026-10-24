@@ -187,11 +187,13 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleDownloadApp = () => {
-    const ok = downloadApkToDevice('ZoroTask-Official-v2.6.apk');
+    const targetUrl = adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk';
+    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`;
+    const ok = downloadApkToDevice(filename, targetUrl);
     if (ok) {
-      showToast('✓ ZoroTask Official v2.6 APK download started!');
+      showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.6.0'} APK download started!`);
     } else {
-      showToast('Downloading ZoroTask v2.6 APK...');
+      showToast(`Downloading ZoroTask APK...`);
     }
   };
 
@@ -662,9 +664,16 @@ export const HomeScreen: React.FC = () => {
                 <ArrowRight className="w-4 h-4 text-blue-100 shrink-0" />
               </div>
 
-              <div
-                onClick={handleDownloadApp}
-                className="cursor-pointer rounded-xl bg-slate-900/90 border border-slate-800 p-2.5 text-white shadow-xs flex items-center justify-between hover:bg-slate-800/90 transition-all active:scale-98"
+              <a
+                href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
+                  (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
+                }t=${Date.now()}`}
+                download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownloadApp();
+                }}
+                className="cursor-pointer rounded-xl bg-slate-900/90 border border-slate-800 p-2.5 text-white shadow-xs flex items-center justify-between hover:bg-slate-800/90 transition-all active:scale-98 block"
               >
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
@@ -675,14 +684,14 @@ export const HomeScreen: React.FC = () => {
                       Download Direct APK Package
                     </h5>
                     <p className="text-[9px] text-slate-400">
-                      ZoroTask-Official-v2.6.apk (Sideload file)
+                      ZoroTask-Official-v{adminSettings.appVersion || '2.6.0'}.apk (Official Sideload file)
                     </p>
                   </div>
                 </div>
                 <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded-md bg-emerald-500/10">
                   Download
                 </span>
-              </div>
+              </a>
             </div>
           )}
         </main>

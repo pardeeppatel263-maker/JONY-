@@ -29,6 +29,7 @@ export const ProfileScreen: React.FC = () => {
     setIsEditProfileOpen,
     setIsPromoModalOpen,
     showToast,
+    adminSettings,
   } = useApp();
 
   return (
@@ -175,12 +176,20 @@ export const ProfileScreen: React.FC = () => {
             </button>
 
             {/* Download Official Android APK */}
-            <button
-              onClick={() => {
-                downloadApkToDevice('ZoroTask-Official-v2.6.apk');
-                showToast('✓ ZoroTask Official v2.6 APK download started!');
+            <a
+              href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
+                (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
+              }t=${Date.now()}`}
+              download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadApkToDevice(
+                  `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`,
+                  adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'
+                );
+                showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.6.0'} APK download started!`);
               }}
-              className="w-full p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/50 transition-colors"
+              className="w-full p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/50 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
@@ -188,11 +197,11 @@ export const ProfileScreen: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-bold text-slate-800 block leading-tight">Download Android App (.APK)</span>
-                  <span className="text-[10px] text-emerald-600 font-semibold">Official ZoroTask v2.6 Installer (Latest)</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Official ZoroTask v{adminSettings.appVersion || '2.6.0'} Installer (Latest)</span>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />
-            </button>
+            </a>
 
             {/* Logout */}
             <button

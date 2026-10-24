@@ -263,15 +263,16 @@ export const LoginScreen: React.FC = () => {
     setDownloadProgress(100);
     setDownloadCompleted(true);
 
-    // Trigger real APK download directly to device File Manager / Downloads immediately
-    const success = downloadApkToDevice('ZoroTask-Official-v2.6.apk');
+    const targetUrl = adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk';
+    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`;
+    const success = downloadApkToDevice(filename, targetUrl);
 
     setTimeout(() => {
       setIsDownloading(false);
       if (success) {
-        showToast('✓ ZoroTask v2.6 APK downloading! Check File Manager > Downloads.');
+        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.6.0'} APK downloading! Check File Manager > Downloads.`);
       } else {
-        showToast('✓ ZoroTask v2.6 APK download started.');
+        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.6.0'} APK download started.`);
       }
     }, 400);
   };

@@ -804,54 +804,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const data = docSnap.data() as RegisteredUserAccount;
             cloudUsers.push(data);
           });
-          if (cloudUsers.length > 0) {
-            setRegisteredUsers((prev) => {
-              const map = new Map<string, RegisteredUserAccount>();
-              prev.forEach((u) => {
-                const k = normalizeMobile(u.mobile);
-                if (k) map.set(k, u);
-              });
-              cloudUsers.forEach((u) => {
-                const k = normalizeMobile(u.mobile);
-                if (k) map.set(k, u);
-              });
-              const merged = Array.from(map.values());
-              try {
-                localStorage.setItem('taskvibe_registered_users', JSON.stringify(merged));
-              } catch {}
-              return merged;
-            });
+          // Authoritative sync: Firestore is the master source of truth
+          setRegisteredUsers(cloudUsers);
+          try {
+            localStorage.setItem('taskvibe_registered_users', JSON.stringify(cloudUsers));
+          } catch {}
 
-            // Real-time synchronization for currently active user when Admin approves or adjusts
-            try {
-              const activeMob = localStorage.getItem('taskvibe_active_mobile');
-              if (activeMob) {
-                const cleanActive = normalizeMobile(activeMob);
-                const cloudSelf = cloudUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
-                if (cloudSelf) {
-                  hasInitialUserCloudSyncRef.current = true;
-                  skipNextFirestorePushRef.current = true;
-                  setUser((curr) => {
-                    const mergedSelf = {
-                      ...curr,
-                      ...cloudSelf,
-                    };
-                    try {
-                      localStorage.setItem('taskvibe_user', JSON.stringify(mergedSelf));
-                    } catch {}
-                    return mergedSelf;
-                  });
-                  if (cloudSelf.transactions && Array.isArray(cloudSelf.transactions)) {
-                    setTransactions(cloudSelf.transactions);
-                    try {
-                      localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
-                    } catch {}
-                  }
+          // Real-time synchronization & deletion guard for currently active user
+          try {
+            const activeMob = localStorage.getItem('taskvibe_active_mobile');
+            const authVal = localStorage.getItem('taskvibe_auth');
+            if (activeMob && authVal === 'true') {
+              const cleanActive = normalizeMobile(activeMob);
+              const isMasterAdmin = cleanActive === '9876543210' || cleanActive === '9999999999';
+              const cloudSelf = cloudUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
+
+              if (cloudSelf) {
+                hasInitialUserCloudSyncRef.current = true;
+                skipNextFirestorePushRef.current = true;
+                setUser((curr) => {
+                  const mergedSelf = {
+                    ...curr,
+                    ...cloudSelf,
+                  };
+                  try {
+                    localStorage.setItem('taskvibe_user', JSON.stringify(mergedSelf));
+                  } catch {}
+                  return mergedSelf;
+                });
+                if (cloudSelf.transactions && Array.isArray(cloudSelf.transactions)) {
+                  setTransactions(cloudSelf.transactions);
+                  try {
+                    localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
+                  } catch {}
                 }
+              } else if (!isMasterAdmin && hasInitialUserCloudSyncRef.current) {
+                // USER WAS PERMANENTLY DELETED FROM FIRESTORE BY ADMIN!
+                console.warn(`[ZoroTask] User (+91 ${cleanActive}) was deleted by Admin! Terminating session immediately...`);
+                logout();
+                try {
+                  localStorage.removeItem('taskvibe_auth');
+                  localStorage.removeItem('taskvibe_active_mobile');
+                  localStorage.removeItem('taskvibe_user');
+                  localStorage.removeItem('taskvibe_txs');
+                  localStorage.removeItem('taskvibe_screen');
+                } catch {}
+                showToast('⚠️ Your account has been deleted by administrator. Please register as a new user.');
+                setCurrentScreen('register');
+                setHistoryStack(['register']);
               }
-            } catch (err) {
-              console.warn('Real-time self user sync error:', err);
             }
+          } catch (err) {
+            console.warn('Real-time self user sync error:', err);
           }
         },
         (error) => {
@@ -1655,67 +1659,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Instant local cache lookup for zero-delay login!
-    const localMatch =
-      registeredUsers.find(
-        (u) => normalizeMobile(u.mobile) === cleanMobile
-      ) || null;
-
-    let matched: RegisteredUserAccount | null = localMatch;
-
-    // If already in local memory and password is correct, log in INSTANTLY (0ms delay!)
-    if (matched && matched.password === pass.trim()) {
-      setUser(matched);
-      setTransactions(matched.transactions || []);
-      setIsLoggedIn(true);
-      setCurrentScreen('home');
-      setActiveTab('home');
-      setHistoryStack(['home']);
-
-      try {
-        localStorage.setItem('taskvibe_auth', 'true');
-        localStorage.setItem('taskvibe_active_mobile', cleanMobile);
-        localStorage.setItem('taskvibe_user', JSON.stringify(matched));
-        localStorage.setItem('taskvibe_txs', JSON.stringify(matched.transactions || []));
-        localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
-        window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
-      } catch (e) {
-        console.warn(e);
-      }
-
-      showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
-
-      // Background cloud sync without delaying the user
-      (async () => {
-        try {
-          const userRef = doc(db, 'users', cleanMobile);
-          const snap = await getDoc(userRef);
-          if (snap.exists()) {
-            const cloudData = snap.data() as RegisteredUserAccount;
-            setUser((curr) => (curr && curr.mobile === cloudData.mobile ? { ...curr, ...cloudData } : curr));
-          } else if (matched) {
-            await setDoc(userRef, matched, { merge: true });
-          }
-        } catch (e) {
-          console.warn('Background user cloud sync:', e);
-        }
-      })();
-
-      return true;
-    }
-
-    // 2. If not matched locally or password changed elsewhere, check Firestore with timeout guard
+    // 1. Authoritative verification against Firestore cloud database
+    let cloudSnap: any = null;
+    let checkedCloud = false;
     try {
       const userRef = doc(db, 'users', cleanMobile);
-      const snap = await Promise.race([
+      cloudSnap = await Promise.race([
         getDoc(userRef),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
       ]);
-      if (snap && snap.exists()) {
-        matched = snap.data() as RegisteredUserAccount;
+      if (cloudSnap !== null) {
+        checkedCloud = true;
       }
     } catch (err) {
-      console.warn('Firestore fetch failed, checking local state', err);
+      console.warn('Firestore fetch failed during login:', err);
+    }
+
+    // If cloud confirmed the document DOES NOT exist:
+    // This account was permanently deleted by Admin or never registered!
+    if (checkedCloud && (!cloudSnap || !cloudSnap.exists())) {
+      setRegisteredUsers((prev) => {
+        const next = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      showToast(`❌ Account (+91 ${cleanMobile}) is not registered or was deleted by Admin. Please register as a new user.`);
+      return false;
+    }
+
+    let matched: RegisteredUserAccount | null = null;
+    if (cloudSnap && cloudSnap.exists()) {
+      matched = cloudSnap.data() as RegisteredUserAccount;
+    } else {
+      matched = registeredUsers.find((u) => normalizeMobile(u.mobile) === cleanMobile) || null;
     }
 
     if (!matched) {
@@ -1728,7 +1706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Successful login - load user's real balance, details, and transactions immediately
+    // Successful login - load user's real balance, details, and transactions
     setUser(matched);
     setTransactions(matched.transactions || []);
     setIsLoggedIn(true);
@@ -1748,19 +1726,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
-
-    // Non-blocking background sync
-    (async () => {
-      try {
-        if (matched) {
-          const userRef = doc(db, 'users', cleanMobile);
-          await setDoc(userRef, matched, { merge: true });
-        }
-      } catch (e) {
-        console.warn(e);
-      }
-    })();
-
     return true;
   };
 
@@ -1826,11 +1791,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Check in Firestore: 1 Phone number = 1 Account only!
+    // 1. Check in Firestore: 1 Phone number = 1 Active Account only!
     let alreadyExists = false;
+    let checkedCloud = false;
     try {
       const userRef = doc(db, 'users', cleanMobile);
       const snap = await getDoc(userRef);
+      checkedCloud = true;
       if (snap.exists()) {
         alreadyExists = true;
       }
@@ -1838,14 +1805,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Firestore existence check error', err);
     }
 
-    if (!alreadyExists) {
+    // If Firestore confirmed user does NOT exist, they were deleted or are new!
+    // Purge any stale local cached record so they can register cleanly as a new user:
+    if (checkedCloud && !alreadyExists) {
+      setRegisteredUsers((prev) => {
+        const next = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } else if (!checkedCloud) {
       alreadyExists = registeredUsers.some(
         (u) => normalizeMobile(u.mobile) === cleanMobile
       );
     }
 
     if (alreadyExists) {
-      showToast(`❌ This mobile number (+91 ${cleanMobile}) is already registered! Only 1 account is allowed per phone number. Please login with your password.`);
+      showToast(`❌ This mobile number (+91 ${cleanMobile}) is already registered! Please login with your password.`);
       try {
         localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
       } catch (e) {
@@ -4009,6 +3986,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (normalizeMobile(user.mobile) === clean) {
       logout();
+      try {
+        localStorage.removeItem('taskvibe_auth');
+        localStorage.removeItem('taskvibe_active_mobile');
+        localStorage.removeItem('taskvibe_user');
+        localStorage.removeItem('taskvibe_txs');
+        localStorage.removeItem('taskvibe_screen');
+      } catch {}
+      setCurrentScreen('register');
+      setHistoryStack(['register']);
     }
 
     setRegisteredUsers((prev) => {

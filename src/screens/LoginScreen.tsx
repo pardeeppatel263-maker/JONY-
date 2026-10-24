@@ -285,14 +285,20 @@ export const LoginScreen: React.FC = () => {
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             Official Portal
           </span>
-          <button
-            type="button"
-            onClick={() => setIsDownloadModalOpen(true)}
+          <a
+            href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
+              (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
+            }t=${Date.now()}`}
+            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleStartDownload();
+            }}
             className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
             <span>Download App</span>
-          </button>
+          </a>
         </div>
 
         <div className="p-2.5 bg-gradient-to-br from-blue-700 to-indigo-800 rounded-2xl shadow-md w-full max-w-sm flex justify-center">
@@ -441,7 +447,7 @@ export const LoginScreen: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <h4 className="text-xs font-black uppercase tracking-wide">
-                  Download ZoroTask App
+                  Download App
                 </h4>
                 <span className="text-[9px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full">
                   APK
@@ -547,22 +553,11 @@ export const LoginScreen: React.FC = () => {
                   <FolderDown className="w-4 h-4" />
                   <span>
                     {downloadCompleted
-                      ? 'Download Again to File Manager'
+                      ? 'Download App Again'
                       : isDownloading
-                      ? 'Downloading APK to Device...'
-                      : 'Download APK to File Manager'}
+                      ? 'Downloading App...'
+                      : 'Download App'}
                   </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    showToast('PWA added to home screen!');
-                    setIsDownloadModalOpen(false);
-                  }}
-                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
-                >
-                  Add to Mobile Home Screen (Instant)
                 </button>
               </div>
             </div>

@@ -196,8 +196,8 @@ export const ProfileScreen: React.FC = () => {
                   <Download className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-800 block leading-tight">Download Android App (.APK)</span>
-                  <span className="text-[10px] text-emerald-600 font-semibold">Official ZoroTask v{adminSettings.appVersion || '2.6.0'} Installer (Latest)</span>
+                  <span className="text-xs font-bold text-slate-800 block leading-tight">Download App</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Official Android Package (.apk)</span>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />

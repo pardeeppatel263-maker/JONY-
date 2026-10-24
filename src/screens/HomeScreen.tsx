@@ -27,7 +27,6 @@ import {
   Sparkles,
   AlertTriangle,
   Megaphone,
-  Smartphone,
 } from 'lucide-react';
 
 export const HomeScreen: React.FC = () => {
@@ -148,7 +147,6 @@ export const HomeScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, [liveWithdrawals.length]);
 
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
 
   useEffect(() => {
@@ -160,31 +158,7 @@ export const HomeScreen: React.FC = () => {
         setIsStandalone(true);
       }
     } catch {}
-
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
-
-  const handleInstallApp = async () => {
-    if (deferredPrompt) {
-      try {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          showToast('✓ ZoroTask installed on your Home Screen!');
-        }
-        setDeferredPrompt(null);
-      } catch {
-        handleDownloadApp();
-      }
-    } else {
-      showToast('Tip: Chrome Menu (⋮) > "Install App" or "Add to Home screen" par tap karein!');
-    }
-  };
 
   const handleDownloadApp = () => {
     const targetUrl = adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk';
@@ -638,32 +612,7 @@ export const HomeScreen: React.FC = () => {
 
           {/* Install Official App & Download APK Section */}
           {!isStandalone && (
-            <div className="space-y-2">
-              <div
-                onClick={handleInstallApp}
-                className="cursor-pointer rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-700 p-3.5 text-white shadow-md flex items-center justify-between hover:shadow-lg transition-all active:scale-98 border border-blue-400/30"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shadow-inner">
-                    <Smartphone className="w-5 h-5 animate-pulse" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-black uppercase tracking-wide">
-                        Install ZoroTask App
-                      </h4>
-                      <span className="text-[9px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full">
-                        Recommended ⭐
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-blue-100">
-                      1-Click install to Home Screen with full Back Button support
-                    </p>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-blue-100 shrink-0" />
-              </div>
-
+            <div>
               <a
                 href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
                   (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
@@ -673,24 +622,25 @@ export const HomeScreen: React.FC = () => {
                   e.stopPropagation();
                   handleDownloadApp();
                 }}
-                className="cursor-pointer rounded-xl bg-slate-900/90 border border-slate-800 p-2.5 text-white shadow-xs flex items-center justify-between hover:bg-slate-800/90 transition-all active:scale-98 block"
+                className="cursor-pointer rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 p-3.5 text-white shadow-md flex items-center justify-between hover:shadow-lg transition-all active:scale-98 border border-emerald-500/30 block"
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-                    <Download className="w-4 h-4" />
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shadow-inner">
+                    <Download className="w-5 h-5 animate-bounce" />
                   </div>
                   <div>
-                    <h5 className="text-[11px] font-bold text-slate-200">
-                      Download Direct APK Package
-                    </h5>
-                    <p className="text-[9px] text-slate-400">
-                      ZoroTask-Official-v{adminSettings.appVersion || '2.6.0'}.apk (Official Sideload file)
+                    <h4 className="text-sm font-black uppercase tracking-wide">
+                      Download App
+                    </h4>
+                    <p className="text-[10px] text-emerald-100">
+                      Official Android Package (.apk) &bull; v{adminSettings.appVersion || '2.6.0'}
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded-md bg-emerald-500/10">
-                  Download
-                </span>
+                <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-xl font-bold text-xs text-white">
+                  <span>Download</span>
+                  <ArrowRight className="w-4 h-4 text-white shrink-0" />
+                </div>
               </a>
             </div>
           )}

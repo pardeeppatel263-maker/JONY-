@@ -1914,99 +1914,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Failed to save user to Firestore', err);
     }
 
-    // AUTOMATIC REFERRAL REWARD FOR INVITER:
-    // When someone signs up via invite link, the inviter receives an instant reward!
-    const refReward = adminSettings.referralBonus || 100;
-    let refTx: TransactionItem | null = null;
-    let refClean = '';
-
+    // Link referral relationship:
+    // Policy: New user gets ₹0 initial balance.
+    // The inviter gets ₹0 on signup. Inviter earns commission (4.5% Level 1, 1.5% Level 2, 1.0% Level 3)
+    // ONLY when the invited user purchases a VIP Plan!
     if (matchedReferrer) {
-      refClean = normalizeMobile(matchedReferrer.mobile) || matchedReferrerDocId;
-      refTx = {
-        id: `tx_ref_reg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        type: 'referral_reward',
-        title: `Referral Signup Reward (+₹${refReward})`,
-        date: 'Today',
-        amount: refReward,
-        isCredit: true,
-        status: 'verified',
-        note: `New friend ${name.trim()} (+91 ${cleanMobile}) registered via your invite link! Automatic ₹${refReward} bonus credited to your wallet.`,
-      };
-
-      // 1. If referrer is currently active user on this device, update user and transactions state
+      const refClean = normalizeMobile(matchedReferrer.mobile) || matchedReferrerDocId;
       if (normalizeMobile(user.mobile) === refClean) {
-        setUser((curr) => ({
-          ...curr,
-          balance: curr.balance + refReward,
-          totalEarned: curr.totalEarned + refReward,
-          referralEarnings: (curr.referralEarnings || 0) + refReward,
-        }));
-        setTransactions((prev) => [refTx!, ...prev]);
         setNotifications((prev) => [
           {
             id: `notif_${Date.now()}`,
-            title: `🎉 ₹${refReward} Referral Signup Bonus!`,
-            message: `${name.trim()} ne aapke invite link se register kiya. ₹${refReward} aapke wallet me add ho gaya!`,
+            title: `👥 New Team Member Registered!`,
+            message: `${name.trim()} (+91 ${cleanMobile}) ne aapke invite link se register kiya. Jab ye koi VIP Plan khareedenge, tab aapko direct 4.5% commission milega!`,
             time: 'Just now',
             read: false,
-            type: 'reward',
+            type: 'system',
           },
           ...prev,
         ]);
       }
-
-      // 2. Persist reward & transaction to Firestore for referrer
-      try {
-        const refDocKey = matchedReferrerDocId || refClean;
-        const refUserRef = doc(db, 'users', refDocKey);
-        const refSnap = await getDoc(refUserRef);
-        const existingRefTxs: TransactionItem[] =
-          refSnap.exists() && refSnap.data().transactions ? refSnap.data().transactions : [];
-        await setDoc(
-          refUserRef,
-          {
-            balance: increment(refReward),
-            totalEarned: increment(refReward),
-            referralEarnings: increment(refReward),
-            transactions: [refTx, ...existingRefTxs],
-          },
-          { merge: true }
-        );
-      } catch (err) {
-        console.warn('Failed to reward referrer in Firestore:', err);
-      }
     }
 
-    // 3. Atomically update registeredUsers preserving the updated referrer balance!
     setRegisteredUsers((prev) => {
-      let updatedList = prev;
-      if (matchedReferrer && refClean && refTx) {
-        let foundReferrer = false;
-        updatedList = prev.map((u) => {
-          if (normalizeMobile(u.mobile) === refClean) {
-            foundReferrer = true;
-            return {
-              ...u,
-              balance: (u.balance || 0) + refReward,
-              totalEarned: (u.totalEarned || 0) + refReward,
-              referralEarnings: (u.referralEarnings || 0) + refReward,
-              transactions: [refTx!, ...(u.transactions || [])],
-            };
-          }
-          return u;
-        });
-        if (!foundReferrer && matchedReferrer) {
-          updatedList.push({
-            ...matchedReferrer,
-            balance: (matchedReferrer.balance || 0) + refReward,
-            totalEarned: (matchedReferrer.totalEarned || 0) + refReward,
-            referralEarnings: (matchedReferrer.referralEarnings || 0) + refReward,
-            transactions: [refTx!, ...(matchedReferrer.transactions || [])],
-          });
-        }
-      }
-
-      const filtered = updatedList.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
+      const filtered = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
       const finalList = [...filtered, newUser];
       try {
         localStorage.setItem('taskvibe_registered_users', JSON.stringify(finalList));

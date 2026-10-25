@@ -184,10 +184,10 @@ export const RegisterScreen: React.FC = () => {
     setIsRegistering(true);
 
     try {
-      // Enforce 1 phone = 1 account strictly across devices with cloud check
+      // Check if this mobile number currently has an ACTIVE account in Firestore
       const existsInCloud = await checkPhoneExistsInFirestore(cleanMobile);
-      if (existsInCloud || isPhoneAlreadyRegistered(cleanMobile)) {
-        showToast(`❌ This phone number (+91 ${cleanMobile}) is already registered! Only 1 account is allowed per phone number.`);
+      if (existsInCloud) {
+        showToast(`❌ This phone number (+91 ${cleanMobile}) already has an active account! Please login with your password.`);
         try {
           localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
         } catch (err) {

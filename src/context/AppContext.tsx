@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -828,7 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
                   } catch {}
                 }
-              } else if (!isMasterAdmin && hasInitialUserCloudSyncRef.current) {
+              } else if (!isMasterAdmin) {
                 // USER WAS PERMANENTLY DELETED FROM FIRESTORE BY ADMIN!
                 console.warn(`[ZoroTask] User (+91 ${cleanActive}) was deleted by Admin! Terminating session immediately...`);
                 logout();
@@ -839,7 +840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   localStorage.removeItem('taskvibe_txs');
                   localStorage.removeItem('taskvibe_screen');
                 } catch {}
-                showToast('⚠️ Your account has been deleted by administrator. Please register as a new user.');
+                showToast('⚠️ Your account was permanently deleted by Admin. Please register as a new user.');
                 setCurrentScreen('register');
                 setHistoryStack(['register']);
               }
@@ -1653,12 +1654,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const checkPhoneExistsInFirestore = async (m: string): Promise<boolean> => {
     const clean = normalizeMobile(m);
     if (!clean || clean.length < 10) return false;
-    if (registeredUsers.some((u) => normalizeMobile(u.mobile) === clean)) return true;
     try {
-      const snap = await getDoc(doc(db, 'users', clean));
-      return snap.exists();
+      const snap = await getDocFromServer(doc(db, 'users', clean));
+      if (!snap.exists()) {
+        // Purge from local cache if deleted from server
+        setRegisteredUsers((prev) => prev.filter((u) => normalizeMobile(u.mobile) !== clean));
+        return false;
+      }
+      return true;
     } catch {
-      return false;
+      try {
+        const snap = await getDoc(doc(db, 'users', clean));
+        return snap.exists();
+      } catch {
+        return false;
+      }
     }
   };
 
@@ -1673,25 +1683,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Authoritative verification against Firestore cloud database
+    // 1. Authoritative verification directly against Firestore cloud server
     let cloudSnap: any = null;
-    let checkedCloud = false;
+    let serverCheckCompleted = false;
     try {
       const userRef = doc(db, 'users', cleanMobile);
-      cloudSnap = await Promise.race([
-        getDoc(userRef),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-      ]);
-      if (cloudSnap !== null) {
-        checkedCloud = true;
-      }
+      cloudSnap = await getDocFromServer(userRef);
+      serverCheckCompleted = true;
     } catch (err) {
-      console.warn('Firestore fetch failed during login:', err);
+      console.warn('Firestore getDocFromServer failed during login, trying cached getDoc:', err);
+      try {
+        const userRef = doc(db, 'users', cleanMobile);
+        cloudSnap = await getDoc(userRef);
+        serverCheckCompleted = true;
+      } catch (e2) {
+        console.warn('Firestore fallback getDoc failed:', e2);
+      }
     }
 
-    // If cloud confirmed the document DOES NOT exist:
+    // CRITICAL: If Firestore confirms the document DOES NOT exist:
     // This account was permanently deleted by Admin or never registered!
-    if (checkedCloud && (!cloudSnap || !cloudSnap.exists())) {
+    // NEVER fall back to local memory/localStorage!
+    if (!cloudSnap || !cloudSnap.exists()) {
+      // Purge any stale cache from local storage on this device
       setRegisteredUsers((prev) => {
         const next = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
         try {
@@ -1699,24 +1713,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
         return next;
       });
-      showToast(`❌ Account (+91 ${cleanMobile}) is not registered or was deleted by Admin. Please register as a new user.`);
+      try {
+        const activeMob = localStorage.getItem('taskvibe_active_mobile');
+        if (activeMob && normalizeMobile(activeMob) === cleanMobile) {
+          localStorage.removeItem('taskvibe_auth');
+          localStorage.removeItem('taskvibe_active_mobile');
+          localStorage.removeItem('taskvibe_user');
+          localStorage.removeItem('taskvibe_txs');
+        }
+      } catch {}
+
+      showToast(`❌ Account (+91 ${cleanMobile}) was permanently deleted by Admin. You cannot login to the old account. Please click "Register Now" to create a new account.`);
       return false;
     }
 
-    let matched: RegisteredUserAccount | null = null;
-    if (cloudSnap && cloudSnap.exists()) {
-      matched = cloudSnap.data() as RegisteredUserAccount;
-    } else {
-      matched = registeredUsers.find((u) => normalizeMobile(u.mobile) === cleanMobile) || null;
-    }
-
+    const matched: RegisteredUserAccount = cloudSnap.data() as RegisteredUserAccount;
     if (!matched) {
-      showToast(`❌ Phone number (+91 ${cleanMobile}) is not registered. Please click "Register Now" to create an account.`);
+      showToast(`❌ Account (+91 ${cleanMobile}) does not exist. Please click "Register Now" to create an account.`);
       return false;
     }
 
     if (matched.password !== pass.trim()) {
       showToast('❌ Incorrect password! Please enter the correct password.');
+      return false;
+    }
+
+    if (matched.isBlocked) {
+      showToast('⛔ Your account has been suspended by administration. Tasks and withdrawals are restricted.');
       return false;
     }
 
@@ -1805,22 +1828,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // 1. Check in Firestore: 1 Phone number = 1 Active Account only!
+    // 1. Authoritative check in Firestore server: 1 Phone number = 1 Active Account only!
     let alreadyExists = false;
     let checkedCloud = false;
     try {
       const userRef = doc(db, 'users', cleanMobile);
-      const snap = await getDoc(userRef);
+      const snap = await getDocFromServer(userRef);
       checkedCloud = true;
       if (snap.exists()) {
         alreadyExists = true;
       }
     } catch (err) {
-      console.warn('Firestore existence check error', err);
+      try {
+        const userRef = doc(db, 'users', cleanMobile);
+        const snap = await getDoc(userRef);
+        checkedCloud = true;
+        if (snap.exists()) {
+          alreadyExists = true;
+        }
+      } catch (e2) {
+        console.warn('Firestore existence check error', e2);
+      }
     }
 
-    // If Firestore confirmed user does NOT exist, they were deleted or are new!
-    // Purge any stale local cached record so they can register cleanly as a new user:
+    // If Firestore confirmed user does NOT exist, they were deleted by Admin or are new!
+    // Purge any stale local cached record so they can register cleanly as a brand new account:
     if (checkedCloud && !alreadyExists) {
       setRegisteredUsers((prev) => {
         const next = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
@@ -1829,6 +1861,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch {}
         return next;
       });
+      try {
+        await deleteDoc(doc(db, 'deleted_accounts', cleanMobile));
+      } catch {}
     } else if (!checkedCloud) {
       alreadyExists = registeredUsers.some(
         (u) => normalizeMobile(u.mobile) === cleanMobile
@@ -3981,7 +4016,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!clean) return false;
 
     try {
+      // 1. Permanently delete from Firestore users collection
       await deleteDoc(doc(db, 'users', clean));
+      await deleteDoc(doc(db, 'users', `+91${clean}`));
+      await deleteDoc(doc(db, 'users', `+91 ${clean}`));
+
+      // 2. Query any documents with this mobile number and delete them too
+      try {
+        const qSnap = await getDocs(
+          query(collection(db, 'users'), where('mobile', 'in', [clean, `+91 ${clean}`, `+91${clean}`]))
+        );
+        for (const d of qSnap.docs) {
+          await deleteDoc(doc(db, 'users', d.id));
+        }
+      } catch {}
+
+      // 3. Record in deleted_accounts tombstone collection
+      await setDoc(doc(db, 'deleted_accounts', clean), {
+        mobile: clean,
+        deletedAt: Date.now(),
+        deletedByAdmin: true,
+      });
     } catch (e) {
       console.warn('Firestore user delete failed:', e);
     }
@@ -3994,6 +4049,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.removeItem('taskvibe_user');
         localStorage.removeItem('taskvibe_txs');
         localStorage.removeItem('taskvibe_screen');
+        localStorage.removeItem('taskvibe_last_registered_mobile');
       } catch {}
       setCurrentScreen('register');
       setHistoryStack(['register']);
@@ -4009,7 +4065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
 
-    showToast(`✓ User (+91 ${clean}) was permanently deleted from the database!`);
+    showToast(`✓ User (+91 ${clean}) was permanently deleted! Old account cannot login.`);
     return true;
   };
 

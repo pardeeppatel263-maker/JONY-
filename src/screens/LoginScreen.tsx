@@ -146,11 +146,9 @@ export const LoginScreen: React.FC = () => {
 
     try {
       const existsInCloud = await checkPhoneExistsInFirestore(cleanMobile);
-      const existsLocally = isPhoneAlreadyRegistered(cleanMobile);
-
-      if (!existsInCloud && !existsLocally) {
-        setResetError(`Mobile number (+91 ${cleanMobile}) is not registered! Please create an account first.`);
-        showToast(`❌ Mobile number +91 ${cleanMobile} is not registered!`);
+      if (!existsInCloud) {
+        setResetError(`Mobile number (+91 ${cleanMobile}) is not registered or was deleted! Please create an account first.`);
+        showToast(`❌ Mobile number +91 ${cleanMobile} is not registered or was deleted.`);
         return;
       }
 

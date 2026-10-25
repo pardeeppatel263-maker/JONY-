@@ -43,6 +43,11 @@ import {
 } from '../data/initialData';
 import { getFormattedDayInfo } from '../utils/dateUtils';
 
+// Cutoff timestamp for 2-day free trial eligibility:
+// All accounts registered prior to this timestamp have their trial expired (removed from screen).
+// Only newly registered accounts created after this timestamp receive the 48-hour free trial.
+export const NEW_USER_FREE_TRIAL_CUTOFF = 1792935457000;
+
 interface PurchaseDetails {
   amount: number;
   reward: number;
@@ -215,7 +220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-      // Demo initial registered account
+      // Demo initial registered account (existing account with trial expired)
       const defaultAcc: RegisteredUserAccount = {
         name: 'Pardeep Patel',
         mobile: '+91 9876543210',
@@ -226,7 +231,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         withdrawn: 0,
         upiId: '9876543210@upi',
         joinedDate: '27 Sep 2026',
-        joinedTimestamp: Date.now() - 1000 * 60 * 60 * 6,
+        joinedTimestamp: 1789000000000,
+        trialStartedAt: 1789000000000,
+        isNewTrialEligible: false,
+        freeTrialOverride: 'disabled',
         password: 'admin',
         vipLevel: 0,
         vipTag: 'Free Starter',
@@ -502,52 +510,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const defaultPromoCodes: PromoCode[] = [
-    {
-      id: 'promo_welcome50',
-      code: 'WELCOME50',
-      rewardAmount: 50,
-      usageLimit: 500,
-      usedCount: 14,
-      usedByUsers: [],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      description: 'Welcome Bonus Voucher for all registered members',
-    },
-    {
-      id: 'promo_telegram20',
-      code: 'TELEGRAM20',
-      rewardAmount: 20,
-      usageLimit: 1000,
-      usedCount: 38,
-      usedByUsers: [],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      description: 'Special Telegram Channel Community Gift Code',
-    },
-    {
-      id: 'promo_bonus10',
-      code: 'BONUS10',
-      rewardAmount: 10,
-      usageLimit: 200,
-      usedCount: 5,
-      usedByUsers: [],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      description: 'Instant Daily Starter Bonus Voucher',
-    },
-  ];
+  // Zero default promo codes: Only codes created by the Admin from Admin Panel will appear!
+  const defaultPromoCodes: PromoCode[] = [];
 
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>(() => {
     try {
       const saved = localStorage.getItem('zorotask_promo_codes');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Purge the 3 legacy default promo codes from local storage
+          const filtered = parsed.filter(
+            (p) =>
+              p &&
+              p.id !== 'promo_welcome50' &&
+              p.id !== 'promo_telegram20' &&
+              p.id !== 'promo_bonus10' &&
+              p.code !== 'WELCOME50' &&
+              p.code !== 'TELEGRAM20' &&
+              p.code !== 'BONUS10'
+          );
+          localStorage.setItem('zorotask_promo_codes', JSON.stringify(filtered));
+          return filtered;
+        }
       }
-      return defaultPromoCodes;
+      return [];
     } catch {
-      return defaultPromoCodes;
+      return [];
     }
   });
 
@@ -968,6 +957,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Real-time listener: sync promo codes from Firestore
+  // Real-time listener: sync promo codes from Firestore
   useEffect(() => {
     try {
       const promosCol = collection(db, 'promo_codes');
@@ -978,21 +968,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as PromoCode;
             if (data && data.id && data.code) {
-              cloudList.push(data);
+              // Strip out any legacy default promo codes from database
+              if (
+                data.id !== 'promo_welcome50' &&
+                data.id !== 'promo_telegram20' &&
+                data.id !== 'promo_bonus10' &&
+                data.code !== 'WELCOME50' &&
+                data.code !== 'TELEGRAM20' &&
+                data.code !== 'BONUS10'
+              ) {
+                cloudList.push(data);
+              }
             }
           });
-          if (cloudList.length > 0) {
-            cloudList.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-            setPromoCodes(cloudList);
-            try {
-              localStorage.setItem('zorotask_promo_codes', JSON.stringify(cloudList));
-            } catch {}
-          }
+          cloudList.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          // Always update local state & cache (so when admin deletes a code, it is immediately removed!)
+          setPromoCodes(cloudList);
+          try {
+            localStorage.setItem('zorotask_promo_codes', JSON.stringify(cloudList));
+          } catch {}
         },
         (error) => {
           console.warn('Firestore promo codes listener error:', error);
         }
       );
+
+      // One-time cleanup: Delete any old legacy default promo codes from Firestore
+      const purgeLegacyPromos = async () => {
+        try {
+          const legacyIds = ['promo_welcome50', 'promo_telegram20', 'promo_bonus10'];
+          for (const lid of legacyIds) {
+            try {
+              await deleteDoc(doc(db, 'promo_codes', lid));
+            } catch {}
+          }
+        } catch {}
+      };
+      purgeLegacyPromos();
+
       return () => unsubscribe();
     } catch (err) {
       console.warn('Could not attach Firestore promo codes listener:', err);
@@ -1901,6 +1914,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         year: 'numeric',
       }),
       joinedTimestamp: Date.now(),
+      trialStartedAt: Date.now(),
+      isNewTrialEligible: true,
+      freeTrialOverride: 'auto',
       password: pass.trim(),
       vipLevel: 0,
       vipTag: 'Free Starter',
@@ -3105,35 +3121,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // 2-Day Free Starter Trial:
-  // "AUR 2 DIN TAK FREE WALA BHI 2 VD MILE TASK KE RUP ME"
+  // "ye jo mai photo send kiya hu o abhi jo ragister user hai o sab ke screen se hat jaye aur jo new user ragister karenge uske screen par 2 din rahega phir hat jayega q ki 2 din hi free trial hai"
   const { isFreeTrialActive, freeTrialHoursLeft } = React.useMemo(() => {
-    if (!user) return { isFreeTrialActive: true, freeTrialHoursLeft: 48 };
-    const now = Date.now();
-    let joinedMs = user.joinedTimestamp;
-    if (!joinedMs && user.joinedDate) {
-      try {
-        const parsed = new Date(user.joinedDate).getTime();
-        if (!isNaN(parsed)) joinedMs = parsed;
-      } catch {}
+    // If not logged in or empty user, do not show trial banner
+    if (!user || !user.mobile || !isLoggedIn) {
+      return { isFreeTrialActive: false, freeTrialHoursLeft: 0 };
     }
-    if (!joinedMs) joinedMs = now;
 
+    // Admin manual override controls
+    if (user.freeTrialOverride === 'disabled') {
+      return { isFreeTrialActive: false, freeTrialHoursLeft: 0 };
+    }
+    if (user.freeTrialOverride === 'enabled') {
+      return { isFreeTrialActive: true, freeTrialHoursLeft: 48 };
+    }
+
+    // Existing registered accounts (registered before this update cutoff or without isNewTrialEligible)
+    // Have their 2-day free trial EXPIRED - removed from their screen!
+    const trialStart = user.trialStartedAt || user.joinedTimestamp;
+    if (!trialStart || trialStart < NEW_USER_FREE_TRIAL_CUTOFF || !user.isNewTrialEligible) {
+      return { isFreeTrialActive: false, freeTrialHoursLeft: 0 };
+    }
+
+    const now = Date.now();
     const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-    const elapsed = now - joinedMs;
+    const elapsed = now - trialStart;
+
+    // After 2 days (48 hours), trial expires and automatically disappears from screen!
+    if (elapsed >= twoDaysMs) {
+      return { isFreeTrialActive: false, freeTrialHoursLeft: 0 };
+    }
+
     const remainingMs = Math.max(0, twoDaysMs - elapsed);
-    const hoursLeft = Math.ceil(remainingMs / (60 * 60 * 1000));
-    const autoActive = elapsed < twoDaysMs;
-    const effectiveFreeActive =
-      user.freeTrialOverride === 'enabled'
-        ? true
-        : user.freeTrialOverride === 'disabled'
-        ? false
-        : autoActive;
+    const hoursLeft = Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000)));
+
     return {
-      isFreeTrialActive: effectiveFreeActive,
-      freeTrialHoursLeft: user.freeTrialOverride === 'enabled' ? Math.max(hoursLeft, 48) : hoursLeft,
+      isFreeTrialActive: true,
+      freeTrialHoursLeft: hoursLeft,
     };
-  }, [user.joinedTimestamp, user.joinedDate, user.freeTrialOverride]);
+  }, [user.trialStartedAt, user.joinedTimestamp, user.isNewTrialEligible, user.freeTrialOverride, user.mobile, isLoggedIn]);
 
   // Multi-Plan System:
   // If user is within their 2-day free trial (or Admin enabled it), they get 2 Free Videos from Level 0!

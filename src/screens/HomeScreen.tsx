@@ -289,7 +289,7 @@ export const HomeScreen: React.FC = () => {
             </div>
           )}
 
-          {/* 2-Day Free Trial / VIP Status Notice */}
+          {/* 2-Day Free Trial Notice - Displays ONLY for new users during their active 2-day trial, disappears completely once expired */}
           {isFreeTrialActive ? (
             <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 p-3 rounded-2xl shadow-xs flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -313,24 +313,6 @@ export const HomeScreen: React.FC = () => {
                 className="bg-slate-950 text-amber-300 hover:bg-slate-900 font-black text-[10px] px-2.5 py-1.5 rounded-xl shrink-0 cursor-pointer shadow-xs active:scale-95"
               >
                 Watch VD
-              </button>
-            </div>
-          ) : boughtPlans.length === 0 ? (
-            <div className="bg-gradient-to-r from-rose-500 to-red-600 text-white p-3 rounded-2xl shadow-xs flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-200 shrink-0" />
-                <div>
-                  <span className="text-xs font-black block">2-Day Free Trial Expired!</span>
-                  <p className="text-[10px] text-rose-100">
-                    Activate a VIP plan to continue earning from daily video tasks.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => navigate('member_plans')}
-                className="bg-white text-rose-700 hover:bg-rose-50 font-black text-[10px] px-3 py-1.5 rounded-xl shrink-0 shadow-xs active:scale-95 cursor-pointer"
-              >
-                Buy VIP
               </button>
             </div>
           ) : null}

@@ -116,6 +116,8 @@ export interface UserProfile {
   lastVideoWatchDate?: string;
   purchasedPlanIds?: string[];
   freeTrialOverride?: 'auto' | 'enabled' | 'disabled';
+  trialStartedAt?: number;
+  isNewTrialEligible?: boolean;
   referralEarnings?: number;
   teamTaskEarnings?: number;
   firstPlanReferralBonusPaid?: boolean;

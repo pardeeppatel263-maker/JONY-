@@ -626,8 +626,9 @@ export const AdminPanelScreen: React.FC = () => {
     const level0FreePlan = plans.find((p) => p.level === 0) || plans[0];
 
     const now = Date.now();
-    let joinedMs = u.joinedTimestamp || now;
-    const autoFreeActive = now - joinedMs <= 2 * 24 * 60 * 60 * 1000;
+    const trialStart = u.trialStartedAt || u.joinedTimestamp || 0;
+    const isNewEligible = trialStart >= 1792935457000 && Boolean(u.isNewTrialEligible);
+    const autoFreeActive = isNewEligible && (now - trialStart <= 2 * 24 * 60 * 60 * 1000);
     const isFreeActive =
       u.freeTrialOverride === 'enabled'
         ? true
@@ -5852,9 +5853,9 @@ export const AdminPanelScreen: React.FC = () => {
                   type="button"
                   onClick={() => {
                     const activeFirst = promoCodes.find((p) => p.isActive) || promoCodes[0];
-                    const activeCode = promoCodeInput.trim() || (activeFirst ? activeFirst.code : 'WELCOME50');
-                    const activeReward = promoRewardInput || (activeFirst ? activeFirst.rewardAmount : '50');
-                    const activeLimit = promoLimitInput || (activeFirst ? activeFirst.usageLimit : '500');
+                    const activeCode = promoCodeInput.trim() || activeFirst?.code || 'GIFT100';
+                    const activeReward = promoRewardInput || (activeFirst ? String(activeFirst.rewardAmount) : '100');
+                    const activeLimit = promoLimitInput || (activeFirst ? String(activeFirst.usageLimit) : '500');
                     const text = `🎉 EXCLUSIVE PROMO CODE RELEASED! 🎁\n\n💰 CODE: ${activeCode}\n💵 FREE REWARD: ₹${activeReward} instant wallet balance\n👥 USAGE LIMIT: First ${activeLimit} members only!\n\n📲 HOW TO CLAIM:\n1. Open ZoroTask App\n2. Click "Redeem Code" on Home or Wallet Screen\n3. Enter: ${activeCode}\n4. ₹${activeReward} will be credited to your balance instantly!\n\n⚡ Claim fast before limit ends! 🚀`;
                     copyText(text, 'Telegram Broadcast Post copied!');
                   }}
@@ -5867,15 +5868,15 @@ export const AdminPanelScreen: React.FC = () => {
 
               <div className="p-3 bg-slate-950/90 rounded-xl border border-blue-500/20 text-xs text-slate-300 font-mono leading-relaxed whitespace-pre-wrap select-all">
                 {`🎉 EXCLUSIVE PROMO CODE RELEASED! 🎁
-💰 CODE: ${promoCodeInput.trim() || (promoCodes[0]?.code ?? 'WELCOME50')}
-💵 FREE REWARD: ₹${promoRewardInput || (promoCodes[0]?.rewardAmount ?? 50)} instant wallet balance
-👥 USAGE LIMIT: First ${promoLimitInput || (promoCodes[0]?.usageLimit ?? 500)} members only!
+💰 CODE: ${promoCodeInput.trim() || promoCodes[0]?.code || 'GIFT100'}
+💵 FREE REWARD: ₹${promoRewardInput || (promoCodes[0] ? promoCodes[0].rewardAmount : '100')} instant wallet balance
+👥 USAGE LIMIT: First ${promoLimitInput || (promoCodes[0] ? promoCodes[0].usageLimit : '500')} members only!
 
 📲 HOW TO CLAIM:
 1. Open ZoroTask App
 2. Click "Redeem Code" on Home or Wallet Screen
-3. Enter: ${promoCodeInput.trim() || (promoCodes[0]?.code ?? 'WELCOME50')}
-4. ₹${promoRewardInput || (promoCodes[0]?.rewardAmount ?? 50)} credited to your wallet instantly!`}
+3. Enter: ${promoCodeInput.trim() || promoCodes[0]?.code || 'GIFT100'}
+4. ₹${promoRewardInput || (promoCodes[0] ? promoCodes[0].rewardAmount : '100')} credited to your wallet instantly!`}
               </div>
             </div>
 
@@ -6012,15 +6013,10 @@ export const AdminPanelScreen: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `Are you sure you want to delete promo code "${promo.code}"?`
-                                  )
-                                ) {
-                                  deletePromoCode(promo.id);
-                                }
+                                deletePromoCode(promo.id);
                               }}
                               className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                              title="Delete Promo Code"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>

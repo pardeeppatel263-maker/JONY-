@@ -162,10 +162,10 @@ export const HomeScreen: React.FC = () => {
 
   const handleDownloadApp = () => {
     const targetUrl = adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk';
-    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`;
+    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`;
     const ok = downloadApkToDevice(filename, targetUrl);
     if (ok) {
-      showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.6.0'} APK download started!`);
+      showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.7.0'} APK download started!`);
     } else {
       showToast(`Downloading ZoroTask APK...`);
     }
@@ -599,7 +599,7 @@ export const HomeScreen: React.FC = () => {
                 href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
                   (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
                 }t=${Date.now()}`}
-                download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+                download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDownloadApp();
@@ -615,7 +615,7 @@ export const HomeScreen: React.FC = () => {
                       Download App
                     </h4>
                     <p className="text-[10px] text-emerald-100">
-                      Official Android Package (.apk) &bull; v{adminSettings.appVersion || '2.6.0'}
+                      Official Android Package (.apk) &bull; v{adminSettings.appVersion || '2.7.0'}
                     </p>
                   </div>
                 </div>

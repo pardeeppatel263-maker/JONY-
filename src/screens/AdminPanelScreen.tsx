@@ -389,12 +389,12 @@ export const AdminPanelScreen: React.FC = () => {
   const [newTierPopular, setNewTierPopular] = useState(false);
 
   // App Version & Force Update State
-  const [appVersionInput, setAppVersionInput] = useState(adminSettings.appVersion || '2.6.0');
+  const [appVersionInput, setAppVersionInput] = useState(adminSettings.appVersion || '2.7.0');
   const [apkDownloadUrlInput, setApkDownloadUrlInput] = useState(adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk');
   const [forceUpdateEnabledInput, setForceUpdateEnabledInput] = useState(adminSettings.forceUpdateEnabled ?? false);
   const [updateChangelogInput, setUpdateChangelogInput] = useState(
     adminSettings.updateChangelog ||
-      'Version 2.6.0 brings faster video task buffering, instant QR UPI proof auto-verification, and enhanced 3D UI performance.'
+      'Version 2.7.0: ⚡ 1-Click in-app direct APK updater (No uninstall needed), in-place data preservation, and real-time balance sync.'
   );
 
   // Tickets State
@@ -1053,7 +1053,7 @@ export const AdminPanelScreen: React.FC = () => {
       withdrawalDaysNotice: withdrawalDaysNoticeInput.trim() || 'Mon - Sat (10:00 AM - 06:00 PM)',
       maintenanceMode: maintenanceModeInput,
       maintenanceMessage: maintenanceMessageInput.trim(),
-      appVersion: appVersionInput.trim() || '2.6.0',
+      appVersion: appVersionInput.trim() || '2.7.0',
       apkDownloadUrl: apkDownloadUrlInput.trim() || '/ZoroTask-Official.apk',
       forceUpdateEnabled: forceUpdateEnabledInput,
       updateChangelog: updateChangelogInput.trim(),
@@ -4307,7 +4307,7 @@ export const AdminPanelScreen: React.FC = () => {
                       type="text"
                       value={appVersionInput}
                       onChange={(e) => setAppVersionInput(e.target.value)}
-                      placeholder="2.6.0"
+                      placeholder="2.7.0"
                       className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-sky-400"
                     />
                   </div>

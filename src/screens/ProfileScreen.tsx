@@ -16,6 +16,7 @@ import {
   Download,
   Gift,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 
@@ -30,6 +31,10 @@ export const ProfileScreen: React.FC = () => {
     setIsPromoModalOpen,
     showToast,
     adminSettings,
+    setIsUpdateModalOpen,
+    checkForAppUpdate,
+    isUpdateAvailable,
+    installedAppVersion,
   } = useApp();
 
   return (
@@ -175,33 +180,69 @@ export const ProfileScreen: React.FC = () => {
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
 
-            {/* Download Official Android APK */}
-            <a
-              href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
-                (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
-              }t=${Date.now()}`}
-              download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
-              onClick={(e) => {
-                e.stopPropagation();
-                downloadApkToDevice(
-                  `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`,
-                  adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'
-                );
-                showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.6.0'} APK download started!`);
-              }}
-              className="w-full p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/50 transition-colors cursor-pointer"
+            {/* In-App 1-Click Update Option (No uninstall needed) */}
+            <button
+              type="button"
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="w-full p-3.5 flex items-center justify-between text-left hover:bg-amber-50/50 transition-colors cursor-pointer bg-gradient-to-r from-amber-50/30 via-transparent to-transparent"
             >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-tr from-amber-500 to-orange-500 text-slate-950 rounded-xl shadow-xs">
+                  <Sparkles className="w-4 h-4 text-slate-950" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800 block leading-tight">
+                      App Update (1-Click Install)
+                    </span>
+                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 uppercase">
+                      {isUpdateAvailable ? 'NEW v' + (adminSettings.appVersion || '2.7.0') : 'v' + (adminSettings.appVersion || '2.7.0')}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-amber-600 font-semibold">
+                    {isUpdateAvailable ? '⚡ 1-Click in-place update (No uninstall needed)' : '✓ ZoroTask is up to date'}
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-amber-500" />
+            </button>
+
+            {/* Check for Updates / Download Official Android APK */}
+            <div className="p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/40 transition-colors border-t border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
                   <Download className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-800 block leading-tight">Download App</span>
-                  <span className="text-[10px] text-emerald-600 font-semibold">Official Android Package (.apk)</span>
+                  <span className="text-xs font-bold text-slate-800 block leading-tight">Android Package (.apk)</span>
+                  <span className="text-[10px] text-slate-400">
+                    v{adminSettings.appVersion || '2.7.0'} &bull; 8.92 MB Official Package
+                  </span>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            </a>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => checkForAppUpdate(true)}
+                  className="px-2.5 py-1 text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
+                >
+                  Check
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadApkToDevice(
+                      `ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`,
+                      adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'
+                    );
+                    showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.7.0'} APK downloading!`);
+                  }}
+                  className="px-2.5 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition"
+                >
+                  Download
+                </button>
+              </div>
+            </div>
 
             {/* Logout */}
             <button

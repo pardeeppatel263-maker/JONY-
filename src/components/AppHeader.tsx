@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Bell, Menu, User as UserIcon, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bell, Menu, User as UserIcon, RefreshCw, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { TaskVibeLogo } from './TaskVibeLogo';
 
@@ -16,7 +16,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   showHomeActions = false,
   customRight,
 }) => {
-  const { goBack, navigate, notifications, setIsNotificationsOpen, refreshAppData, isRefreshing } = useApp();
+  const {
+    goBack,
+    navigate,
+    notifications,
+    setIsNotificationsOpen,
+    refreshAppData,
+    isRefreshing,
+    isUpdateAvailable,
+    setIsUpdateModalOpen,
+    adminSettings,
+  } = useApp();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
@@ -61,6 +71,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
           {showHomeActions && (
             <>
+              {/* In-App 1-Click Update Button Badge */}
+              {isUpdateAvailable && (
+                <button
+                  type="button"
+                  onClick={() => setIsUpdateModalOpen(true)}
+                  title="New ZoroTask APK update available (1-Click in-place install)"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 text-[10px] font-black shadow-md shadow-orange-500/25 active:scale-95 transition cursor-pointer animate-pulse"
+                >
+                  <Sparkles className="w-3 h-3 text-slate-950 shrink-0" />
+                  <span className="whitespace-nowrap">Update v{adminSettings.appVersion || '2.7'} ⚡</span>
+                </button>
+              )}
+
               {/* Cloud Refresh Button */}
               <button
                 onClick={() => refreshAppData()}

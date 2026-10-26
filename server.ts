@@ -20,13 +20,34 @@ async function startServer() {
     if (fs.existsSync(apkPath)) {
       const stat = fs.statSync(apkPath);
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', 'attachment; filename="ZoroTask-Official-v2.6.apk"');
+      res.setHeader('Content-Disposition', 'attachment; filename="ZoroTask-Official-v2.7.apk"');
       res.setHeader('Content-Length', stat.size);
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=60');
       return res.sendFile(apkPath);
     }
     return res.status(404).send('APK file not found');
+  });
+
+  // App Version & In-App 1-Click Update Info Endpoint
+  app.get('/api/app-version', (_req, res) => {
+    return res.json({
+      success: true,
+      currentVersion: '2.7.0',
+      versionCode: 27,
+      releaseDate: '26 Oct 2026',
+      apkFileName: 'ZoroTask-Official-v2.7.apk',
+      downloadUrl: '/ZoroTask-Official.apk',
+      fileSizeMb: '8.92 MB',
+      forceUpdate: false,
+      changelog: [
+        '⚡ 1-Click In-App Direct APK Updater (Zero uninstall required)',
+        '🚀 In-place update preserving user wallet balance and login session',
+        '🔄 Real-time Firestore balance & task auto-sync',
+        '📱 Seamless Android package installer handoff',
+        '🛡️ Enhanced APK integrity & keystore certificate verification'
+      ]
+    });
   });
 
   // Request logger for real-time diagnostics

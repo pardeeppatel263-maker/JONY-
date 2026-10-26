@@ -326,6 +326,9 @@ MAIN_ACTIVITY_BRIDGE_SMALI = """
 """
 
 def generate_patched_classes4_dex(temp_dir):
+    if not shutil.which('smali'):
+        print("Notice: smali not installed, preserving pre-existing compiled classes4.dex from base APK.")
+        return None
     smali_dir = os.path.join(temp_dir, 'smali_patched')
     app_dir = os.path.join(smali_dir, 'com', 'zorotask', 'app')
     os.makedirs(app_dir, exist_ok=True)

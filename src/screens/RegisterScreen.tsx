@@ -255,14 +255,14 @@ export const RegisterScreen: React.FC = () => {
             href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
               (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
             }t=${Date.now()}`}
-            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
             onClick={(e) => {
               e.stopPropagation();
               downloadApkToDevice(
-                `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`,
+                `ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`,
                 adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'
               );
-              showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.6.0'} APK download started!`);
+              showToast(`✓ ZoroTask Official v${adminSettings.appVersion || '2.7.0'} APK download started!`);
             }}
             className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
           >

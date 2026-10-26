@@ -3,7 +3,7 @@
  * Uses cache-busting timestamp so the user's browser/device always downloads the newest version.
  */
 export function downloadApkToDevice(
-  appName = 'ZoroTask-Official-v2.6.apk',
+  appName = 'ZoroTask-Official-v2.7.apk',
   customUrl?: string
 ): boolean {
   try {

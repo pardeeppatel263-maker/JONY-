@@ -262,15 +262,15 @@ export const LoginScreen: React.FC = () => {
     setDownloadCompleted(true);
 
     const targetUrl = adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk';
-    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`;
+    const filename = `ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`;
     const success = downloadApkToDevice(filename, targetUrl);
 
     setTimeout(() => {
       setIsDownloading(false);
       if (success) {
-        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.6.0'} APK downloading! Check File Manager > Downloads.`);
+        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.7.0'} APK downloading! Check File Manager > Downloads.`);
       } else {
-        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.6.0'} APK download started.`);
+        showToast(`✓ ZoroTask v${adminSettings.appVersion || '2.7.0'} APK download started.`);
       }
     }, 400);
   };
@@ -287,7 +287,7 @@ export const LoginScreen: React.FC = () => {
             href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
               (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
             }t=${Date.now()}`}
-            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.6.0'}.apk`}
+            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
             onClick={(e) => {
               e.stopPropagation();
               handleStartDownload();
@@ -489,7 +489,7 @@ export const LoginScreen: React.FC = () => {
                   ZoroTask Mobile APK
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Version 2.6.0 &bull; 9.0 MB &bull; Android 8.0+
+                  Version {adminSettings.appVersion || '2.7.0'} &bull; 8.9 MB &bull; Android 8.0+
                 </p>
               </div>
 

@@ -90,6 +90,12 @@ interface AppContextType {
   isEditProfileOpen: boolean;
   isExitModalOpen: boolean;
   setIsExitModalOpen: (open: boolean) => void;
+  isUpdateModalOpen: boolean;
+  setIsUpdateModalOpen: (open: boolean) => void;
+  installedAppVersion: string;
+  isUpdateAvailable: boolean;
+  checkForAppUpdate: (manual?: boolean) => { hasUpdate: boolean; currentVersion: string; latestVersion: string };
+  triggerOneClickUpdate: () => void;
   exitApp: () => void;
   registerBackHandler: (handler: () => boolean) => () => void;
   
@@ -610,10 +616,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
     maintenanceMode: false,
     maintenanceMessage: 'ZoroTask platform is currently undergoing scheduled system maintenance. All user balances and active VIP plans are safe. We will be back online shortly!',
-    appVersion: '2.6.0',
+    appVersion: '2.7.0',
     apkDownloadUrl: '/ZoroTask-Official.apk',
     forceUpdateEnabled: false,
-    updateChangelog: 'High-speed video playback, automated payment gateway integration, faster withdrawals, and enhanced security!',
+    updateChangelog: '⚡ 1-Click In-App Direct APK Updater (No uninstall needed) • In-place update preserving user wallet balance & login • Instant Firestore sync • Enhanced Android package installer handoff',
     addMoneyTiers: [
       { amount: 100, bonus: 15 },
       { amount: 200, bonus: 30 },
@@ -700,6 +706,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  const [installedAppVersion, setInstalledAppVersion] = useState(() => {
+    try {
+      return localStorage.getItem('taskvibe_installed_version') || '2.6.0';
+    } catch {
+      return '2.6.0';
+    }
+  });
+
+  const latestAppVersion = adminSettings.appVersion || '2.7.0';
+  const isUpdateAvailable = installedAppVersion !== latestAppVersion;
+
+  const checkForAppUpdate = (manual = false) => {
+    const hasUpdate = installedAppVersion !== latestAppVersion;
+    if (manual) {
+      if (hasUpdate) {
+        setIsUpdateModalOpen(true);
+      } else {
+        showToast(`✓ ZoroTask is up to date (v${installedAppVersion})`);
+      }
+    }
+    return { hasUpdate, currentVersion: installedAppVersion, latestVersion: latestAppVersion };
+  };
+
+  const triggerOneClickUpdate = () => {
+    setIsUpdateModalOpen(true);
+  };
 
   // Dynamic stack of screen-level back button handlers (e.g., bank picker, forgot password modal, notice popup)
   const registeredBackHandlersRef = useRef<(() => boolean)[]>([]);
@@ -4758,6 +4792,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsPromoModalOpen,
         isExitModalOpen,
         setIsExitModalOpen,
+        isUpdateModalOpen,
+        setIsUpdateModalOpen,
+        installedAppVersion,
+        isUpdateAvailable,
+        checkForAppUpdate,
+        triggerOneClickUpdate,
         exitApp,
         registerBackHandler,
       }}

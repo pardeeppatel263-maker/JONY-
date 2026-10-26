@@ -618,7 +618,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     maintenanceMessage: 'ZoroTask platform is currently undergoing scheduled system maintenance. All user balances and active VIP plans are safe. We will be back online shortly!',
     appVersion: '2.7.0',
     apkDownloadUrl: '/ZoroTask-Official.apk',
-    forceUpdateEnabled: false,
+    forceUpdateEnabled: true,
     updateChangelog: '⚡ 1-Click In-App Direct APK Updater (No uninstall needed) • In-place update preserving user wallet balance & login • Instant Firestore sync • Enhanced Android package installer handoff',
     addMoneyTiers: [
       { amount: 100, bonus: 15 },
@@ -735,7 +735,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsUpdateModalOpen(true);
   };
 
-  // Auto-broadcast update notification to all installed APK users
+  // Auto-broadcast update notification to all installed APK users on app launch
   useEffect(() => {
     const checkTimer = setTimeout(() => {
       try {
@@ -746,7 +746,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setIsUpdateModalOpen(true);
         }
       } catch {}
-    }, 1800);
+    }, 400);
     return () => clearTimeout(checkTimer);
   }, [adminSettings.appVersion, adminSettings.forceUpdateEnabled]);
 

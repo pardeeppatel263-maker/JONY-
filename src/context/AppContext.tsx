@@ -735,6 +735,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsUpdateModalOpen(true);
   };
 
+  // Auto-broadcast update notification to all installed APK users
+  useEffect(() => {
+    const checkTimer = setTimeout(() => {
+      try {
+        const stored = localStorage.getItem('taskvibe_installed_version') || '2.6.0';
+        const target = adminSettings.appVersion || '2.7.0';
+        const sessionDismissed = sessionStorage.getItem('taskvibe_update_dismissed_session');
+        if ((stored !== target || adminSettings.forceUpdateEnabled) && !sessionDismissed) {
+          setIsUpdateModalOpen(true);
+        }
+      } catch {}
+    }, 1800);
+    return () => clearTimeout(checkTimer);
+  }, [adminSettings.appVersion, adminSettings.forceUpdateEnabled]);
+
   // Dynamic stack of screen-level back button handlers (e.g., bank picker, forgot password modal, notice popup)
   const registeredBackHandlersRef = useRef<(() => boolean)[]>([]);
 
@@ -1100,8 +1115,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           const current = snap.data();
           const legacy = ['TaskVibe@Admin2026', 'admin', 'admin123', '1234', '123456', 'admin@123'];
+          const updates: any = {};
           if (!current.adminPassword || legacy.includes(current.adminPassword)) {
-            await setDoc(settingsDocRef, { adminPassword: 'Gagan@123' }, { merge: true });
+            updates.adminPassword = 'Gagan@123';
+          }
+          if (!current.appVersion || current.appVersion < '2.7.0') {
+            updates.appVersion = '2.7.0';
+            updates.apkDownloadUrl = '/ZoroTask-Official.apk';
+            updates.updateChangelog = '⚡ 1-Click in-app update now live! Update to v2.7 without uninstalling. All balance & data 100% safe.';
+          }
+          if (Object.keys(updates).length > 0) {
+            await setDoc(settingsDocRef, updates, { merge: true });
           }
         }
       } catch (err) {

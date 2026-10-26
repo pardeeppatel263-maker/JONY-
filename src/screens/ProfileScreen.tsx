@@ -180,7 +180,7 @@ export const ProfileScreen: React.FC = () => {
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
 
-            {/* In-App 1-Click Update Option (No uninstall needed) */}
+            {/* App Update (Matching User Image 1) */}
             <button
               type="button"
               onClick={() => setIsUpdateModalOpen(true)}
@@ -191,30 +191,30 @@ export const ProfileScreen: React.FC = () => {
                   <Sparkles className="w-4 h-4 text-slate-950" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-800 block leading-tight">
-                      App Update (1-Click Install)
+                      App Update
                     </span>
-                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 uppercase">
-                      {isUpdateAvailable ? 'NEW v' + (adminSettings.appVersion || '2.7.0') : 'v' + (adminSettings.appVersion || '2.7.0')}
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 uppercase shadow-2xs">
+                      V{adminSettings.appVersion || '2.7.0'}
                     </span>
                   </div>
-                  <span className="text-[10px] text-amber-600 font-semibold">
-                    {isUpdateAvailable ? '⚡ 1-Click in-place update (No uninstall needed)' : '✓ ZoroTask is up to date'}
+                  <span className="text-[10px] text-amber-600 font-semibold mt-0.5 block">
+                    {isUpdateAvailable ? '⚡ New v' + (adminSettings.appVersion || '2.7.0') + ' update available' : '✓ ZoroTask is up to date'}
                   </span>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-amber-500" />
             </button>
 
-            {/* Check for Updates / Download Official Android APK */}
+            {/* Download App (Matching User Image 2) */}
             <div className="p-3.5 flex items-center justify-between text-left hover:bg-emerald-50/40 transition-colors border-t border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
                   <Download className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-800 block leading-tight">Android Package (.apk)</span>
+                  <span className="text-xs font-bold text-slate-800 block leading-tight">Download App</span>
                   <span className="text-[10px] text-slate-400">
                     v{adminSettings.appVersion || '2.7.0'} &bull; 8.92 MB Official Package
                   </span>

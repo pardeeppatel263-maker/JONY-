@@ -214,19 +214,37 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
           {updateState === 'prompt' && (
             <>
               {/* Bold Playful Title matching user's image */}
-              <h2 className="text-2xl font-black text-[#522523] tracking-tight">
-                Updated Version
-              </h2>
+              <div className="space-y-1">
+                <span className="inline-block px-3 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-gradient-to-r from-pink-500 to-indigo-600 text-white shadow-xs">
+                  v{targetVersion} Available
+                </span>
+                <h2 className="text-2xl font-black text-[#522523] tracking-tight">
+                  Updated Version
+                </h2>
+              </div>
 
-              {/* Subtitle Lines in Indigo matching the user's image */}
-              <div className="space-y-1 text-[#2B296E] font-bold text-xs sm:text-[13px] leading-relaxed">
-                <p>System has been completely Upgrade!</p>
-                <p>Better experience!</p>
-                <p>Upgrade to the latest version!</p>
+              {/* Subtitle / Changelog */}
+              <div className="space-y-1 text-[#2B296E] font-bold text-xs sm:text-[13px] leading-relaxed max-h-36 overflow-y-auto px-2 w-full text-center">
+                {adminSettings.updateChangelog ? (
+                  adminSettings.updateChangelog.split(/[\n,;]+/).map((line, idx) => (
+                    line.trim() ? (
+                      <p key={idx} className="flex items-center gap-1.5 text-left text-[11px] text-slate-700 font-semibold bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                        <span>{line.trim()}</span>
+                      </p>
+                    ) : null
+                  ))
+                ) : (
+                  <>
+                    <p>System has been completely Upgraded!</p>
+                    <p>Better experience &amp; faster performance!</p>
+                    <p>Upgrade to the latest version!</p>
+                  </>
+                )}
               </div>
 
               {/* File Manager access note */}
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100">
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100">
                 <FolderDown className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span>Package: ZoroTask-v{targetVersion}.apk (8.92 MB)</span>
               </div>

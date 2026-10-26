@@ -735,14 +735,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsUpdateModalOpen(true);
   };
 
-  // Auto-broadcast update notification to all installed APK users on app launch
+  // Auto-broadcast update notification to all installed APK users on app launch & fetch /api/app-version
   useEffect(() => {
+    // 1. Fetch from server API endpoint
+    fetch('/api/app-version')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.success && data.currentVersion) {
+          const stored = localStorage.getItem('taskvibe_installed_version') || '2.6.0';
+          const sessionDismissed = sessionStorage.getItem('taskvibe_update_dismissed_session');
+          if (data.forceUpdate || (data.currentVersion !== stored && !sessionDismissed)) {
+            setIsUpdateModalOpen(true);
+          }
+        }
+      })
+      .catch(() => {});
+
+    // 2. Also listen to Firestore live adminSettings
     const checkTimer = setTimeout(() => {
       try {
         const stored = localStorage.getItem('taskvibe_installed_version') || '2.6.0';
         const target = adminSettings.appVersion || '2.7.0';
         const sessionDismissed = sessionStorage.getItem('taskvibe_update_dismissed_session');
-        if ((stored !== target || adminSettings.forceUpdateEnabled) && !sessionDismissed) {
+        if (adminSettings.forceUpdateEnabled || (stored !== target && !sessionDismissed)) {
           setIsUpdateModalOpen(true);
         }
       } catch {}

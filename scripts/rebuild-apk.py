@@ -406,11 +406,11 @@ def main():
     else:
         print("Warning: could not assemble classes4.dex, using existing DEX.")
 
-    if 'assets/capacitor.config.json' not in all_files:
-        cap_config = os.path.join(root_dir, 'capacitor.config.json')
-        if os.path.exists(cap_config):
-            with open(cap_config, 'rb') as f:
-                all_files['assets/capacitor.config.json'] = f.read()
+    cap_config = os.path.join(root_dir, 'capacitor.config.json')
+    if os.path.exists(cap_config):
+        with open(cap_config, 'rb') as f:
+            all_files['assets/capacitor.config.json'] = f.read()
+        print("✓ Injected latest capacitor.config.json with live server URL into APK!")
 
     print("Step 3: Packaging unaligned APK with uncompressed resources.arsc...")
     unaligned_apk = os.path.join(temp_dir, 'unaligned.apk')

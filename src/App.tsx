@@ -9,6 +9,7 @@ import { MobileFrame } from './components/MobileFrame';
 import { Toast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { EdgeSwipeBackGesture } from './components/EdgeSwipeBackGesture';
+import { StrictOfflineGuard } from './components/StrictOfflineGuard';
 
 // All 16 Screens matching the provided image
 import { SplashScreen } from './screens/SplashScreen';
@@ -240,11 +241,13 @@ const MainApp: React.FC = () => {
 export function App() {
   return (
     <ErrorBoundary fallbackTitle="ZoroTask Initialization Issue">
-      <AppProvider>
-        <ErrorBoundary fallbackTitle="ZoroTask View Error">
-          <MainApp />
-        </ErrorBoundary>
-      </AppProvider>
+      <StrictOfflineGuard>
+        <AppProvider>
+          <ErrorBoundary fallbackTitle="ZoroTask View Error">
+            <MainApp />
+          </ErrorBoundary>
+        </AppProvider>
+      </StrictOfflineGuard>
     </ErrorBoundary>
   );
 }

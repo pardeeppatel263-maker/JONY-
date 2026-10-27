@@ -1235,6 +1235,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Real-time listener: sync surveys across all devices from Firestore in real time
+  useEffect(() => {
+    try {
+      const surveysCol = collection(db, 'surveys');
+      const unsubscribe = onSnapshot(
+        surveysCol,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const cloudSurveys: SurveyItem[] = [];
+            snapshot.forEach((docSnap) => {
+              cloudSurveys.push(docSnap.data() as SurveyItem);
+            });
+            setSurveys(cloudSurveys);
+            try {
+              localStorage.setItem('taskvibe_surveys', JSON.stringify(cloudSurveys));
+            } catch {}
+          }
+        },
+        (error) => {
+          console.warn('Firestore surveys onSnapshot warning:', error);
+        }
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('Could not attach Firestore surveys listener:', err);
+    }
+  }, []);
+
   const hasInitialUserCloudSyncRef = useRef<boolean>(false);
   const skipNextFirestorePushRef = useRef<boolean>(false);
 
@@ -4696,7 +4724,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Admin settings saved successfully!');
   };
 
-  const addNewSurvey = (title: string, reward: number, description: string) => {
+  const addNewSurvey = async (title: string, reward: number, description: string) => {
     const newSurvey: SurveyItem = {
       id: `srv_${Date.now()}`,
       title,
@@ -4706,12 +4734,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: description || 'New opinion research task',
     };
     setSurveys((prev) => [newSurvey, ...prev]);
-    showToast('New survey added to user dashboard!');
+    try {
+      localStorage.setItem('taskvibe_surveys', JSON.stringify([newSurvey, ...surveys]));
+      await setDoc(doc(db, 'surveys', newSurvey.id), newSurvey, { merge: true });
+    } catch (e) {
+      console.warn('Could not save survey to Firestore:', e);
+    }
+    showToast('New survey added & broadcasted to all users!');
   };
 
-  const deleteSurvey = (id: string) => {
+  const deleteSurvey = async (id: string) => {
     setSurveys((prev) => prev.filter((s) => s.id !== id));
-    showToast('Survey removed.');
+    try {
+      await deleteDoc(doc(db, 'surveys', id));
+    } catch (e) {
+      console.warn('Could not delete survey from Firestore:', e);
+    }
+    showToast('Survey removed across all devices.');
   };
 
   return (

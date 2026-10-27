@@ -50,6 +50,12 @@ async function startServer() {
     });
   });
 
+  // Real-time network health check endpoint for online-only connectivity guard
+  app.get('/api/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    return res.json({ status: 'ok', online: true, timestamp: Date.now() });
+  });
+
   // Request logger for real-time diagnostics
   app.use((req, res, next) => {
     if (req.url.startsWith('/api')) {

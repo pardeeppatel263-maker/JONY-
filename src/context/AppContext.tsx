@@ -708,19 +708,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
+  // Current official release version of ZoroTask
+  const APP_BASE_VERSION = '2.7.0';
+
+  const isNewerVersion = (target?: string, current?: string): boolean => {
+    if (!target || !current) return false;
+    if (target.trim() === current.trim()) return false;
+    const tParts = target.trim().split('.').map((p) => parseInt(p, 10) || 0);
+    const cParts = current.trim().split('.').map((p) => parseInt(p, 10) || 0);
+    for (let i = 0; i < Math.max(tParts.length, cParts.length); i++) {
+      const t = tParts[i] || 0;
+      const c = cParts[i] || 0;
+      if (t > c) return true;
+      if (t < c) return false;
+    }
+    return false;
+  };
+
+  const isNativeApp = (): boolean => {
+    if (typeof window === 'undefined') return false;
+    return (
+      Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+      Boolean((window as any).AndroidBridge) ||
+      window.location.protocol === 'capacitor:' ||
+      window.location.hostname === 'localhost'
+    );
+  };
+
   const [installedAppVersion, setInstalledAppVersion] = useState(() => {
     try {
-      return localStorage.getItem('taskvibe_installed_version') || '2.6.0';
+      const stored = localStorage.getItem('taskvibe_installed_version');
+      if (stored) return stored;
+      // Fresh install or website visitor is automatically on latest base release v2.7.0
+      localStorage.setItem('taskvibe_installed_version', APP_BASE_VERSION);
+      return APP_BASE_VERSION;
     } catch {
-      return '2.6.0';
+      return APP_BASE_VERSION;
     }
   });
 
-  const latestAppVersion = adminSettings.appVersion || '2.7.0';
-  const isUpdateAvailable = installedAppVersion !== latestAppVersion;
+  const latestAppVersion = adminSettings.appVersion || APP_BASE_VERSION;
+  const isUpdateAvailable = isNewerVersion(latestAppVersion, installedAppVersion);
 
   const checkForAppUpdate = (manual = false) => {
-    const hasUpdate = installedAppVersion !== latestAppVersion;
+    const hasUpdate = isNewerVersion(latestAppVersion, installedAppVersion);
     if (manual) {
       if (hasUpdate) {
         setIsUpdateModalOpen(true);
@@ -735,34 +766,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsUpdateModalOpen(true);
   };
 
-  // Auto-broadcast update notification to all installed APK users on app launch & fetch /api/app-version
+  // Only broadcast update notification if Admin has released a NEWER version than installed
   useEffect(() => {
-    // 1. Fetch from server API endpoint
-    fetch('/api/app-version')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.success && data.currentVersion) {
-          const stored = localStorage.getItem('taskvibe_installed_version') || '2.6.0';
-          const sessionDismissed = sessionStorage.getItem('taskvibe_update_dismissed_session');
-          if (data.forceUpdate || (data.currentVersion !== stored && !sessionDismissed)) {
-            setIsUpdateModalOpen(true);
-          }
-        }
-      })
-      .catch(() => {});
+    try {
+      const target = adminSettings.appVersion || APP_BASE_VERSION;
+      const current = localStorage.getItem('taskvibe_installed_version') || APP_BASE_VERSION;
+      const hasNewerVersion = isNewerVersion(target, current);
 
-    // 2. Also listen to Firestore live adminSettings
-    const checkTimer = setTimeout(() => {
-      try {
-        const stored = localStorage.getItem('taskvibe_installed_version') || '2.6.0';
-        const target = adminSettings.appVersion || '2.7.0';
-        const sessionDismissed = sessionStorage.getItem('taskvibe_update_dismissed_session');
-        if (adminSettings.forceUpdateEnabled || (stored !== target && !sessionDismissed)) {
-          setIsUpdateModalOpen(true);
-        }
-      } catch {}
-    }, 400);
-    return () => clearTimeout(checkTimer);
+      // 1. If user already has the target version or higher, never show popup
+      if (!hasNewerVersion) {
+        setIsUpdateModalOpen(false);
+        return;
+      }
+
+      // 2. Check if user already dismissed this specific version update
+      const sessionDismissed = sessionStorage.getItem(`taskvibe_update_dismissed_${target}`);
+      if (sessionDismissed === 'true' && !adminSettings.forceUpdateEnabled) {
+        return;
+      }
+
+      // 3. For website visitors on browsers, do not show APK popup unless forced by admin
+      const isNative = isNativeApp();
+      if (!isNative && !adminSettings.forceUpdateEnabled) {
+        return;
+      }
+
+      // 4. Admin pushed an actual higher version: trigger modal
+      setIsUpdateModalOpen(true);
+    } catch (e) {
+      console.warn('Update check warning:', e);
+    }
   }, [adminSettings.appVersion, adminSettings.forceUpdateEnabled]);
 
   // Dynamic stack of screen-level back button handlers (e.g., bank picker, forgot password modal, notice popup)

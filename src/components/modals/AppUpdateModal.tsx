@@ -83,6 +83,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
     if (updateState === 'downloading') return;
     try {
       sessionStorage.setItem('taskvibe_update_dismissed_session', 'true');
+      sessionStorage.setItem(`taskvibe_update_dismissed_${targetVersion}`, 'true');
+      localStorage.setItem(`taskvibe_update_dismissed_${targetVersion}`, String(Date.now()));
     } catch {}
     onClose();
   };

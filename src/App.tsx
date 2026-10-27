@@ -227,10 +227,9 @@ const MainApp: React.FC = () => {
 
         {/* In-App 1-Click Update Modal */}
         <AppUpdateModal
-          isOpen={isUpdateModalOpen || (Boolean(adminSettings.forceUpdateEnabled) && !dismissUpdateModal)}
+          isOpen={isUpdateModalOpen}
           onClose={() => {
             setIsUpdateModalOpen(false);
-            setDismissUpdateModal(true);
           }}
         />
       </MobileFrame>

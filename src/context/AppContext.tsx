@@ -143,6 +143,7 @@ interface AppContextType {
   simulatePurchaseDirect: (plan: PlanItem) => void;
   copyText: (text: string, label?: string) => void;
   showToast: (msg: string) => void;
+  hideToast: () => void;
   toggleFrameMode: () => void;
   setFrameMode: (mode: 'mobile' | 'responsive') => void;
   resetAllData: () => void;
@@ -892,19 +893,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const data = docSnap.data() as RegisteredUserAccount;
             cloudUsers.push(data);
           });
-          // Authoritative sync: Firestore is the master source of truth
-          setRegisteredUsers(cloudUsers);
-          try {
-            localStorage.setItem('taskvibe_registered_users', JSON.stringify(cloudUsers));
-          } catch {}
+          // Authoritative sync: Firestore is the master source of truth when online and populated
+          if (cloudUsers.length > 0) {
+            setRegisteredUsers(cloudUsers);
+            try {
+              localStorage.setItem('taskvibe_registered_users', JSON.stringify(cloudUsers));
+            } catch {}
+          }
 
-          // Real-time synchronization & deletion guard for currently active user
+          // Real-time synchronization for currently active user
           try {
             const activeMob = localStorage.getItem('taskvibe_active_mobile');
             const authVal = localStorage.getItem('taskvibe_auth');
             if (activeMob && authVal === 'true') {
               const cleanActive = normalizeMobile(activeMob);
-              const isMasterAdmin = cleanActive === '9876543210' || cleanActive === '9999999999';
               const cloudSelf = cloudUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
 
               if (cloudSelf) {
@@ -926,28 +928,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
                   } catch {}
                 }
-              } else if (!isMasterAdmin) {
-                // USER WAS PERMANENTLY DELETED FROM FIRESTORE BY ADMIN!
-                console.warn(`[ZoroTask] User (+91 ${cleanActive}) was deleted by Admin! Terminating session immediately...`);
-                logout();
-                try {
-                  localStorage.removeItem('taskvibe_auth');
-                  localStorage.removeItem('taskvibe_active_mobile');
-                  localStorage.removeItem('taskvibe_user');
-                  localStorage.removeItem('taskvibe_txs');
-                  localStorage.removeItem('taskvibe_screen');
-                } catch {}
-                showToast('⚠️ Your account was permanently deleted by Admin. Please register as a new user.');
-                setCurrentScreen('register');
-                setHistoryStack(['register']);
               }
+              // NOTE: Never log out or delete local storage on cache miss or slow network!
+              // Active user profile and session are safely preserved in localStorage.
             }
           } catch (err) {
             console.warn('Real-time self user sync error:', err);
           }
         },
         (error) => {
-          console.warn('Firestore onSnapshot error:', error);
+          console.warn('Firestore onSnapshot error (continuing with offline cache):', error);
         }
       );
       return () => unsubscribe();
@@ -955,6 +945,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Could not attach Firestore users listener:', err);
     }
   }, []);
+
+  // Real-time deletion guard: ONLY terminates session if Admin explicitly created a tombstone in 'deleted_accounts'
+  useEffect(() => {
+    const activeMob = localStorage.getItem('taskvibe_active_mobile');
+    const authVal = localStorage.getItem('taskvibe_auth');
+    if (!activeMob || authVal !== 'true') return;
+    const cleanActive = normalizeMobile(activeMob);
+    if (!cleanActive || cleanActive === '9876543210' || cleanActive === '9999999999') return;
+
+    try {
+      const delDocRef = doc(db, 'deleted_accounts', cleanActive);
+      const unsub = onSnapshot(
+        delDocRef,
+        (snap) => {
+          // Strictly require authoritative server confirmation (not cached) and active online connectivity
+          if (snap.exists() && snap.data()?.deletedByAdmin && !snap.metadata.fromCache && (typeof navigator === 'undefined' || navigator.onLine)) {
+            console.warn(`[ZoroTask] User (+91 ${cleanActive}) was confirmed deleted by Admin in deleted_accounts.`);
+            logout();
+            try {
+              localStorage.removeItem('taskvibe_auth');
+              localStorage.removeItem('taskvibe_active_mobile');
+              localStorage.removeItem('taskvibe_user');
+              localStorage.removeItem('taskvibe_txs');
+              localStorage.removeItem('taskvibe_screen');
+            } catch {}
+            showToast('⚠️ Your account was permanently deleted by Admin. Please register as a new user.');
+            setCurrentScreen('register');
+            setHistoryStack(['register']);
+          }
+        },
+        (err) => {
+          console.warn('deleted_accounts listener error (ignored):', err);
+        }
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('Could not attach deleted_accounts listener:', e);
+    }
+  }, [isLoggedIn]);
 
   // Real-time listener: sync all UPI & QR deposits from Firestore across all devices
   useEffect(() => {
@@ -1369,11 +1398,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [user, transactions, isLoggedIn]);
 
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const showToast = (msg: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToastMessage(msg);
-    setTimeout(() => {
+    // Allow adequate reading time (minimum 4200ms, up to 8000ms for longer notices)
+    const duration = Math.max(4200, Math.min(8000, msg.length * 65));
+    toastTimerRef.current = setTimeout(() => {
       setToastMessage((current) => (current === msg ? null : current));
-    }, 2800);
+    }, duration);
+  };
+
+  const hideToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(null);
   };
 
   const copyText = (text: string, label = 'Copied') => {
@@ -1790,74 +1833,100 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!clean || clean.length < 10) return false;
     try {
       const snap = await getDocFromServer(doc(db, 'users', clean));
-      if (!snap.exists()) {
-        // Purge from local cache if deleted from server
-        setRegisteredUsers((prev) => prev.filter((u) => normalizeMobile(u.mobile) !== clean));
-        return false;
-      }
-      return true;
+      return snap.exists();
     } catch {
       try {
         const snap = await getDoc(doc(db, 'users', clean));
-        return snap.exists();
-      } catch {
-        return false;
-      }
+        if (snap.exists()) return true;
+      } catch {}
+      // When offline or on slow network, gracefully fall back to local registered users
+      return registeredUsers.some((u) => normalizeMobile(u.mobile) === clean);
     }
   };
 
   const login = async (mobile: string, pass: string): Promise<boolean> => {
     if (!mobile || !pass) {
-      showToast('Please enter both mobile number and password');
+      showToast('⚠️ Please enter both mobile number and password');
       return false;
     }
     const cleanMobile = normalizeMobile(mobile);
     if (cleanMobile.length < 10) {
-      showToast('Please enter a valid 10-digit mobile number');
+      showToast('⚠️ Please enter a valid 10-digit mobile number');
       return false;
     }
 
-    // 1. Authoritative verification directly against Firestore cloud server
-    let cloudSnap: any = null;
-    let serverCheckCompleted = false;
-    try {
-      const userRef = doc(db, 'users', cleanMobile);
-      cloudSnap = await getDocFromServer(userRef);
-      serverCheckCompleted = true;
-    } catch (err) {
-      console.warn('Firestore getDocFromServer failed during login, trying cached getDoc:', err);
-      try {
-        const userRef = doc(db, 'users', cleanMobile);
-        cloudSnap = await getDoc(userRef);
-        serverCheckCompleted = true;
-      } catch (e2) {
-        console.warn('Firestore fallback getDoc failed:', e2);
+    // Check local registered users / storage first to support offline & slow networks
+    const localUserMatch =
+      registeredUsers.find((u) => normalizeMobile(u.mobile) === cleanMobile) ||
+      (() => {
+        try {
+          const raw = localStorage.getItem('taskvibe_user');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && normalizeMobile(parsed.mobile) === cleanMobile) return parsed;
+          }
+        } catch {}
+        return null;
+      })();
+
+    // If account was already registered on this device, log in immediately without blocking on slow network
+    if (localUserMatch) {
+      if (localUserMatch.password && localUserMatch.password !== pass.trim()) {
+        showToast('❌ Incorrect password! Please enter the correct password.');
+        return false;
       }
+      if (localUserMatch.isBlocked) {
+        showToast('⛔ Your account has been suspended by administration.');
+        return false;
+      }
+
+      setUser(localUserMatch);
+      setTransactions(localUserMatch.transactions || []);
+      setIsLoggedIn(true);
+      setCurrentScreen('home');
+      setActiveTab('home');
+      setHistoryStack(['home']);
+
+      try {
+        localStorage.setItem('taskvibe_auth', 'true');
+        localStorage.setItem('taskvibe_active_mobile', cleanMobile);
+        localStorage.setItem('taskvibe_user', JSON.stringify(localUserMatch));
+        localStorage.setItem('taskvibe_txs', JSON.stringify(localUserMatch.transactions || []));
+        localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
+        window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
+      } catch (e) {
+        console.warn(e);
+      }
+
+      showToast(`✓ Welcome back, ${localUserMatch.name || 'User'}!`);
+
+      // Silently refresh fresh cloud data in background whenever network is ready (no error popups)
+      getDoc(doc(db, 'users', cleanMobile))
+        .then((snap) => {
+          if (snap.exists()) {
+            const fresh = snap.data() as RegisteredUserAccount;
+            setUser((curr) => ({ ...curr, ...fresh }));
+            if (fresh.transactions) setTransactions(fresh.transactions);
+          }
+        })
+        .catch(() => {});
+
+      return true;
     }
 
-    // CRITICAL: If Firestore confirms the document DOES NOT exist:
-    // This account was permanently deleted by Admin or never registered!
-    // NEVER fall back to local memory/localStorage!
-    if (!cloudSnap || !cloudSnap.exists()) {
-      // Purge any stale cache from local storage on this device
-      setRegisteredUsers((prev) => {
-        const next = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
-        try {
-          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-      try {
-        const activeMob = localStorage.getItem('taskvibe_active_mobile');
-        if (activeMob && normalizeMobile(activeMob) === cleanMobile) {
-          localStorage.removeItem('taskvibe_auth');
-          localStorage.removeItem('taskvibe_active_mobile');
-          localStorage.removeItem('taskvibe_user');
-          localStorage.removeItem('taskvibe_txs');
-        }
-      } catch {}
+    // Account not in local cache: connect to cloud database patiently
+    let cloudSnap: any = null;
+    try {
+      const userRef = doc(db, 'users', cleanMobile);
+      cloudSnap = await getDoc(userRef);
+    } catch (err) {
+      console.warn('Network slow/offline during login fetch:', err);
+      // No intrusive error popup on slow network; app simply waits for network to recover
+      return false;
+    }
 
-      showToast(`❌ Account (+91 ${cleanMobile}) was permanently deleted by Admin. You cannot login to the old account. Please click "Register Now" to create a new account.`);
+    if (!cloudSnap || !cloudSnap.exists()) {
+      showToast(`❌ Account (+91 ${cleanMobile}) registered nahi hai.`);
       return false;
     }
 
@@ -1885,6 +1954,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab('home');
     setHistoryStack(['home']);
 
+    // Cache user locally for future offline and slow-network resilience
+    setRegisteredUsers((prev) => {
+      const filtered = prev.filter((u) => normalizeMobile(u.mobile) !== cleanMobile);
+      const next = [matched, ...filtered];
+      try {
+        localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
     try {
       localStorage.setItem('taskvibe_auth', 'true');
       localStorage.setItem('taskvibe_active_mobile', cleanMobile);
@@ -1896,7 +1975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn(e);
     }
 
-    showToast(`✓ Login successful! Welcome back, ${matched.name}!`);
+    showToast(`✓ Login successful! Welcome back, ${matched.name || 'User'}!`);
     return true;
   };
 
@@ -4854,6 +4933,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         simulatePurchaseDirect,
         copyText,
         showToast,
+        hideToast,
         toggleFrameMode,
         setFrameMode,
         resetAllData,

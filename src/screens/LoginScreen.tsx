@@ -144,11 +144,17 @@ export const LoginScreen: React.FC = () => {
     setIsSendingResetOtp(true);
     setResetError('');
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setResetError('⚠️ Internet connection band hai. Kripya mobile data ya Wi-Fi chalu karein.');
+      showToast('⚠️ Internet connection offline hai. Kripya connection check karein.');
+      return;
+    }
+
     try {
       const existsInCloud = await checkPhoneExistsInFirestore(cleanMobile);
       if (!existsInCloud) {
-        setResetError(`Mobile number (+91 ${cleanMobile}) is not registered or was deleted! Please create an account first.`);
-        showToast(`❌ Mobile number +91 ${cleanMobile} is not registered or was deleted.`);
+        setResetError(`Mobile number (+91 ${cleanMobile}) registered nahi hai! Kripya pehle naya account banayein.`);
+        showToast(`❌ Mobile number (+91 ${cleanMobile}) registered nahi hai.`);
         return;
       }
 

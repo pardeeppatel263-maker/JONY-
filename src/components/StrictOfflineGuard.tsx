@@ -16,36 +16,38 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [showReconnectedBadge, setShowReconnectedBadge] = useState<boolean>(false);
 
-  // Active ping function to test real internet connectivity
+  // Active ping function to test real internet connectivity across APK and web
   const verifyConnectivity = useCallback(async (): Promise<boolean> => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return false;
     }
     try {
-      // Fast cache-busted ping to health endpoint
+      // 1. Android & browser standard captive portal check (mode: no-cors works everywhere without CORS restrictions)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`/api/health?t=${Date.now()}`, {
-        method: 'GET',
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      await fetch(`https://www.google.com/generate_204?t=${Date.now()}`, {
+        method: 'HEAD',
+        mode: 'no-cors',
         cache: 'no-store',
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      return res.ok;
+      return true;
     } catch {
-      // Fallback ping to favicon if server is slow
+      // 2. Fallback check against Firestore endpoint
       try {
         const controller2 = new AbortController();
         const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
-        const res2 = await fetch(`/favicon.ico?t=${Date.now()}`, {
+        await fetch(`https://firestore.googleapis.com/?t=${Date.now()}`, {
           method: 'HEAD',
+          mode: 'no-cors',
           cache: 'no-store',
           signal: controller2.signal,
         });
         clearTimeout(timeoutId2);
-        return res2.ok;
+        return true;
       } catch {
-        return false;
+        return typeof navigator !== 'undefined' ? navigator.onLine : false;
       }
     }
   }, []);

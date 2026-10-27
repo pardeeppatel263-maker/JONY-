@@ -4746,7 +4746,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateAdminSettings = async (newSettings: Partial<AdminSettings>) => {
-    const updated = { ...adminSettings, ...newSettings };
+    const wa = newSettings.supportWhatsapp !== undefined ? newSettings.supportWhatsapp : newSettings.whatsappSupportNumber;
+    const synced = {
+      ...newSettings,
+      ...(wa !== undefined ? { supportWhatsapp: wa, whatsappSupportNumber: wa } : {}),
+    };
+    const updated = { ...adminSettings, ...synced };
     setAdminSettings(updated);
     try {
       localStorage.setItem('taskvibe_admin_settings', JSON.stringify(updated));

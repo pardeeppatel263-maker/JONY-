@@ -72,15 +72,16 @@ export const HelpCenterScreen: React.FC = () => {
     }
   };
 
-  const whatsappVal = (adminSettings.whatsappSupportNumber || adminSettings.supportWhatsapp)?.trim() || '';
+  const whatsappVal = (adminSettings.supportWhatsapp || adminSettings.whatsappSupportNumber)?.trim() || '';
   const telegramVal = adminSettings.supportTelegram?.trim() || '';
 
   const handleOpenWhatsApp = () => {
     if (whatsappVal) {
       const cleanNumber = whatsappVal.replace(/\D/g, '');
+      const fullDigits = cleanNumber.length === 10 ? '91' + cleanNumber : cleanNumber;
       const url = whatsappVal.startsWith('http')
         ? whatsappVal
-        : `https://wa.me/${cleanNumber.length === 10 ? '91' + cleanNumber : cleanNumber}`;
+        : `https://wa.me/${fullDigits}?text=${encodeURIComponent('Hello ZoroTask Support! I need assistance with my account.')}`;
       window.open(url, '_blank');
       showToast('Opening WhatsApp Support chat...');
     } else {

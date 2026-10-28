@@ -1,4 +1,4 @@
-export const ZOROTASK_LOGO_PATH = '/src/assets/images/zorotask_app_logo_1791266560583.jpg';
+export const ZOROTASK_LOGO_PATH = '/assets/aistudio/ZoroTask-App-Logo-HD_d0d45c94.png';
 
 /**
  * Downloads the 1024x1024 Square HD ZoroTask App Icon as a PNG file

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
+import { TaskVibeLogo } from '../components/TaskVibeLogo';
 
 export const RegisterScreen: React.FC = () => {
   const {
@@ -269,6 +270,11 @@ export const RegisterScreen: React.FC = () => {
             <Download className="w-3.5 h-3.5 text-emerald-600" />
             <span>Download App</span>
           </a>
+        </div>
+
+        {/* Logo Card */}
+        <div className="p-2.5 bg-gradient-to-br from-blue-700 to-indigo-800 rounded-2xl shadow-md w-full flex justify-center mb-3">
+          <TaskVibeLogo size="md" theme="on-blue" showSubtitle={true} />
         </div>
 
         {/* Title */}

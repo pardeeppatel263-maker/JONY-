@@ -50,7 +50,7 @@ export const TaskVibeLogo: React.FC<TaskVibeLogoProps> = ({
           className={`relative flex items-center justify-center overflow-hidden shrink-0 transition-transform duration-200 border border-amber-300/40 bg-slate-900 ${iconContainerClass}`}
         >
           <img
-            src="/src/assets/images/zorotask_app_logo_1791266560583.jpg"
+            src="/assets/aistudio/ZoroTask-App-Logo-HD_d0d45c94.png"
             alt="ZoroTask Icon"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"

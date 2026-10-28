@@ -215,11 +215,21 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
           
           {updateState === 'prompt' && (
             <>
-              {/* Bold Playful Title matching user's image */}
-              <div className="space-y-1">
-                <span className="inline-block px-3 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-gradient-to-r from-pink-500 to-indigo-600 text-white shadow-xs">
+              {/* Brand Logo & Version Pill */}
+              <div className="flex items-center gap-2">
+                <img
+                  src="/assets/aistudio/ZoroTask-App-Logo-HD_d0d45c94.png"
+                  alt="ZoroTask"
+                  className="w-7 h-7 rounded-lg shadow-sm border border-amber-300/40 shrink-0"
+                />
+                <span className="font-black text-sm text-slate-900 tracking-tight">
+                  Zoro<span className="text-amber-500">Task</span>
+                </span>
+                <span className="inline-block px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-gradient-to-r from-pink-500 to-indigo-600 text-white shadow-xs">
                   v{targetVersion} Available
                 </span>
+              </div>
+              <div className="space-y-0.5">
                 <h2 className="text-2xl font-black text-[#522523] tracking-tight">
                   Updated Version
                 </h2>

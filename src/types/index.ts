@@ -73,6 +73,7 @@ export interface AdminSettings {
   withdrawalStartTime?: string;
   withdrawalEndTime?: string;
   withdrawalDaysNotice?: string;
+  payoutTimingNotice?: string;
   // App Maintenance Mode
   maintenanceMode?: boolean;
   maintenanceMessage?: string;
@@ -83,6 +84,8 @@ export interface AdminSettings {
   updateChangelog?: string;
   // Add Money Extra Bonus & Tiers
   addMoneyTiers?: AddMoneyTier[];
+  // VIP Plans persistent cloud backup
+  plans?: PlanItem[];
 }
 
 export interface AddMoneyTier {

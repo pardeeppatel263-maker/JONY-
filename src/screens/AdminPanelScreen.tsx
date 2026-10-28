@@ -64,6 +64,7 @@ import {
   TrendingDown,
   Landmark,
   Receipt,
+  Save,
 } from 'lucide-react';
 import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode, AddMoneyTier, AdminSettings } from '../types';
 import { compressImage } from '../utils/imageCompressor';
@@ -153,6 +154,7 @@ export const AdminPanelScreen: React.FC = () => {
     addVIPPlan,
     updateVIPPlan,
     deleteVIPPlan,
+    saveAllVIPPlans,
     resetUserDailyTasks,
     exportCompleteDatabase,
     importCompleteDatabase,
@@ -358,6 +360,9 @@ export const AdminPanelScreen: React.FC = () => {
   const [withdrawalDaysNoticeInput, setWithdrawalDaysNoticeInput] = useState(
     adminSettings.withdrawalDaysNotice || 'Mon - Sat (10:00 AM - 06:00 PM)'
   );
+  const [payoutTimingNoticeInput, setPayoutTimingNoticeInput] = useState(
+    adminSettings.payoutTimingNotice || 'Avg. Payout: Within 24hr'
+  );
 
   // Maintenance Mode State
   const [maintenanceModeInput, setMaintenanceModeInput] = useState(adminSettings.maintenanceMode ?? false);
@@ -515,6 +520,7 @@ export const AdminPanelScreen: React.FC = () => {
     if (adminSettings.withdrawalStartTime) setWithdrawalStartTimeInput(adminSettings.withdrawalStartTime);
     if (adminSettings.withdrawalEndTime) setWithdrawalEndTimeInput(adminSettings.withdrawalEndTime);
     if (adminSettings.withdrawalDaysNotice) setWithdrawalDaysNoticeInput(adminSettings.withdrawalDaysNotice);
+    if (adminSettings.payoutTimingNotice) setPayoutTimingNoticeInput(adminSettings.payoutTimingNotice);
     if (adminSettings.maintenanceMode !== undefined) setMaintenanceModeInput(adminSettings.maintenanceMode);
     if (adminSettings.maintenanceMessage) setMaintenanceMessageInput(adminSettings.maintenanceMessage);
     if (adminSettings.appVersion) setAppVersionInput(adminSettings.appVersion);
@@ -1051,6 +1057,7 @@ export const AdminPanelScreen: React.FC = () => {
       withdrawalStartTime: withdrawalStartTimeInput.trim() || '10:00 AM',
       withdrawalEndTime: withdrawalEndTimeInput.trim() || '06:00 PM',
       withdrawalDaysNotice: withdrawalDaysNoticeInput.trim() || 'Mon - Sat (10:00 AM - 06:00 PM)',
+      payoutTimingNotice: payoutTimingNoticeInput.trim() || 'Avg. Payout: Within 24hr',
       maintenanceMode: maintenanceModeInput,
       maintenanceMessage: maintenanceMessageInput.trim(),
       appVersion: appVersionInput.trim() || '2.7.0',
@@ -3383,27 +3390,40 @@ export const AdminPanelScreen: React.FC = () => {
                   Manage VIP tiers, add new plans, adjust prices, daily video task quotas, and rewards. Changes apply instantly to all users!
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextLv = Math.max(...plans.map((p) => p.level), 0) + 1;
-                  setNewPlanLevel(nextLv);
-                  setNewPlanTitle(`VIP ${nextLv} Plan`);
-                  setNewPlanPrice(nextLv * 1000);
-                  setNewPlanDailyIncome(nextLv * 60);
-                  setNewPlanDailyMissions(Math.min(10, nextLv + 1));
-                  setNewPlanValidity('365 days');
-                  setNewPlanBonus(nextLv * 100);
-                  setNewPlanBadge(`LV ${nextLv}`);
-                  setNewPlanTheme('amber');
-                  setNewPlanRecommended(false);
-                  setIsAddPlanModalOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 flex items-center gap-2 transition active:scale-95 shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Add New VIP Plan</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await saveAllVIPPlans();
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center gap-1.5 transition active:scale-95 shrink-0"
+                  title="Force-sync all VIP plans to persistent Cloud Database"
+                >
+                  <Save className="w-4 h-4 text-emerald-400" />
+                  <span>Save All to Cloud</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextLv = Math.max(...plans.map((p) => p.level), 0) + 1;
+                    setNewPlanLevel(nextLv);
+                    setNewPlanTitle(`VIP ${nextLv} Plan`);
+                    setNewPlanPrice(nextLv * 1000);
+                    setNewPlanDailyIncome(nextLv * 60);
+                    setNewPlanDailyMissions(Math.min(10, nextLv + 1));
+                    setNewPlanValidity('365 days');
+                    setNewPlanBonus(nextLv * 100);
+                    setNewPlanBadge(`LV ${nextLv}`);
+                    setNewPlanTheme('amber');
+                    setNewPlanRecommended(false);
+                    setIsAddPlanModalOpen(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 flex items-center gap-2 transition active:scale-95 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Add New VIP Plan</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -4017,6 +4037,20 @@ export const AdminPanelScreen: React.FC = () => {
                     placeholder="Mon - Sat (10:00 AM - 06:00 PM)"
                     className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-indigo-400"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-400">Avg. Payout Timing Display (Badge)</label>
+                  <input
+                    type="text"
+                    value={payoutTimingNoticeInput}
+                    onChange={(e) => setPayoutTimingNoticeInput(e.target.value)}
+                    placeholder="Avg. Payout: Within 24hr"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-indigo-400"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Shown on user's withdrawal screen top badge (e.g. "Avg. Payout: Within 24hr").
+                  </p>
                 </div>
               </div>
 

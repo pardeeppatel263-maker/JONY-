@@ -51,9 +51,29 @@
         "minWithdrawal": { "type": "number" },
         "upiId": { "type": "string" },
         "merchantName": { "type": "string" },
-        "announcementTitle": { "type": "string" },
-        "announcementMessage": { "type": "string" }
+        "announcementMessage": { "type": "string" },
+        "withdrawalDaysNotice": { "type": "string" },
+        "payoutTimingNotice": { "type": "string" }
       }
+    },
+    "Plan": {
+      "title": "Plan",
+      "description": "VIP Membership plan tier with daily income, missions, pricing and validity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "level": { "type": "number" },
+        "levelTag": { "type": "string" },
+        "badge": { "type": "string" },
+        "price": { "type": "number" },
+        "amount": { "type": "number" },
+        "dailyIncome": { "type": "number" },
+        "dailyMissions": { "type": "number" },
+        "validity": { "type": "string" },
+        "bonus": { "type": "number" },
+        "title": { "type": "string" }
+      },
+      "required": ["id", "level", "price", "dailyIncome", "dailyMissions"]
     }
   },
   "firestore": {
@@ -68,6 +88,10 @@
     "/settings/admin": {
       "schema": "AdminSettings",
       "description": "Master administration parameters and referral bonus configuration."
+    },
+    "/vip_plans/{planId}": {
+      "schema": "Plan",
+      "description": "Configurable VIP membership plans and reward tiers."
     }
   }
 }

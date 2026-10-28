@@ -251,8 +251,8 @@ export const WithdrawScreen: React.FC = () => {
               <span className="text-xs font-bold text-slate-100">
                 {adminSettings.withdrawalDaysNotice || 'Mon - Sat (10:00 AM - 06:00 PM)'}
               </span>
-              <span className="text-[10px] text-blue-200">
-                Avg. Payout: 15-30 Mins
+              <span className="text-[10px] text-blue-200 font-medium">
+                {adminSettings.payoutTimingNotice || 'Avg. Payout: Within 24hr'}
               </span>
             </div>
             <p className="text-[10px] text-blue-200 leading-snug">

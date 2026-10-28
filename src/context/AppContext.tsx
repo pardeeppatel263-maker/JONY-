@@ -183,6 +183,7 @@ interface AppContextType {
   addVIPPlan: (newPlan: PlanItem) => Promise<boolean>;
   updateVIPPlan: (planId: string, updates: Partial<PlanItem>) => Promise<boolean>;
   deleteVIPPlan: (planId: string) => Promise<boolean>;
+  saveAllVIPPlans: (customPlans?: PlanItem[]) => Promise<boolean>;
   resetUserDailyTasks: (mobile: string) => Promise<void>;
   exportCompleteDatabase: () => string;
   importCompleteDatabase: (jsonStr: string) => boolean;
@@ -615,6 +616,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     withdrawalStartTime: '10:00',
     withdrawalEndTime: '18:00',
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
+    payoutTimingNotice: 'Avg. Payout: Within 24hr',
     maintenanceMode: false,
     maintenanceMessage: 'ZoroTask platform is currently undergoing scheduled system maintenance. All user balances and active VIP plans are safe. We will be back online shortly!',
     appVersion: '2.7.0',
@@ -633,6 +635,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       { amount: 20000, bonus: 650 },
       { amount: 30000, bonus: 850 },
     ],
+    plans: initialPlans,
   };
 
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
@@ -650,6 +653,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...defaultAdminSettings,
           ...parsed,
           adminPassword: activePassword,
+          payoutTimingNotice: parsed.payoutTimingNotice || defaultAdminSettings.payoutTimingNotice || 'Avg. Payout: Within 24hr',
+          withdrawalDaysNotice: parsed.withdrawalDaysNotice || defaultAdminSettings.withdrawalDaysNotice,
           adminMerchantName: (parsed.adminMerchantName || defaultAdminSettings.adminMerchantName || '').replace(/TaskVibe/gi, 'ZoroTask'),
           announcementTitle: (parsed.announcementTitle || defaultAdminSettings.announcementTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
           announcementMessage: (parsed.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
@@ -1156,12 +1161,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const mergedSettings = {
               ...cloudSettings,
               adminPassword: activePassword,
+              payoutTimingNotice: cloudSettings.payoutTimingNotice || 'Avg. Payout: Within 24hr',
+              withdrawalDaysNotice: cloudSettings.withdrawalDaysNotice || defaultAdminSettings.withdrawalDaysNotice,
               adminMerchantName: (cloudSettings.adminMerchantName || defaultAdminSettings.adminMerchantName || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementTitle: (cloudSettings.announcementTitle || defaultAdminSettings.announcementTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementTag: (cloudSettings.announcementTag && cloudSettings.announcementTag !== 'NEW UPDATE') ? cloudSettings.announcementTag : 'NOTICE',
               youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
             };
+            if (Array.isArray(cloudSettings.plans) && cloudSettings.plans.length > 0) {
+              const sorted = [...cloudSettings.plans].sort((a, b) => (a.level || 0) - (b.level || 0));
+              setPlans(sorted);
+              try {
+                localStorage.setItem('taskvibe_plans', JSON.stringify(sorted));
+              } catch {}
+            }
             setAdminSettings((prev) => ({
               ...prev,
               ...mergedSettings,
@@ -1237,7 +1251,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   }, []);
 
-  // Real-time listener: sync VIP Plans from Firestore across all devices
+  // Real-time listener: sync VIP Plans from Firestore across all devices (NEVER overwrite admin edits!)
   useEffect(() => {
     try {
       const plansCol = collection(db, 'vip_plans');
@@ -1252,39 +1266,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           });
 
-          // Ensure all base plans + locally saved admin plans + cloud plans are preserved!
-          const planMap = new Map<string, PlanItem>();
-          initialPlans.forEach((p) => planMap.set(p.id, p));
+          // 1. If Firestore already has plans, they are the ONLY source of truth!
+          // NEVER force-merge initialPlans or resurrect deleted/customized plans!
+          if (cloudPlans.length > 0) {
+            const sortedPlans = [...cloudPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+            setPlans(sortedPlans);
+            try {
+              localStorage.setItem('taskvibe_plans', JSON.stringify(sortedPlans));
+              // Also keep persistent backup in settings/admin
+              await setDoc(doc(db, 'settings', 'admin'), { plans: sortedPlans }, { merge: true });
+            } catch (e) {
+              console.warn(e);
+            }
+            return;
+          }
+
+          // 2. If Firestore vip_plans collection is empty, check settings/admin backup first:
+          try {
+            const settingsDocRef = doc(db, 'settings', 'admin');
+            const snap = await getDoc(settingsDocRef);
+            if (snap.exists() && Array.isArray(snap.data()?.plans) && snap.data().plans.length > 0) {
+              const adminBackupPlans: PlanItem[] = snap.data().plans;
+              const sorted = [...adminBackupPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+              setPlans(sorted);
+              try {
+                localStorage.setItem('taskvibe_plans', JSON.stringify(sorted));
+                for (const p of sorted) {
+                  await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
+                }
+              } catch {}
+              return;
+            }
+          } catch (checkErr) {
+            console.warn('Checking admin settings for plans backup:', checkErr);
+          }
+
+          // 3. Check localStorage before falling back to initial default plans:
           try {
             const localSaved = localStorage.getItem('taskvibe_plans');
             if (localSaved) {
               const parsedLocal: PlanItem[] = JSON.parse(localSaved);
-              if (Array.isArray(parsedLocal)) {
-                parsedLocal.forEach((p) => {
-                  if (p && p.id) planMap.set(p.id, p);
-                });
+              if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+                const sorted = [...parsedLocal].sort((a, b) => (a.level || 0) - (b.level || 0));
+                setPlans(sorted);
+                for (const p of sorted) {
+                  await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
+                }
+                return;
               }
             }
           } catch {}
-          cloudPlans.forEach((p) => planMap.set(p.id, p));
-          const mergedPlans = Array.from(planMap.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
 
-          setPlans(mergedPlans);
+          // 4. Pure first-time database seed (only if completely empty):
+          const baseSorted = [...initialPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+          setPlans(baseSorted);
           try {
-            localStorage.setItem('taskvibe_plans', JSON.stringify(mergedPlans));
-          } catch (e) {
-            console.warn(e);
-          }
-
-          // If any base plan was missing in Firestore, seed it in background
-          try {
-            for (const p of initialPlans) {
-              if (!cloudPlans.some((cp) => cp.id === p.id)) {
-                await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
-              }
+            localStorage.setItem('taskvibe_plans', JSON.stringify(baseSorted));
+            for (const p of baseSorted) {
+              await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
             }
+            await setDoc(doc(db, 'settings', 'admin'), { plans: baseSorted }, { merge: true });
           } catch (seedErr) {
-            console.warn('Syncing base plans to Firestore:', seedErr);
+            console.warn('Initial seed of base plans to Firestore:', seedErr);
           }
         },
         (error) => {
@@ -4362,15 +4405,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {
     try {
       await setDoc(doc(db, 'vip_plans', newPlan.id), newPlan, { merge: true });
-      setPlans((prev) => {
-        const filtered = prev.filter((p) => p.id !== newPlan.id);
-        const next = [...filtered, newPlan].sort((a, b) => (a.level || 0) - (b.level || 0));
-        try {
-          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-      showToast(`✓ VIP Plan "${newPlan.title}" added to cloud!`);
+      const filtered = plans.filter((p) => p.id !== newPlan.id);
+      const next = [...filtered, newPlan].sort((a, b) => (a.level || 0) - (b.level || 0));
+      setPlans(next);
+      try {
+        localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
+      } catch (backupErr) {
+        console.warn('Backup plans to settings/admin warning:', backupErr);
+      }
+      showToast(`✓ VIP Plan "${newPlan.title}" added & saved permanently!`);
       return true;
     } catch (err) {
       console.error('Failed to add VIP plan to Firestore', err);
@@ -4382,14 +4426,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateVIPPlan = async (planId: string, updates: Partial<PlanItem>): Promise<boolean> => {
     try {
       await setDoc(doc(db, 'vip_plans', planId), updates, { merge: true });
-      setPlans((prev) => {
-        const next = prev.map((p) => (p.id === planId ? { ...p, ...updates } : p));
-        try {
-          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-      showToast('✓ VIP Plan updated in cloud database!');
+      const next = plans.map((p) => (p.id === planId ? { ...p, ...updates } : p));
+      setPlans(next);
+      try {
+        localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
+      } catch (backupErr) {
+        console.warn('Backup plans to settings/admin warning:', backupErr);
+      }
+      showToast('✓ VIP Plan updated & saved permanently in Cloud!');
       return true;
     } catch (err) {
       console.error('Failed to update VIP plan in Firestore', err);
@@ -4401,18 +4446,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteVIPPlan = async (planId: string): Promise<boolean> => {
     try {
       await deleteDoc(doc(db, 'vip_plans', planId));
-      setPlans((prev) => {
-        const next = prev.filter((p) => p.id !== planId);
-        try {
-          localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
+      const next = plans.filter((p) => p.id !== planId);
+      setPlans(next);
+      try {
+        localStorage.setItem('taskvibe_plans', JSON.stringify(next));
+        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
+      } catch (backupErr) {
+        console.warn('Backup plans to settings/admin warning:', backupErr);
+      }
       showToast('✓ VIP Plan deleted from cloud database.');
       return true;
     } catch (err) {
       console.error('Failed to delete VIP plan from Firestore', err);
       showToast('❌ Failed to delete VIP plan');
+      return false;
+    }
+  };
+
+  const saveAllVIPPlans = async (customPlans?: PlanItem[]): Promise<boolean> => {
+    const listToSave = customPlans || plans;
+    try {
+      for (const p of listToSave) {
+        await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
+      }
+      await setDoc(doc(db, 'settings', 'admin'), { plans: listToSave }, { merge: true });
+      setPlans(listToSave);
+      try {
+        localStorage.setItem('taskvibe_plans', JSON.stringify(listToSave));
+      } catch {}
+      showToast('✓ All VIP Plans synchronized & permanently saved to Cloud!');
+      return true;
+    } catch (err) {
+      console.error('Failed to save all VIP plans:', err);
+      showToast('❌ Failed to save VIP plans to cloud');
       return false;
     }
   };
@@ -4829,6 +4895,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const synced = {
       ...newSettings,
       ...(wa !== undefined ? { supportWhatsapp: wa, whatsappSupportNumber: wa } : {}),
+      // CRITICAL: Always keep active VIP plans safely preserved in settings/admin!
+      ...(plans && plans.length > 0 ? { plans } : {}),
     };
     const updated = { ...adminSettings, ...synced };
     setAdminSettings(updated);
@@ -4972,6 +5040,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addVIPPlan,
         updateVIPPlan,
         deleteVIPPlan,
+        saveAllVIPPlans,
         resetUserDailyTasks,
         exportCompleteDatabase,
         importCompleteDatabase,

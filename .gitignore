@@ -6,8 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
-node-compile-cache/
-pw-*/
-run/
-tsx-*/
-.tmp_apk/
+.aistudio/
+public/assets/aistudio/

@@ -252,11 +252,8 @@ export const RegisterScreen: React.FC = () => {
               Registration &bull; OTP Verified
             </span>
           </div>
-          <a
-            href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
-              (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
-            }t=${Date.now()}`}
-            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               downloadApkToDevice(
@@ -269,7 +266,7 @@ export const RegisterScreen: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
             <span>Download App</span>
-          </a>
+          </button>
         </div>
 
         {/* Logo Card */}

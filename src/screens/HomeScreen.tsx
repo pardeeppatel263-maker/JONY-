@@ -595,16 +595,13 @@ export const HomeScreen: React.FC = () => {
           {/* Install Official App & Download APK Section */}
           {!isStandalone && (
             <div>
-              <a
-                href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
-                  (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
-                }t=${Date.now()}`}
-                download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
+              <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDownloadApp();
                 }}
-                className="cursor-pointer rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 p-3.5 text-white shadow-md flex items-center justify-between hover:shadow-lg transition-all active:scale-98 border border-emerald-500/30 block"
+                className="w-full text-left cursor-pointer rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 p-3.5 text-white shadow-md flex items-center justify-between hover:shadow-lg transition-all active:scale-98 border border-emerald-500/30"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shadow-inner">
@@ -623,7 +620,7 @@ export const HomeScreen: React.FC = () => {
                   <span>Download</span>
                   <ArrowRight className="w-4 h-4 text-white shrink-0" />
                 </div>
-              </a>
+              </button>
             </div>
           )}
         </main>

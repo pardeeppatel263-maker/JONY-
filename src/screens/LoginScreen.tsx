@@ -289,11 +289,8 @@ export const LoginScreen: React.FC = () => {
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             Official Portal
           </span>
-          <a
-            href={`${adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk'}${
-              (adminSettings.apkDownloadUrl || '/ZoroTask-Official.apk').includes('?') ? '&' : '?'
-            }t=${Date.now()}`}
-            download={`ZoroTask-Official-v${adminSettings.appVersion || '2.7.0'}.apk`}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               handleStartDownload();
@@ -302,7 +299,7 @@ export const LoginScreen: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" />
             <span>Download App</span>
-          </a>
+          </button>
         </div>
 
         <div className="p-2.5 bg-gradient-to-br from-blue-700 to-indigo-800 rounded-2xl shadow-md w-full max-w-sm flex justify-center">

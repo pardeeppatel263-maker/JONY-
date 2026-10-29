@@ -107,6 +107,10 @@ export const DailySurveyScreen: React.FC = () => {
 
             <button
               onClick={() => {
+                if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                  showToast('❌ No Internet Connection! Turn on Mobile Data or Wi-Fi to take surveys.');
+                  return;
+                }
                 if (user.isBlocked) {
                   showToast('❌ Your account has been blocked by administration. Surveys are not available.');
                   return;

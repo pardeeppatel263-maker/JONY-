@@ -1,13 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { surveyQuestions } from '../../data/initialData';
-import { X, CheckCircle2, Sparkles, ArrowRight, HelpCircle } from 'lucide-react';
+import { X, CheckCircle2, Sparkles, ArrowRight, HelpCircle, WifiOff } from 'lucide-react';
 
 export const SurveyModal: React.FC = () => {
-  const { isSurveyModalOpen, setIsSurveyModalOpen, submitDailySurveyTask, adminSettings } = useApp();
+  const { isSurveyModalOpen, setIsSurveyModalOpen, submitDailySurveyTask, adminSettings, showToast } = useApp();
   const reward = adminSettings.dailySurveyReward || 150;
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   if (!isSurveyModalOpen) return null;
 
@@ -23,6 +37,10 @@ export const SurveyModal: React.FC = () => {
   };
 
   const handleNext = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Turn on Mobile Data or Wi-Fi to submit surveys.');
+      return;
+    }
     if (!isSelected) return;
     if (isLastQuestion) {
       submitDailySurveyTask(selectedAnswers);
@@ -96,6 +114,13 @@ export const SurveyModal: React.FC = () => {
             })}
           </div>
 
+          {!isOnline && (
+            <div className="p-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 flex items-center gap-2 text-xs">
+              <WifiOff className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-bold">⚠️ No Internet • Survey submission paused. Turn ON Mobile Data.</span>
+            </div>
+          )}
+
           <div className="pt-2 flex items-center justify-between border-t border-slate-100">
             <div className="flex items-center gap-1 text-[11px] font-black text-emerald-600">
               <Sparkles className="w-3.5 h-3.5" />
@@ -104,15 +129,26 @@ export const SurveyModal: React.FC = () => {
 
             <button
               onClick={handleNext}
-              disabled={!isSelected}
+              disabled={!isSelected || !isOnline}
               className={`py-2 px-5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
-                isSelected
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-95'
+                !isOnline
+                  ? 'bg-rose-100 text-rose-600 border border-rose-300 cursor-not-allowed'
+                  : isSelected
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-95 cursor-pointer'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              <span>{isLastQuestion ? `Submit for Verification (+₹${reward})` : 'Next'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {!isOnline ? (
+                <>
+                  <WifiOff className="w-3.5 h-3.5" />
+                  <span>Internet Required</span>
+                </>
+              ) : (
+                <>
+                  <span>{isLastQuestion ? `Submit for Verification (+₹${reward})` : 'Next'}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
         </div>

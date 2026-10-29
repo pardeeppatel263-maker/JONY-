@@ -78,6 +78,10 @@ export const MissionTasksScreen: React.FC = () => {
   const allTasks = videoMissions;
 
   const handleStartTask = (category: string, taskNum?: number) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Turn on Mobile Data or Wi-Fi to start tasks.');
+      return;
+    }
     if (user.isBlocked) {
       showToast('❌ Your account has been suspended by administration. Tasks are not available.');
       return;

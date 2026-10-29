@@ -3275,6 +3275,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ifsc?: string;
     }
   ) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Withdrawal requests require an active internet connection.');
+      return { success: false, message: 'No internet connection' };
+    }
     if (user.isBlocked) {
       showToast('❌ Your account is blocked by administration. Withdrawal requests cannot be submitted.');
       return { success: false, message: 'Account is blocked by admin' };
@@ -3357,6 +3361,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitDailySurveyTask = (answers?: Record<number, string>) => {
     setIsSurveyModalOpen(false);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Surveys require an active internet connection.');
+      return;
+    }
     if (user.isBlocked) {
       showToast('❌ Your account is blocked by administration. Surveys cannot be submitted.');
       return;
@@ -3633,6 +3641,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const openVideoTask = (taskNum?: number) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Video tasks require an active internet connection. Please turn on Mobile Data.');
+      return;
+    }
     if (user.isBlocked) {
       showToast('❌ Your account is blocked by administration. Video tasks are not available.');
       return;
@@ -3657,6 +3669,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitYouTubeVideoTask = async (videoTitle?: string, videoUrl?: string) => {
     setIsWatchingVideo(false);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Task cannot be submitted or rewarded offline.');
+      return;
+    }
     if (user.isBlocked) {
       showToast('❌ Your account is blocked by administration. Tasks cannot be submitted.');
       return;

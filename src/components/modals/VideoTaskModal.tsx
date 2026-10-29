@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Play, Pause, CheckCircle2, ExternalLink, ShieldCheck, Youtube, AlertTriangle } from 'lucide-react';
+import { X, Play, Pause, CheckCircle2, ExternalLink, ShieldCheck, Youtube, AlertTriangle, WifiOff } from 'lucide-react';
 
 export const extractYouTubeId = (urlOrId: string) => {
   if (!urlOrId) return 'dQw4w9WgXcQ';
@@ -27,7 +27,26 @@ export const VideoTaskModal: React.FC = () => {
     userDailyVideoMissions,
     currentPlayingTaskNum,
     navigate,
+    showToast,
   } = useApp();
+
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => {
+      setIsOnline(false);
+      setIsVideoPlaying(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const duration = Math.max(30, adminSettings.youtubeVideoDurationSec || 30);
   const [countdown, setCountdown] = useState(duration);
@@ -117,11 +136,11 @@ export const VideoTaskModal: React.FC = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // Countdown timer ONLY runs when YouTube video is ACTUALLY PLAYING!
+  // Countdown timer ONLY runs when YouTube video is ACTUALLY PLAYING AND ONLINE!
   // "JAB TAK YT VD START N HO TAB TAK 30SEC WATCH TIME SURU N HO"
   useEffect(() => {
     if (!isWatchingVideo || isFinished) return;
-    if (!isVideoPlaying) return; // Strictly frozen when not playing!
+    if (!isVideoPlaying || !isOnline) return; // Strictly frozen when not playing or when offline!
 
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -135,7 +154,7 @@ export const VideoTaskModal: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isWatchingVideo, isVideoPlaying, isFinished]);
+  }, [isWatchingVideo, isVideoPlaying, isFinished, isOnline]);
 
   if (!isWatchingVideo) return null;
 
@@ -179,6 +198,10 @@ export const VideoTaskModal: React.FC = () => {
   }
 
   const handlePlayCommand = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Video cannot stream without Mobile Data or Wi-Fi.');
+      return;
+    }
     try {
       iframeRef.current?.contentWindow?.postMessage(
         JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
@@ -204,6 +227,10 @@ export const VideoTaskModal: React.FC = () => {
   };
 
   const handleSubmit = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('❌ No Internet Connection! Turn on Mobile Data to claim rewards.');
+      return;
+    }
     submitYouTubeVideoTask(videoTitle, `https://www.youtube.com/watch?v=${videoId}`);
   };
 
@@ -312,8 +339,16 @@ export const VideoTaskModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Video Playing Status Banner */}
-          {!isFinished && (
+          {/* Video Playing Status Banner & Offline Alert */}
+          {!isOnline ? (
+            <div className="p-2.5 rounded-xl border border-rose-500/70 bg-rose-950/70 text-rose-300 flex items-center justify-between text-[11px] animate-pulse">
+              <div className="flex items-center gap-1.5">
+                <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="font-bold">⚠️ No Internet • Timer Paused (Turn ON Mobile Data)</span>
+              </div>
+              <span className="text-[10px] font-mono text-rose-400 font-bold">Offline</span>
+            </div>
+          ) : !isFinished ? (
             <div
               className={`p-2 rounded-xl border flex items-center justify-between text-[11px] ${
                 isVideoPlaying
@@ -337,20 +372,20 @@ export const VideoTaskModal: React.FC = () => {
                 {isVideoPlaying ? `${countdown}s left` : 'Waiting for video'}
               </span>
             </div>
-          )}
+          ) : null}
 
           {/* Progress bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-slate-400 font-mono">
               <span>Required watch time: {duration}s</span>
-              <span className={isFinished ? 'text-emerald-400 font-bold' : isVideoPlaying ? 'text-emerald-400' : 'text-amber-400'}>
-                {isFinished ? '✓ 30s Completed!' : `${countdown}s remaining`}
+              <span className={!isOnline ? 'text-rose-400 font-bold' : isFinished ? 'text-emerald-400 font-bold' : isVideoPlaying ? 'text-emerald-400' : 'text-amber-400'}>
+                {!isOnline ? 'Paused (Offline)' : isFinished ? '✓ 30s Completed!' : `${countdown}s remaining`}
               </span>
             </div>
             <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-1000 ${
-                  isFinished ? 'bg-emerald-500' : isVideoPlaying ? 'bg-emerald-500' : 'bg-amber-500'
+                  !isOnline ? 'bg-rose-500' : isFinished ? 'bg-emerald-500' : isVideoPlaying ? 'bg-emerald-500' : 'bg-amber-500'
                 }`}
                 style={{ width: `${progressPercent}%` }}
               />
@@ -361,14 +396,21 @@ export const VideoTaskModal: React.FC = () => {
           <div className="pt-1">
             <button
               onClick={handleSubmit}
-              disabled={!isFinished}
+              disabled={!isFinished || !isOnline}
               className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                isFinished
+                !isOnline
+                  ? 'bg-rose-950/60 border border-rose-800/80 text-rose-300 cursor-not-allowed'
+                  : isFinished
                   ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:opacity-95 text-white shadow-lg shadow-emerald-900/40 active:scale-95 animate-pulse cursor-pointer'
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
             >
-              {isFinished ? (
+              {!isOnline ? (
+                <>
+                  <WifiOff className="w-4 h-4 text-rose-400" />
+                  <span>Internet Required to Claim (Turn on Mobile Data)</span>
+                </>
+              ) : isFinished ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-white" />
                   <span>Claim ₹{rewardAmount} &amp; Add to Wallet! 💰</span>

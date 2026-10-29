@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { WifiOff, RefreshCw, ShieldAlert, SignalZero, AlertCircle, Smartphone } from 'lucide-react';
+import { WifiOff, RefreshCw, ShieldAlert, SignalZero, Smartphone } from 'lucide-react';
 
 interface StrictOfflineGuardProps {
   children?: React.ReactNode;
@@ -21,7 +21,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
   const checkConnectivity = useCallback(async (): Promise<boolean> => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setIsOnline(false);
-      setLastCheckedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastCheckedTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       return false;
     }
 
@@ -36,13 +36,13 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
 
       const onlineStatus = res.ok;
       setIsOnline(onlineStatus);
-      setLastCheckedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastCheckedTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       return onlineStatus;
     } catch {
       // If server ping fails or times out, consider connection offline
       const fallbackStatus = typeof navigator !== 'undefined' ? navigator.onLine : false;
       setIsOnline(fallbackStatus);
-      setLastCheckedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastCheckedTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       return fallbackStatus;
     } finally {
       setIsChecking(false);
@@ -57,7 +57,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
 
     const handleOffline = () => {
       setIsOnline(false);
-      setLastCheckedTime(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastCheckedTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
 
     window.addEventListener('online', handleOnline);
@@ -82,7 +82,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
     };
   }, [checkConnectivity]);
 
-  // When internet is disconnected, render high-priority security barrier
+  // When internet is disconnected, render high-priority security barrier in 100% English
   if (!isOnline) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-white font-sans selection:bg-rose-500 selection:text-white">
@@ -99,13 +99,13 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400 text-[11px] font-black uppercase tracking-wider">
               <SignalZero className="w-3.5 h-3.5" />
-              <span>Internet Required • इंटरनेट आवश्यक</span>
+              <span>Internet Connection Required</span>
             </div>
             <h2 className="text-xl font-black text-white tracking-tight">
               No Internet Connection!
             </h2>
-            <p className="text-sm font-bold text-rose-300">
-              आपके फोन में इंटरनेट चालू नहीं है
+            <p className="text-sm font-semibold text-rose-300">
+              Your device is currently offline
             </p>
           </div>
 
@@ -113,13 +113,13 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
           <div className="bg-slate-950/70 rounded-2xl p-3.5 border border-slate-800 text-left space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
               <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>टास्क सुरक्षा नियम (Security Protocol):</span>
+              <span>Security Protocol:</span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              ZoroTask में टास्क पूरा करने, वीडियो देखने, सर्वे करने और वॉलेट बैलेंस सुरक्षित रूप से क्रेडिट करने के लिए <b>Active Internet (Mobile Data / Wi-Fi)</b> चालू रहना अनिवार्य है।
+              An active internet connection (<b>Mobile Data or Wi-Fi</b>) is strictly required to stream videos, complete surveys, verify tasks, and safely sync your wallet balance.
             </p>
             <p className="text-[10px] text-rose-300/90 font-medium">
-              ⚠️ बिना इंटरनेट के कोई भी टास्क या कमाई मान्य नहीं होगी।
+              ⚠️ Tasks and reward credits cannot be processed while offline.
             </p>
           </div>
 
@@ -127,20 +127,20 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
           <div className="text-left text-[11px] text-slate-400 space-y-2 bg-slate-800/40 p-3 rounded-2xl border border-slate-700/50">
             <div className="flex items-center gap-1.5 text-slate-300 font-bold text-xs">
               <Smartphone className="w-3.5 h-3.5 text-blue-400" />
-              <span>इंटरनेट कैसे ऑन करें? (How to connect):</span>
+              <span>How to Reconnect:</span>
             </div>
             <ul className="space-y-1.5 pl-1 text-[11px]">
               <li className="flex items-start gap-2">
                 <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">1</span>
-                <span>फोन का नोटिफिकेशन बार नीचे करके <b>Mobile Data</b> या <b>Wi-Fi</b> ऑन करें।</span>
+                <span>Pull down your phone's notification bar and turn on <b>Mobile Data</b> or <b>Wi-Fi</b>.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">2</span>
-                <span>चेक करें कि <b>Airplane Mode (Flight Mode)</b> बंद हो।</span>
+                <span>Ensure <b>Airplane Mode (Flight Mode)</b> is turned OFF.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">3</span>
-                <span>इंटरनेट ऑन होने के बाद नीचे <b>"Retry Connection"</b> दबाएं।</span>
+                <span>Once reconnected, tap the <b>"Retry Connection"</b> button below.</span>
               </li>
             </ul>
           </div>
@@ -153,7 +153,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-blue-600/30 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
             >
               <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
-              <span>{isChecking ? 'Checking Internet... (जाँच हो रही है)' : 'Retry Connection (दोबारा चेक करें)'}</span>
+              <span>{isChecking ? 'Checking Internet Connection...' : 'Retry Connection'}</span>
             </button>
 
             <button
@@ -161,7 +161,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
               className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1.5 border border-slate-700"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reload App (पेज रीलोड करें)</span>
+              <span>Reload App</span>
             </button>
           </div>
 

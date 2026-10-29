@@ -510,7 +510,7 @@ export const VideoTaskModal: React.FC = () => {
               <div>
                 <p className="text-xs font-black text-white">Click to Start YouTube Video</p>
                 <p className="text-[10px] text-amber-300 font-medium mt-0.5">
-                  जब वीडियो चालू होगा तभी 30 सेकंड का टाइमर शुरू होगा
+                  Watch timer will only run while the video is actively playing
                 </p>
               </div>
             </div>
@@ -690,7 +690,7 @@ export const VideoTaskModal: React.FC = () => {
 
           <p className="text-[10px] text-emerald-400 text-center flex items-center justify-center gap-1 font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>जब वीडियो 30 सेकंड चलेगा तभी रिवार्ड क्लेम कर सकेंगे!</span>
+            <span>Reward can only be claimed once the video plays for full 30 seconds!</span>
           </p>
         </div>
       </div>

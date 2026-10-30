@@ -353,6 +353,7 @@ export const AdminPanelScreen: React.FC = () => {
   const [youtubeVideoTitleInput, setYoutubeVideoTitleInput] = useState(adminSettings.youtubeVideoTitle || 'Official Sponsor Video');
   const [supportWhatsappInput, setSupportWhatsappInput] = useState(adminSettings.supportWhatsapp || '');
   const [supportTelegramInput, setSupportTelegramInput] = useState(adminSettings.supportTelegram || '');
+  const [vipSupportTelegramInput, setVipSupportTelegramInput] = useState(adminSettings.vipSupportTelegram || '');
 
   // Withdrawal Timings State
   const [withdrawalStartTimeInput, setWithdrawalStartTimeInput] = useState(adminSettings.withdrawalStartTime || '10:00 AM');
@@ -517,6 +518,7 @@ export const AdminPanelScreen: React.FC = () => {
     setYoutubeVideoTitleInput(adminSettings.youtubeVideoTitle || 'Official Sponsor Video');
     setSupportWhatsappInput(adminSettings.supportWhatsapp || '');
     setSupportTelegramInput(adminSettings.supportTelegram || '');
+    setVipSupportTelegramInput(adminSettings.vipSupportTelegram || '');
     if (adminSettings.withdrawalStartTime) setWithdrawalStartTimeInput(adminSettings.withdrawalStartTime);
     if (adminSettings.withdrawalEndTime) setWithdrawalEndTimeInput(adminSettings.withdrawalEndTime);
     if (adminSettings.withdrawalDaysNotice) setWithdrawalDaysNoticeInput(adminSettings.withdrawalDaysNotice);
@@ -1054,6 +1056,7 @@ export const AdminPanelScreen: React.FC = () => {
       dailySurveyReward: parseFloat(dailySurveyRewardInput) || 150,
       supportWhatsapp: supportWhatsappInput.trim(),
       supportTelegram: supportTelegramInput.trim(),
+      vipSupportTelegram: vipSupportTelegramInput.trim(),
       withdrawalStartTime: withdrawalStartTimeInput.trim() || '10:00 AM',
       withdrawalEndTime: withdrawalEndTimeInput.trim() || '06:00 PM',
       withdrawalDaysNotice: withdrawalDaysNoticeInput.trim() || 'Mon - Sat (10:00 AM - 06:00 PM)',
@@ -3984,13 +3987,26 @@ export const AdminPanelScreen: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Support Telegram</label>
+                  <label className="text-xs font-bold text-slate-300">Support Telegram Channel</label>
                   <input
                     type="text"
                     value={supportTelegramInput}
                     onChange={(e) => setSupportTelegramInput(e.target.value)}
-                    placeholder="https://t.me/yourgroup"
+                    placeholder="https://t.me/yourchannel"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>👑 VIP Telegram Support Link</span>
+                    <span className="text-[10px] font-normal text-amber-400/80">(Direct 1-on-1 VIP Assistance)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={vipSupportTelegramInput}
+                    onChange={(e) => setVipSupportTelegramInput(e.target.value)}
+                    placeholder="https://t.me/ZoroTaskVIPSupport"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-amber-500/40 text-sm text-white outline-none focus:border-amber-400"
                   />
                 </div>
               </div>

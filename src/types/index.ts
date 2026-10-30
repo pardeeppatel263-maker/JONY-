@@ -34,6 +34,7 @@ export interface AdminSettings {
   youtubeVideoDurationSec: number;
   supportWhatsapp?: string;
   supportTelegram?: string;
+  vipSupportTelegram?: string;
   // WhatsApp API Gateway Settings
   whatsappApiEnabled?: boolean;
   whatsappProvider?: 'meta_cloud' | 'green_api' | 'ultramsg' | 'evolution' | 'renflair' | 'custom' | 'direct';

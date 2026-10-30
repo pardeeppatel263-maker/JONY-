@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Upload,
+  Crown,
 } from 'lucide-react';
 import { SupportTicket } from '../types';
 
@@ -98,6 +99,20 @@ export const HelpCenterScreen: React.FC = () => {
       showToast('Opening Telegram Support channel...');
     } else {
       showToast('⚠️ Telegram support link is not configured yet. Configure it in Admin Panel Settings.');
+    }
+  };
+
+  const vipTelegramVal = (adminSettings.vipSupportTelegram || adminSettings.supportTelegram)?.trim() || '';
+
+  const handleOpenVipTelegram = () => {
+    if (vipTelegramVal) {
+      const url = vipTelegramVal.startsWith('http')
+        ? vipTelegramVal
+        : `https://t.me/${vipTelegramVal.replace('@', '')}`;
+      window.open(url, '_blank');
+      showToast('Opening VIP Telegram Support...');
+    } else {
+      showToast('⚠️ VIP Telegram support link is not configured yet. Configure it in Admin Panel Settings.');
     }
   };
 
@@ -367,12 +382,38 @@ export const HelpCenterScreen: React.FC = () => {
                     <div className="text-left">
                       <span className="text-xs font-bold text-sky-950 block">Telegram Channel / Support</span>
                       <span className="text-[10px] text-sky-700">
-                        {telegramVal ? telegramVal : 'Join official community & updates'}
+                        {telegramVal ? telegramVal : 'https://t.me/zorotask'}
                       </span>
                     </div>
                   </div>
                   <span className="text-[10px] font-black text-sky-800 bg-white/80 px-2.5 py-1 rounded-lg border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition-colors">
                     Join Channel &rarr;
+                  </span>
+                </button>
+
+                {/* VIP Telegram Support Button */}
+                <button
+                  onClick={handleOpenVipTelegram}
+                  className="w-full p-3 bg-gradient-to-r from-amber-50 to-yellow-50 hover:from-amber-100/90 hover:to-yellow-100/90 border border-amber-300 rounded-xl flex items-center justify-between transition-all group active:scale-98 shadow-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-yellow-500 text-slate-950 flex items-center justify-center shadow-xs">
+                      <Crown className="w-4 h-4 fill-amber-950/20" />
+                    </div>
+                    <div className="text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-amber-950 block">VIP Telegram Support</span>
+                        <span className="text-[9px] font-black uppercase bg-amber-400 text-amber-950 px-1.5 py-0.2 rounded shadow-2xs">
+                          VIP
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-amber-800 font-medium block">
+                        {vipTelegramVal ? vipTelegramVal : 'https://t.me/ZoroTaskVIPSupport'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-amber-950 bg-white/90 px-2.5 py-1 rounded-lg border border-amber-300 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors shrink-0">
+                    Connect VIP &rarr;
                   </span>
                 </button>
 

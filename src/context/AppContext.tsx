@@ -601,6 +601,7 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
     youtubeVideoDurationSec: 30,
     supportWhatsapp: '+91 9876543210',
     supportTelegram: 'https://t.me/ZoroTaskSupport',
+    vipSupportTelegram: 'https://t.me/ZoroTaskVIPSupport',
     whatsappApiEnabled: true,
     whatsappProvider: 'renflair',
     whatsappInstanceId: '',

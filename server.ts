@@ -39,19 +39,18 @@ async function startServer() {
   app.get('/api/app-version', (_req, res) => {
     return res.json({
       success: true,
-      currentVersion: '2.7.0',
-      versionCode: 27,
-      releaseDate: '26 Oct 2026',
-      apkFileName: 'ZoroTask-Official-v2.7.apk',
+      currentVersion: '2.8.0',
+      versionCode: 28,
+      releaseDate: '30 Oct 2026',
+      apkFileName: 'ZoroTask-Official-v2.8.apk',
       downloadUrl: '/ZoroTask-Official.apk',
-      fileSizeMb: '8.92 MB',
+      fileSizeMb: '18.66 MB',
       forceUpdate: false,
       changelog: [
-        '⚡ 1-Click In-App Direct APK Updater (Zero uninstall required)',
-        '🚀 In-place update preserving user wallet balance and login session',
-        '🔄 Real-time Firestore balance & task auto-sync',
-        '📱 Seamless Android package installer handoff',
-        '🛡️ Enhanced APK integrity & keystore certificate verification'
+        '📶 Full-Screen Low Internet Connection Popup Modal with instant reconnect',
+        '🔒 Total app function lock when offline - prevents errors and preserves session',
+        '👑 All 8 VIP Membership Plans (Level 0 Starter to Level 7 Grand Master) synced',
+        '⚡ In-place 1-click update directly from app'
       ]
     });
   });

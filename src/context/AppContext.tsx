@@ -464,10 +464,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
+  const map = new Map<string, PlanItem>();
+  initialPlans.forEach((p) => map.set(p.id, p));
+  if (Array.isArray(list)) {
+    list.forEach((p) => {
+      if (p && p.id) {
+        const base = map.get(p.id) || p;
+        map.set(p.id, { ...base, ...p });
+      }
+    });
+  }
+  return Array.from(map.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
+};
+
   const [plans, setPlans] = useState<PlanItem[]>(() => {
     try {
       const saved = localStorage.getItem('taskvibe_plans');
-      return saved ? JSON.parse(saved) : initialPlans;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return mergeWithInitialPlans(parsed);
+        }
+      }
+      return initialPlans;
     } catch {
       return initialPlans;
     }
@@ -619,7 +639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     payoutTimingNotice: 'Avg. Payout: Within 24hr',
     maintenanceMode: false,
     maintenanceMessage: 'ZoroTask platform is currently undergoing scheduled system maintenance. All user balances and active VIP plans are safe. We will be back online shortly!',
-    appVersion: '2.7.0',
+    appVersion: '2.8.0',
     apkDownloadUrl: '/ZoroTask-Official.apk',
     forceUpdateEnabled: true,
     updateChangelog: '⚡ 1-Click In-App Direct APK Updater (No uninstall needed) • In-place update preserving user wallet balance & login • Instant Firestore sync • Enhanced Android package installer handoff',
@@ -715,7 +735,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
   // Current official release version of ZoroTask
-  const APP_BASE_VERSION = '2.7.0';
+  const APP_BASE_VERSION = '2.8.0';
 
   const isNewerVersion = (target?: string, current?: string): boolean => {
     if (!target || !current) return false;
@@ -1210,10 +1230,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!current.adminPassword || legacy.includes(current.adminPassword)) {
             updates.adminPassword = 'Gagan@123';
           }
-          if (!current.appVersion || current.appVersion < '2.7.0') {
-            updates.appVersion = '2.7.0';
+          if (!current.appVersion || current.appVersion < '2.8.0') {
+            updates.appVersion = '2.8.0';
             updates.apkDownloadUrl = '/ZoroTask-Official.apk';
-            updates.updateChangelog = '⚡ 1-Click in-app update now live! Update to v2.7 without uninstalling. All balance & data 100% safe.';
+            updates.updateChangelog = '📶 Full-Screen Offline Guard Popup • 👑 All 8 VIP Membership Plans Synced • ⚡ In-place APK updater';
           }
           if (Object.keys(updates).length > 0) {
             await setDoc(settingsDocRef, updates, { merge: true });
@@ -1266,10 +1286,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           });
 
-          // 1. If Firestore already has plans, they are the ONLY source of truth!
-          // NEVER force-merge initialPlans or resurrect deleted/customized plans!
+          // 1. If Firestore already has plans, merge with initialPlans to ensure all 8 VIP levels are always available
           if (cloudPlans.length > 0) {
-            const sortedPlans = [...cloudPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+            const sortedPlans = mergeWithInitialPlans(cloudPlans);
             setPlans(sortedPlans);
             try {
               localStorage.setItem('taskvibe_plans', JSON.stringify(sortedPlans));
@@ -1287,7 +1306,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const snap = await getDoc(settingsDocRef);
             if (snap.exists() && Array.isArray(snap.data()?.plans) && snap.data().plans.length > 0) {
               const adminBackupPlans: PlanItem[] = snap.data().plans;
-              const sorted = [...adminBackupPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+              const sorted = mergeWithInitialPlans(adminBackupPlans);
               setPlans(sorted);
               try {
                 localStorage.setItem('taskvibe_plans', JSON.stringify(sorted));
@@ -1307,7 +1326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (localSaved) {
               const parsedLocal: PlanItem[] = JSON.parse(localSaved);
               if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
-                const sorted = [...parsedLocal].sort((a, b) => (a.level || 0) - (b.level || 0));
+                const sorted = mergeWithInitialPlans(parsedLocal);
                 setPlans(sorted);
                 for (const p of sorted) {
                   await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
@@ -1318,7 +1337,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } catch {}
 
           // 4. Pure first-time database seed (only if completely empty):
-          const baseSorted = [...initialPlans].sort((a, b) => (a.level || 0) - (b.level || 0));
+          const baseSorted = mergeWithInitialPlans(initialPlans);
           setPlans(baseSorted);
           try {
             localStorage.setItem('taskvibe_plans', JSON.stringify(baseSorted));

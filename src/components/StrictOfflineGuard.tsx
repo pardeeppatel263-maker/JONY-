@@ -6,17 +6,54 @@ interface StrictOfflineGuardProps {
 }
 
 /**
- * Robust network probe:
- * 1. Checks navigator.onLine first (instant offline detection in mobile and browsers)
- * 2. Probes local server /api/ping and fallback Google gstatic endpoint
+ * Universal dual probe for both Web Browsers and Android APK WebViews:
+ * 1. Checks navigator.onLine first
+ * 2. Attempts an uncached image DNS/HTTP probe with strict timeout (works in WebView even if navigator.onLine lags)
+ * 3. Probes /api/ping or Google generate_204 endpoint
  */
-async function probeConnectivity(): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    return false;
-  }
+function probeViaImage(): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      let finished = false;
+
+      const timer = setTimeout(() => {
+        if (!finished) {
+          finished = true;
+          img.src = '';
+          resolve(false);
+        }
+      }, 1500);
+
+      img.onload = () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(timer);
+          resolve(true);
+        }
+      };
+
+      img.onerror = () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(timer);
+          resolve(false);
+        }
+      };
+
+      // Uncached image request to guarantee real network activity
+      img.src = `https://www.google.com/favicon.ico?_t=${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function probeViaFetch(): Promise<boolean> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
+    const timer = setTimeout(() => controller.abort(), 1600);
+    // If on website, /api/ping responds in <2ms
     const res = await fetch(`/api/ping?_t=${Date.now()}`, {
       method: 'GET',
       cache: 'no-store',
@@ -25,27 +62,31 @@ async function probeConnectivity(): Promise<boolean> {
     clearTimeout(timer);
     return res.status === 204 || res.ok;
   } catch {
-    try {
-      const fallbackCtrl = new AbortController();
-      const fbTimer = setTimeout(() => fallbackCtrl.abort(), 1800);
-      await fetch(`https://connectivitycheck.gstatic.com/generate_204?_t=${Date.now()}`, {
-        method: 'HEAD',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: fallbackCtrl.signal,
-      });
-      clearTimeout(fbTimer);
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
+}
+
+async function probeConnectivity(): Promise<boolean> {
+  // If browser/device explicitly says offline, it's 100% offline
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return false;
+  }
+
+  // Probe via real image download (fails fast with onerror when Wi-Fi/Mobile Data is off on Android)
+  const imageOk = await probeViaImage();
+  if (imageOk) {
+    return true;
+  }
+
+  // Secondary probe via fetch
+  const fetchOk = await probeViaFetch();
+  return fetchOk;
 }
 
 /**
  * StrictOfflineGuard:
  * When internet is disconnected:
- * - NO top buffering bar appears (completely removed per user request).
+ * - NO top buffering bar appears.
  * - Displays the official uploaded "Low Internet Connection" full-screen blocking popup.
  * - Entire app is disabled and blocked from user interaction until internet reconnects.
  * - Automatically dismisses as soon as active internet connection is restored.
@@ -110,8 +151,8 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
     // Initial check
     checkStatus(false);
 
-    // Continuous probe every 2.5s to instantly detect reconnection
-    const interval = setInterval(() => checkStatus(false), 2500);
+    // Continuous probe every 2s to detect disconnect/reconnect immediately on both Android APK & Web
+    const interval = setInterval(() => checkStatus(false), 2000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -140,10 +181,19 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
           <div className="relative w-full max-w-[380px] flex flex-col items-center">
             {/* The Uploaded Image Card */}
             <div className="relative w-full aspect-square rounded-3xl overflow-hidden shadow-2xl shadow-blue-950/80 border border-blue-500/30 bg-[#070e24]">
+              {/* Fallback UI in case offline image takes a moment */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#091538] to-[#040817]">
+                <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center mb-3">
+                  <WifiOff className="w-8 h-8 text-blue-400" />
+                </div>
+                <h3 className="text-base font-bold text-white mb-1">Low Internet Connection</h3>
+                <p className="text-xs text-blue-200/80 mb-6">Please check your internet connection and try again.</p>
+              </div>
+
               <img
                 src="/offline-popup.jpeg"
                 alt="Low Internet Connection"
-                className="w-full h-full object-contain block select-none pointer-events-none"
+                className="relative z-10 w-full h-full object-contain block select-none pointer-events-none"
                 loading="eager"
               />
 
@@ -152,7 +202,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
                 type="button"
                 onClick={handleManualRetry}
                 disabled={isChecking}
-                className="absolute left-[22%] right-[22%] bottom-[13%] h-[9%] rounded-2xl bg-transparent active:bg-white/20 hover:bg-white/10 transition-all flex items-center justify-center cursor-pointer focus:outline-none"
+                className="relative z-20 absolute left-[20%] right-[20%] bottom-[12%] h-[12%] rounded-2xl bg-transparent active:bg-white/20 hover:bg-white/10 transition-all flex items-center justify-center cursor-pointer focus:outline-none"
                 title="Tap OK to check connection"
               >
                 {isChecking && (

@@ -395,6 +395,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // One-time cleanup to purge legacy demo user and mock data from localStorage
   useEffect(() => {
     try {
+      localStorage.removeItem('taskvibe_plans');
+      localStorage.removeItem('taskvibe_surveys');
+      localStorage.removeItem('taskvibe_tasks');
+      localStorage.removeItem('taskvibe_selected_plan');
+
       const activeMob = localStorage.getItem('taskvibe_active_mobile');
       const userRaw = localStorage.getItem('taskvibe_user');
       if (activeMob && normalizeMobile(activeMob) === '9876543210') {
@@ -469,60 +474,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [tasks, setTasks] = useState<TaskItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('taskvibe_tasks');
-      return saved ? JSON.parse(saved) : initialTasks;
-    } catch {
-      return initialTasks;
-    }
-  });
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
 
-  const [surveys, setSurveys] = useState<SurveyItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('taskvibe_surveys');
-      return saved ? JSON.parse(saved) : initialSurveys;
-    } catch {
-      return initialSurveys;
-    }
-  });
+  const [surveys, setSurveys] = useState<SurveyItem[]>([]);
 
-const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
-  const map = new Map<string, PlanItem>();
-  initialPlans.forEach((p) => map.set(p.id, p));
-  if (Array.isArray(list)) {
+  const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
+    if (!Array.isArray(list)) return [];
+    const map = new Map<string, PlanItem>();
     list.forEach((p) => {
       if (p && p.id) {
-        const base = map.get(p.id) || p;
-        map.set(p.id, { ...base, ...p });
+        map.set(p.id, p);
       }
     });
-  }
-  return Array.from(map.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
-};
+    return Array.from(map.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
+  };
 
-  const [plans, setPlans] = useState<PlanItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('taskvibe_plans');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return mergeWithInitialPlans(parsed);
-        }
-      }
-      return initialPlans;
-    } catch {
-      return initialPlans;
-    }
-  });
-  const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(() => {
-    try {
-      const saved = localStorage.getItem('taskvibe_selected_plan');
-      return saved ? JSON.parse(saved) : initialPlans[0];
-    } catch {
-      return initialPlans[0];
-    }
-  });
+  const [plans, setPlans] = useState<PlanItem[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
 
   useEffect(() => {
     if (selectedPlan) {
@@ -533,7 +501,7 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
       }
     }
   }, [selectedPlan]);
-  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const [taskSubmissions, setTaskSubmissions] = useState<TaskSubmission[]>(() => {
     try {
@@ -942,13 +910,11 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
             const data = docSnap.data() as RegisteredUserAccount;
             cloudUsers.push(data);
           });
-          // Authoritative sync: Firestore is the master source of truth when online and populated
-          if (cloudUsers.length > 0) {
-            setRegisteredUsers(cloudUsers);
-            try {
-              localStorage.setItem('taskvibe_registered_users', JSON.stringify(cloudUsers));
-            } catch {}
-          }
+          // Authoritative sync: Firestore is the master source of truth
+          setRegisteredUsers(cloudUsers);
+          try {
+            localStorage.setItem('taskvibe_registered_users', JSON.stringify(cloudUsers));
+          } catch {}
 
           // Real-time synchronization for currently active user
           try {
@@ -977,9 +943,18 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
                     localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
                   } catch {}
                 }
+              } else if (!snapshot.metadata.fromCache) {
+                // If user was deleted from Cloud Firestore: log them out completely and clear local data
+                setUser(emptyUser);
+                setTransactions([]);
+                setIsLoggedIn(false);
+                try {
+                  localStorage.removeItem('taskvibe_auth');
+                  localStorage.removeItem('taskvibe_active_mobile');
+                  localStorage.removeItem('taskvibe_user');
+                  localStorage.removeItem('taskvibe_txs');
+                } catch {}
               }
-              // NOTE: Never log out or delete local storage on cache miss or slow network!
-              // Active user profile and session are safely preserved in localStorage.
             }
           } catch (err) {
             console.warn('Real-time self user sync error:', err);
@@ -1295,13 +1270,13 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
     } catch {}
   }, []);
 
-  // Real-time listener: sync VIP Plans from Firestore across all devices (NEVER overwrite admin edits!)
+  // Real-time listener: sync VIP Plans from Firestore across all devices (100% Cloud-driven, NO auto-seeding or resurrecting deleted plans)
   useEffect(() => {
     try {
       const plansCol = collection(db, 'vip_plans');
       const unsubscribe = onSnapshot(
         plansCol,
-        async (snapshot) => {
+        (snapshot) => {
           const cloudPlans: PlanItem[] = [];
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as PlanItem;
@@ -1310,67 +1285,13 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
             }
           });
 
-          // 1. If Firestore already has plans, merge with initialPlans to ensure all 8 VIP levels are always available
-          if (cloudPlans.length > 0) {
-            const sortedPlans = mergeWithInitialPlans(cloudPlans);
-            setPlans(sortedPlans);
-            try {
-              localStorage.setItem('taskvibe_plans', JSON.stringify(sortedPlans));
-              // Also keep persistent backup in settings/admin
-              await setDoc(doc(db, 'settings', 'admin'), { plans: sortedPlans }, { merge: true });
-            } catch (e) {
-              console.warn(e);
-            }
-            return;
-          }
-
-          // 2. If Firestore vip_plans collection is empty, check settings/admin backup first:
-          try {
-            const settingsDocRef = doc(db, 'settings', 'admin');
-            const snap = await getDoc(settingsDocRef);
-            if (snap.exists() && Array.isArray(snap.data()?.plans) && snap.data().plans.length > 0) {
-              const adminBackupPlans: PlanItem[] = snap.data().plans;
-              const sorted = mergeWithInitialPlans(adminBackupPlans);
-              setPlans(sorted);
-              try {
-                localStorage.setItem('taskvibe_plans', JSON.stringify(sorted));
-                for (const p of sorted) {
-                  await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
-                }
-              } catch {}
-              return;
-            }
-          } catch (checkErr) {
-            console.warn('Checking admin settings for plans backup:', checkErr);
-          }
-
-          // 3. Check localStorage before falling back to initial default plans:
-          try {
-            const localSaved = localStorage.getItem('taskvibe_plans');
-            if (localSaved) {
-              const parsedLocal: PlanItem[] = JSON.parse(localSaved);
-              if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
-                const sorted = mergeWithInitialPlans(parsedLocal);
-                setPlans(sorted);
-                for (const p of sorted) {
-                  await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
-                }
-                return;
-              }
-            }
-          } catch {}
-
-          // 4. Pure first-time database seed (only if completely empty):
-          const baseSorted = mergeWithInitialPlans(initialPlans);
-          setPlans(baseSorted);
-          try {
-            localStorage.setItem('taskvibe_plans', JSON.stringify(baseSorted));
-            for (const p of baseSorted) {
-              await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
-            }
-            await setDoc(doc(db, 'settings', 'admin'), { plans: baseSorted }, { merge: true });
-          } catch (seedErr) {
-            console.warn('Initial seed of base plans to Firestore:', seedErr);
+          // Exactly what is in Firestore
+          const sortedPlans = cloudPlans.sort((a, b) => (a.level || 0) - (b.level || 0));
+          setPlans(sortedPlans);
+          if (sortedPlans.length > 0) {
+            setSelectedPlan((prev) => (prev ? sortedPlans.find((p) => p.id === prev.id) || sortedPlans[0] : sortedPlans[0]));
+          } else {
+            setSelectedPlan(null);
           }
         },
         (error) => {
@@ -1390,16 +1311,15 @@ const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
       const unsubscribe = onSnapshot(
         surveysCol,
         (snapshot) => {
-          if (!snapshot.empty) {
-            const cloudSurveys: SurveyItem[] = [];
-            snapshot.forEach((docSnap) => {
-              cloudSurveys.push(docSnap.data() as SurveyItem);
-            });
-            setSurveys(cloudSurveys);
-            try {
-              localStorage.setItem('taskvibe_surveys', JSON.stringify(cloudSurveys));
-            } catch {}
-          }
+          const cloudSurveys: SurveyItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as SurveyItem;
+            if (data && data.id) {
+              cloudSurveys.push(data);
+            }
+          });
+          // Exactly what is in Firestore
+          setSurveys(cloudSurveys);
         },
         (error) => {
           console.warn('Firestore surveys onSnapshot warning:', error);

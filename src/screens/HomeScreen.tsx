@@ -553,44 +553,46 @@ export const HomeScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Compact Auto-Scrolling Recent Payouts Ticker (Single Sleek Bar with 30 names) */}
-          <div
-            onClick={() => navigate('withdraw')}
-            className="cursor-pointer bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/90 rounded-2xl p-2.5 px-3 border border-emerald-200 shadow-xs flex items-center justify-between overflow-hidden hover:border-emerald-300 transition-all active:scale-98"
-          >
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {/* Pulsing Live Dot & Label */}
-              <div className="flex items-center gap-1 shrink-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-2xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                <span>LIVE</span>
+          {/* Compact Auto-Scrolling Recent Payouts Ticker (Single Sleek Bar) */}
+          {liveWithdrawals.length > 0 && liveWithdrawals[activeWithdrawalIdx] && (
+            <div
+              onClick={() => navigate('withdraw')}
+              className="cursor-pointer bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/90 rounded-2xl p-2.5 px-3 border border-emerald-200 shadow-xs flex items-center justify-between overflow-hidden hover:border-emerald-300 transition-all active:scale-98"
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {/* Pulsing Live Dot & Label */}
+                <div className="flex items-center gap-1 shrink-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                  <span>LIVE</span>
+                </div>
+
+                {/* Ticker Item rotating 1-by-1 */}
+                <div
+                  key={activeWithdrawalIdx}
+                  className="flex items-center gap-1.5 min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 truncate"
+                >
+                  <span className="text-xs font-bold text-slate-800 truncate">
+                    {liveWithdrawals[activeWithdrawalIdx].name}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                    ({liveWithdrawals[activeWithdrawalIdx].phone})
+                  </span>
+                  <span className="text-[9px] text-emerald-800 bg-white border border-emerald-200 px-1.5 py-0.5 rounded-md font-bold shrink-0 flex items-center gap-1 shadow-2xs">
+                    <PaymentBrandBadge method={liveWithdrawals[activeWithdrawalIdx].method} size={11} />
+                    <span>{liveWithdrawals[activeWithdrawalIdx].method}</span>
+                  </span>
+                </div>
               </div>
 
-              {/* Ticker Item rotating 1-by-1 */}
-              <div
-                key={activeWithdrawalIdx}
-                className="flex items-center gap-1.5 min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 truncate"
-              >
-                <span className="text-xs font-bold text-slate-800 truncate">
-                  {liveWithdrawals[activeWithdrawalIdx].name}
+              {/* Amount Badge */}
+              <div className="shrink-0 pl-2 flex items-center gap-1 text-right">
+                <span className="text-xs font-black text-emerald-600 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full shadow-2xs">
+                  {liveWithdrawals[activeWithdrawalIdx].amount}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                  ({liveWithdrawals[activeWithdrawalIdx].phone})
-                </span>
-                <span className="text-[9px] text-emerald-800 bg-white border border-emerald-200 px-1.5 py-0.5 rounded-md font-bold shrink-0 flex items-center gap-1 shadow-2xs">
-                  <PaymentBrandBadge method={liveWithdrawals[activeWithdrawalIdx].method} size={11} />
-                  <span>{liveWithdrawals[activeWithdrawalIdx].method}</span>
-                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               </div>
             </div>
-
-            {/* Amount Badge (₹1,000, ₹2,000, ₹3,000) */}
-            <div className="shrink-0 pl-2 flex items-center gap-1 text-right">
-              <span className="text-xs font-black text-emerald-600 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full shadow-2xs">
-                {liveWithdrawals[activeWithdrawalIdx].amount}
-              </span>
-              <ArrowRight className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            </div>
-          </div>
+          )}
 
           {/* Install Official App & Download APK Section */}
           {!isStandalone && (

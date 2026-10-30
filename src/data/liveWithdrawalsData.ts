@@ -85,4 +85,4 @@ function generateWithdrawalsList(count = 850): LiveWithdrawalItem[] {
   return list;
 }
 
-export const liveWithdrawalsList: LiveWithdrawalItem[] = generateWithdrawalsList(850);
+export const liveWithdrawalsList: LiveWithdrawalItem[] = [];

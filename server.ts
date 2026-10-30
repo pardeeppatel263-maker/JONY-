@@ -29,6 +29,12 @@ async function startServer() {
     return res.status(404).send('APK file not found');
   });
 
+  // Lightweight connectivity ping route
+  app.get('/api/ping', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.status(204).end();
+  });
+
   // App Version & In-App 1-Click Update Info Endpoint
   app.get('/api/app-version', (_req, res) => {
     return res.json({

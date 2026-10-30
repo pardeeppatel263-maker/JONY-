@@ -221,36 +221,18 @@ const normalizeMobile = (m?: string | null) => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Stored registered users database
+  // Stored registered users database (synced from Cloud Firestore)
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUserAccount[]>(() => {
     try {
       const saved = localStorage.getItem('taskvibe_registered_users');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Exclude any stale dummy/demo user
+          return parsed.filter((u) => normalizeMobile(u.mobile) !== '9876543210' && u.name !== 'Pardeep Patel');
+        }
       }
-      // Demo initial registered account (existing account with trial expired)
-      const defaultAcc: RegisteredUserAccount = {
-        name: 'Pardeep Patel',
-        mobile: '+91 9876543210',
-        email: 'pardeep@zorotask.in',
-        referralCode: 'ZT982143',
-        balance: 0,
-        totalEarned: 0,
-        withdrawn: 0,
-        upiId: '9876543210@upi',
-        joinedDate: '27 Sep 2026',
-        joinedTimestamp: 1789000000000,
-        trialStartedAt: 1789000000000,
-        isNewTrialEligible: false,
-        freeTrialOverride: 'disabled',
-        password: 'admin',
-        vipLevel: 0,
-        vipTag: 'Free Starter',
-        transactions: [],
-      };
-      localStorage.setItem('taskvibe_registered_users', JSON.stringify([defaultAcc]));
-      return [defaultAcc];
+      return [];
     } catch {
       return [];
     }
@@ -260,14 +242,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const savedAuth = localStorage.getItem('taskvibe_auth');
       const savedUserRaw = localStorage.getItem('taskvibe_user');
-      if (savedAuth === 'true') {
-        if (savedUserRaw) {
-          const parsed = JSON.parse(savedUserRaw);
-          if (parsed && (parsed.mobile || parsed.name)) {
-            return true;
+      if (savedAuth === 'true' && savedUserRaw) {
+        const parsed = JSON.parse(savedUserRaw);
+        if (parsed && (parsed.mobile || parsed.name)) {
+          // Stale demo user check: clean up if found
+          if (normalizeMobile(parsed.mobile) === '9876543210' || parsed.name === 'Pardeep Patel') {
+            try {
+              localStorage.removeItem('taskvibe_auth');
+              localStorage.removeItem('taskvibe_user');
+              localStorage.removeItem('taskvibe_active_mobile');
+            } catch {}
+            return false;
           }
+          return true;
         }
-        return true;
       }
       return false;
     } catch {
@@ -404,6 +392,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLoggedIn, currentScreen]);
 
+  // One-time cleanup to purge legacy demo user and mock data from localStorage
+  useEffect(() => {
+    try {
+      const activeMob = localStorage.getItem('taskvibe_active_mobile');
+      const userRaw = localStorage.getItem('taskvibe_user');
+      if (activeMob && normalizeMobile(activeMob) === '9876543210') {
+        localStorage.removeItem('taskvibe_active_mobile');
+        localStorage.removeItem('taskvibe_auth');
+        localStorage.removeItem('taskvibe_user');
+        localStorage.removeItem('taskvibe_txs');
+      }
+      if (userRaw && userRaw.includes('Pardeep Patel')) {
+        localStorage.removeItem('taskvibe_user');
+        localStorage.removeItem('taskvibe_auth');
+      }
+      const regRaw = localStorage.getItem('taskvibe_registered_users');
+      if (regRaw && regRaw.includes('9876543210')) {
+        const parsed = JSON.parse(regRaw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((u: any) => normalizeMobile(u.mobile) !== '9876543210' && u.name !== 'Pardeep Patel');
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(filtered));
+        }
+      }
+    } catch (e) {
+      console.warn('LocalStorage cleanup error:', e);
+    }
+  }, []);
+
   // Stored state with local storage fallback
   const [user, setUser] = useState<UserProfile>(() => {
     try {
@@ -411,6 +427,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedUserRaw) {
         const parsed = JSON.parse(savedUserRaw);
         if (parsed && (parsed.mobile || parsed.name)) {
+          if (normalizeMobile(parsed.mobile) === '9876543210' || parsed.name === 'Pardeep Patel') {
+            return emptyUser;
+          }
           return parsed;
         }
       }
@@ -419,8 +438,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const parsedUsers: RegisteredUserAccount[] = savedUsersRaw ? JSON.parse(savedUsersRaw) : [];
       if (activeMobile) {
         const cleanActive = normalizeMobile(activeMobile);
-        const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
-        if (matched) return matched;
+        if (cleanActive !== '9876543210') {
+          const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive && u.name !== 'Pardeep Patel');
+          if (matched) return matched;
+        }
       }
       return emptyUser;
     } catch {
@@ -437,12 +458,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (savedAuth === 'true' && activeMobile) {
         const cleanActive = normalizeMobile(activeMobile);
-        const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
-        if (matched && matched.transactions) return matched.transactions;
+        if (cleanActive !== '9876543210') {
+          const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive && u.name !== 'Pardeep Patel');
+          if (matched && matched.transactions) return matched.transactions;
+        }
       }
-      return initialTransactions;
+      return [];
     } catch {
-      return initialTransactions;
+      return [];
     }
   });
 

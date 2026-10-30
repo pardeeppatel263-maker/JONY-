@@ -205,30 +205,6 @@ export const initialSurveys: SurveyItem[] = [
     completed: false,
     description: 'Share your shopping & mobile app usage opinions (takes ~2 mins)',
   },
-  {
-    id: 'srv_1',
-    title: 'Product Feedback Survey',
-    reward: 150,
-    date: 'Completed 23 Sep 2025',
-    completed: true,
-    description: 'Feedback on online checkout speed and payment gateways',
-  },
-  {
-    id: 'srv_2',
-    title: 'Customer Satisfaction Survey',
-    reward: 150,
-    date: 'Completed 22 Sep 2025',
-    completed: true,
-    description: 'Customer experience rating for delivery & support',
-  },
-  {
-    id: 'srv_3',
-    title: 'Market Research Survey',
-    reward: 150,
-    date: 'Completed 21 Sep 2025',
-    completed: true,
-    description: 'Brand awareness and digital advertisement preferences',
-  },
 ];
 
 export const initialTasks: TaskItem[] = [

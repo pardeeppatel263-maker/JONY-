@@ -117,7 +117,7 @@ export const StrictOfflineGuard: React.FC<StrictOfflineGuardProps> = ({ children
       setIsOnline(false);
       if (manual) {
         if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-        setFeedbackMsg('Internet abhi connect nahi hua hai. Kripya Wi-Fi ya Mobile Data check karein.');
+        setFeedbackMsg('No internet connection. Please check your Wi-Fi or mobile data.');
         feedbackTimeoutRef.current = setTimeout(() => setFeedbackMsg(''), 3000);
       }
       return false;

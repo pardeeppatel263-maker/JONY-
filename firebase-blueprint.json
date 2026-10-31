@@ -74,6 +74,38 @@
         "title": { "type": "string" }
       },
       "required": ["id", "level", "price", "dailyIncome", "dailyMissions"]
+    },
+    "CustomTask": {
+      "title": "CustomTask",
+      "description": "Dynamic custom tasks created by administrator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "reward": { "type": "number" },
+        "link": { "type": "string" },
+        "category": { "type": "string" },
+        "actionLabel": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "title", "reward", "link", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative action logs for audit trails.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "dateStr": { "type": "string" },
+        "adminAction": { "type": "string" },
+        "targetMobile": { "type": "string" },
+        "targetName": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "adminAction", "targetMobile", "reason"]
     }
   },
   "firestore": {
@@ -92,6 +124,14 @@
     "/vip_plans/{planId}": {
       "schema": "Plan",
       "description": "Configurable VIP membership plans and reward tiers."
+    },
+    "/custom_tasks/{taskId}": {
+      "schema": "CustomTask",
+      "description": "Dynamic tasks for user rewards."
+    },
+    "/admin_audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Log records of administrative operations and balance adjustments."
     }
   }
 }

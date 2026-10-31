@@ -289,6 +289,29 @@ export const HomeScreen: React.FC = () => {
             </div>
           )}
 
+          {/* Admin Direct Alert / Rejection Reason Notice */}
+          {user.adminAlertMessage && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-400 text-orange-950 rounded-2xl p-3.5 shadow-xs flex items-start gap-3 animate-in fade-in">
+              <Megaphone className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-black block text-orange-900">
+                  Important Notice from Administration
+                </span>
+                <p className="text-[11px] text-orange-800 leading-snug mt-0.5">
+                  {user.adminAlertMessage}
+                </p>
+                <div className="mt-2 flex items-center justify-end">
+                  <button
+                    onClick={() => app.dismissAdminAlert?.()}
+                    className="text-[10px] font-black bg-orange-600 hover:bg-orange-700 text-white px-2.5 py-1 rounded-lg cursor-pointer transition shadow-xs active:scale-95"
+                  >
+                    Dismiss / Ok
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 2-Day Free Trial Notice - Displays ONLY for new users during their active 2-day trial, disappears completely once expired */}
           {isFreeTrialActive ? (
             <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 p-3 rounded-2xl shadow-xs flex items-center justify-between">

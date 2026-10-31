@@ -17,7 +17,12 @@ import {
   Lock,
   Layers,
   ChevronRight,
-  Award
+  Award,
+  Send,
+  Globe,
+  Smartphone,
+  ExternalLink,
+  Zap,
 } from 'lucide-react';
 
 export const MissionTasksScreen: React.FC = () => {
@@ -36,6 +41,8 @@ export const MissionTasksScreen: React.FC = () => {
     plans,
     user,
     isFreeTrialActive,
+    customTasks,
+    completeCustomTask,
     showToast,
   } = useApp();
   const hasPaidPlan = (activeUserPlans || []).some((p) => p.level > 0);
@@ -393,9 +400,112 @@ export const MissionTasksScreen: React.FC = () => {
                     </div>
                   </div>
                 ))}
-
-                
               </div>
+
+              {/* Dynamic Custom Tasks Section (Telegram, Apps, Social, Extra Bonuses) */}
+              {customTasks && customTasks.filter((ct) => ct.status === 'active').length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span>Special Partner Missions ({customTasks.filter((ct) => ct.status === 'active').length})</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      Instant Bonus
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {customTasks
+                      .filter((ct) => ct.status === 'active')
+                      .map((task) => {
+                        const isDone = (user.completedCustomTasks || []).includes(task.id);
+
+                        const getCategoryIcon = () => {
+                          switch (task.category) {
+                            case 'telegram':
+                              return <Send className="w-5 h-5 text-sky-500" />;
+                            case 'app':
+                              return <Smartphone className="w-5 h-5 text-emerald-500" />;
+                            case 'social':
+                              return <Globe className="w-5 h-5 text-indigo-500" />;
+                            case 'survey':
+                              return <FileCheck className="w-5 h-5 text-amber-500" />;
+                            default:
+                              return <Zap className="w-5 h-5 text-orange-500" />;
+                          }
+                        };
+
+                        return (
+                          <div
+                            key={task.id}
+                            className={`bg-white rounded-2xl p-3.5 border transition-all shadow-xs flex items-center justify-between ${
+                              isDone ? 'border-emerald-200/90 bg-emerald-50/20' : 'border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div
+                                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                                  isDone
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                                    : 'bg-slate-50 border-slate-200'
+                                }`}
+                              >
+                                {getCategoryIcon()}
+                              </div>
+
+                              <div className="min-w-0 flex-1 pr-2">
+                                <div className="flex items-center gap-1.5">
+                                  <h4 className="text-xs font-black text-slate-800 truncate">
+                                    {task.title}
+                                  </h4>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-700 border border-amber-200 uppercase shrink-0">
+                                    {task.category}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                                  {task.description || 'Complete this task to claim extra bonus!'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-end gap-1.5 shrink-0 pl-2">
+                              <span className="text-xs font-black text-emerald-600">
+                                +₹{task.reward}
+                              </span>
+
+                              {isDone ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Claimed</span>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                                      showToast('❌ No Internet Connection!');
+                                      return;
+                                    }
+                                    if (task.link) {
+                                      try {
+                                        window.open(task.link, '_blank');
+                                      } catch {}
+                                    }
+                                    completeCustomTask(task.id);
+                                  }}
+                                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-[10px] px-3 py-1.5 rounded-lg shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>{task.actionLabel || 'Complete'}</span>
+                                  <ArrowRight className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
 
               {/* VIP Level Plan Task Guide & Upgrade Card */}
               <div className="mt-4 bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">

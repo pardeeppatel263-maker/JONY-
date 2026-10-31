@@ -33,6 +33,8 @@ import {
   VideoMissionDef,
   SupportTicket,
   PromoCode,
+  AdminAuditLog,
+  CustomTaskItem,
 } from '../types';
 import {
   emptyUser,
@@ -211,6 +213,32 @@ interface AppContextType {
   redeemPromoCode: (codeStr: string) => Promise<{ success: boolean; message: string; rewardAmount?: number }>;
   isPromoModalOpen: boolean;
   setIsPromoModalOpen: (open: boolean) => void;
+
+  // 1 & 4. Dynamic Custom Tasks
+  customTasks: CustomTaskItem[];
+  createCustomTask: (task: Omit<CustomTaskItem, 'id' | 'createdAt'>) => Promise<boolean>;
+  updateCustomTask: (id: string, updates: Partial<CustomTaskItem>) => Promise<boolean>;
+  deleteCustomTask: (id: string) => Promise<boolean>;
+  completeCustomTask: (taskId: string) => Promise<{ success: boolean; message: string }>;
+
+  // 4. Admin Audit Log
+  auditLogs: AdminAuditLog[];
+  logAdminAction: (
+    action: AdminAuditLog['adminAction'],
+    targetMobile: string,
+    targetName?: string,
+    oldValue?: string | number,
+    newValue?: string | number,
+    reason?: string
+  ) => Promise<void>;
+
+  // 7. Clean Test Data
+  cleanTestData: () => Promise<{ deletedDeposits: number; deletedSubmissions: number; message: string }>;
+
+  // 5. Direct User Alert & Rejections with Reason
+  rejectWithdrawalWithReason: (withdrawalId: string, userMobile: string, reason: string) => Promise<boolean>;
+  rejectPaymentDepositWithReason: (depositId: string, reason: string) => Promise<boolean>;
+  dismissAdminAlert: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -562,6 +590,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isPromoModalOpen, setIsPromoModalOpen] = useState<boolean>(false);
 
+  // 1 & 4. Dynamic Custom Tasks & Admin Audit Logs
+  const [customTasks, setCustomTasks] = useState<CustomTaskItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
 
   const [lastPurchase, setLastPurchase] = useState<PurchaseDetails>({
     amount: 1000,
@@ -1328,6 +1359,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return () => unsubscribe();
     } catch (err) {
       console.warn('Could not attach Firestore surveys listener:', err);
+    }
+  }, []);
+
+  // Real-time listener: sync dynamic custom tasks from Firestore
+  useEffect(() => {
+    try {
+      const tasksCol = collection(db, 'custom_tasks');
+      const unsubscribe = onSnapshot(
+        tasksCol,
+        (snapshot) => {
+          const list: CustomTaskItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as CustomTaskItem;
+            if (data && data.id) {
+              list.push(data);
+            }
+          });
+          setCustomTasks(list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        },
+        (error) => {
+          console.warn('Firestore custom_tasks onSnapshot warning:', error);
+        }
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('Could not attach Firestore custom_tasks listener:', err);
+    }
+  }, []);
+
+  // Real-time listener: sync admin audit logs from Firestore
+  useEffect(() => {
+    try {
+      const logsCol = collection(db, 'admin_audit_logs');
+      const unsubscribe = onSnapshot(
+        logsCol,
+        (snapshot) => {
+          const list: AdminAuditLog[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as AdminAuditLog;
+            if (data && data.id) {
+              list.push(data);
+            }
+          });
+          setAuditLogs(list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        },
+        (error) => {
+          console.warn('Firestore admin_audit_logs onSnapshot warning:', error);
+        }
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('Could not attach Firestore admin_audit_logs listener:', err);
     }
   }, []);
 
@@ -2138,7 +2221,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(`❌ Invalid invite code "${cleanRefCode}"! Please enter a valid candidate invite code or leave it blank.`);
         return false;
       }
+
+      // 1. Anti-Fraud: Strictly block self-referral
+      if (matchedReferrer && normalizeMobile(matchedReferrer.mobile) === cleanMobile) {
+        showToast('❌ Self-referral is not permitted. You cannot refer your own number!');
+        return false;
+      }
     }
+
+    // 1. Device Fingerprint & Multi-Account Detection
+    const currentDevice = typeof window !== 'undefined'
+      ? `${(navigator.userAgent || '').slice(0, 40)}_${window.screen?.width || 0}x${window.screen?.height || 0}_${navigator.language || ''}`
+      : 'device_unknown';
+
+    if (matchedReferrer && matchedReferrer.deviceFingerprint && matchedReferrer.deviceFingerprint === currentDevice) {
+      showToast('❌ Self-referral blocked: Both accounts belong to the same device!');
+      return false;
+    }
+
+    const sameDeviceAccounts = registeredUsers.filter((u) => u.deviceFingerprint && u.deviceFingerprint === currentDevice);
+    const isSuspicious = sameDeviceAccounts.length >= 2;
+    const suspiciousReason = isSuspicious ? `Multi-account cluster: ${sameDeviceAccounts.length + 1} accounts on same device` : undefined;
 
     // Generate unique referral code for this new user
     let newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
@@ -2174,6 +2277,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       password: pass.trim(),
       vipLevel: 0,
       vipTag: 'Free Starter',
+      deviceFingerprint: currentDevice,
+      isSuspicious,
+      suspiciousReason,
       transactions: [],
     };
 
@@ -4169,6 +4275,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return next;
       });
       showToast(`User (${targetClean}) balance adjusted by ${isCredit ? '+' : '-'}₹${amount}`);
+      logAdminAction(
+        isCredit ? 'balance_increase' : 'balance_decrease',
+        targetClean,
+        targetUser?.name,
+        targetUser?.balance || 0,
+        newBal,
+        reason || 'Manual Admin Adjustment'
+      );
       return;
     }
 
@@ -4201,6 +4315,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user.mobile) {
       syncUserToFirestore({ ...user, balance: newBal, totalEarned: newEarned }, updatedTxs);
     }
+    logAdminAction(
+      isCredit ? 'balance_increase' : 'balance_decrease',
+      normalizeMobile(user.mobile),
+      user.name,
+      user.balance,
+      newBal,
+      reason || 'Manual Admin Adjustment'
+    );
     showToast(`User balance adjusted by ${isCredit ? '+' : '-'}₹${amount}`);
   };
 
@@ -4917,6 +5039,310 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Survey removed across all devices.');
   };
 
+  // 4. Admin Audit Logging
+  const logAdminAction = async (
+    action: AdminAuditLog['adminAction'],
+    targetMobile: string,
+    targetName?: string,
+    oldValue?: string | number,
+    newValue?: string | number,
+    reason?: string
+  ) => {
+    const cleanMobile = normalizeMobile(targetMobile) || targetMobile;
+    const now = Date.now();
+    const newLog: AdminAuditLog = {
+      id: `log_${now}_${Math.floor(Math.random() * 1000)}`,
+      timestamp: now,
+      dateStr: new Date(now).toLocaleString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      adminAction: action,
+      targetMobile: cleanMobile,
+      targetName: targetName || '',
+      oldValue: oldValue !== undefined ? String(oldValue) : undefined,
+      newValue: newValue !== undefined ? String(newValue) : undefined,
+      difference:
+        typeof oldValue === 'number' && typeof newValue === 'number'
+          ? (newValue - oldValue > 0 ? `+₹${newValue - oldValue}` : `-₹${Math.abs(newValue - oldValue)}`)
+          : undefined,
+      reason: reason || 'Action performed by administrator',
+    };
+
+    setAuditLogs((prev) => [newLog, ...prev]);
+    try {
+      await setDoc(doc(db, 'admin_audit_logs', newLog.id), newLog);
+    } catch (err) {
+      console.warn('Failed to save audit log to Firestore:', err);
+    }
+  };
+
+  // 3. Dynamic Custom Tasks Management
+  const createCustomTask = async (taskData: Omit<CustomTaskItem, 'id' | 'createdAt'>): Promise<boolean> => {
+    try {
+      const id = `ctask_${Date.now()}`;
+      const newTask: CustomTaskItem = {
+        ...taskData,
+        id,
+        createdAt: Date.now(),
+        completionsCount: 0,
+      };
+      await setDoc(doc(db, 'custom_tasks', id), newTask);
+      setCustomTasks((prev) => [newTask, ...prev]);
+      await logAdminAction('custom_notification', 'ALL_USERS', 'Broadcast', undefined, newTask.reward, `Created task: ${newTask.title}`);
+      showToast('✓ Custom Task created and published live to all users!');
+      return true;
+    } catch (err) {
+      console.error('Error creating custom task:', err);
+      showToast('Failed to create custom task');
+      return false;
+    }
+  };
+
+  const updateCustomTask = async (id: string, updates: Partial<CustomTaskItem>): Promise<boolean> => {
+    try {
+      await setDoc(doc(db, 'custom_tasks', id), updates, { merge: true });
+      setCustomTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+      showToast('✓ Custom Task updated successfully!');
+      return true;
+    } catch (err) {
+      console.error('Error updating custom task:', err);
+      showToast('Failed to update task');
+      return false;
+    }
+  };
+
+  const deleteCustomTask = async (id: string): Promise<boolean> => {
+    try {
+      await deleteDoc(doc(db, 'custom_tasks', id));
+      setCustomTasks((prev) => prev.filter((t) => t.id !== id));
+      showToast('✓ Custom Task deleted.');
+      return true;
+    } catch (err) {
+      console.error('Error deleting custom task:', err);
+      showToast('Failed to delete task');
+      return false;
+    }
+  };
+
+  const completeCustomTask = async (taskId: string): Promise<{ success: boolean; message: string }> => {
+    const task = customTasks.find((t) => t.id === taskId);
+    if (!task) return { success: false, message: 'Task not found' };
+    if (!isLoggedIn) return { success: false, message: 'Please log in first' };
+    if (user.isBlocked) return { success: false, message: 'Your account is suspended' };
+
+    const cleanMob = normalizeMobile(user.mobile);
+    const completedTasks = user.completedCustomTasks || [];
+    if (completedTasks.includes(taskId)) {
+      return { success: false, message: 'You have already completed this task!' };
+    }
+
+    const reward = task.reward || 0;
+    const newBal = (user.balance || 0) + reward;
+    const newToday = (user.todayEarnings || 0) + reward;
+    const newTotal = (user.totalEarnings || 0) + reward;
+    const newCompletedList = [...completedTasks, taskId];
+
+    const newTx: TransactionItem = {
+      id: `tx_${Date.now()}_ctask`,
+      type: 'task_earning',
+      title: `${task.title} (Task Reward)`,
+      date: new Date().toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      timestamp: Date.now(),
+      amount: reward,
+      isCredit: true,
+      status: 'completed',
+      note: `Task: ${task.title} completed`,
+    };
+
+    const updatedUser: UserProfile = {
+      ...user,
+      balance: newBal,
+      todayEarnings: newToday,
+      totalEarnings: newTotal,
+      completedCustomTasks: newCompletedList,
+    };
+
+    setUser(updatedUser);
+    setTransactions((prev) => [newTx, ...prev]);
+
+    // Sync to user in Firestore
+    try {
+      if (cleanMob) {
+        await setDoc(doc(db, 'users', cleanMob), {
+          balance: newBal,
+          todayEarnings: newToday,
+          totalEarnings: newTotal,
+          completedCustomTasks: newCompletedList,
+          transactions: [newTx, ...transactions],
+        }, { merge: true });
+      }
+      // Increment task completions count
+      await setDoc(doc(db, 'custom_tasks', taskId), {
+        completionsCount: (task.completionsCount || 0) + 1,
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Error completing custom task in cloud:', err);
+    }
+
+    showToast(`🎉 ₹${reward} added to wallet for completing ${task.title}!`);
+    return { success: true, message: `Completed! ₹${reward} credited.` };
+  };
+
+  // 7. 1-Click Clean Test Data
+  const cleanTestData = async (): Promise<{ deletedDeposits: number; deletedSubmissions: number; message: string }> => {
+    try {
+      let delDepCount = 0;
+      let delSubCount = 0;
+
+      // Clean test deposits
+      const depSnap = await getDocs(collection(db, 'deposits'));
+      for (const d of depSnap.docs) {
+        const data = d.data() as PaymentDeposit;
+        const utr = (data.utrNumber || '').toUpperCase();
+        const mob = normalizeMobile(data.userMobile);
+        if (utr.includes('TEST') || utr.startsWith('DEMO') || mob === '9876543210' || mob === '0000000000') {
+          await deleteDoc(doc(db, 'deposits', d.id));
+          delDepCount++;
+        }
+      }
+
+      // Clean test task submissions
+      const subSnap = await getDocs(collection(db, 'task_submissions'));
+      for (const s of subSnap.docs) {
+        const data = s.data() as TaskSubmission;
+        const uId = (data.userId || '').toUpperCase();
+        const uName = (data.userName || '').toUpperCase();
+        if (uId.includes('TEST') || uId.includes('DEMO') || uName.includes('TEST') || uName.includes('DEMO')) {
+          await deleteDoc(doc(db, 'task_submissions', s.id));
+          delSubCount++;
+        }
+      }
+
+      await logAdminAction(
+        'clean_test_data',
+        'SYSTEM',
+        'Cleanup Tool',
+        undefined,
+        undefined,
+        `Purged ${delDepCount} test deposits and ${delSubCount} test submissions`
+      );
+
+      const msg = `✓ Cleaned ${delDepCount} test deposits & ${delSubCount} test submissions successfully!`;
+      showToast(msg);
+      return { deletedDeposits: delDepCount, deletedSubmissions: delSubCount, message: msg };
+    } catch (err) {
+      console.error('cleanTestData error:', err);
+      showToast('Error cleaning test data');
+      return { deletedDeposits: 0, deletedSubmissions: 0, message: 'Failed to clean test data' };
+    }
+  };
+
+  // 5. Direct User Alert & Rejections with Reason
+  const rejectWithdrawalWithReason = async (withdrawalId: string, userMobile: string, reason: string): Promise<boolean> => {
+    try {
+      const cleanMob = normalizeMobile(userMobile);
+      const cleanReason = reason.trim() || 'Details verification failed. Please check bank/UPI details.';
+      await rejectWithdrawal(withdrawalId, cleanReason);
+
+      if (cleanMob) {
+        const alertMsg = `Your withdrawal request was rejected by admin. Reason: "${cleanReason}". Your balance was refunded to your wallet.`;
+        await setDoc(
+          doc(db, 'users', cleanMob),
+          {
+            adminAlertMessage: alertMsg,
+            adminAlertTime: Date.now(),
+          },
+          { merge: true }
+        );
+      }
+
+      await logAdminAction(
+        'withdrawal_rejected',
+        cleanMob,
+        undefined,
+        undefined,
+        undefined,
+        cleanReason
+      );
+
+      showToast(`✓ Withdrawal rejected and user notified with reason!`);
+      return true;
+    } catch (err) {
+      console.error('rejectWithdrawalWithReason error:', err);
+      showToast('Failed to reject withdrawal');
+      return false;
+    }
+  };
+
+  const rejectPaymentDepositWithReason = async (depositId: string, reason: string): Promise<boolean> => {
+    try {
+      const dep = paymentDeposits.find((d) => d.id === depositId);
+      const cleanReason = reason.trim() || 'Invalid UTR reference number or payment screenshot.';
+      await rejectPaymentDeposit(depositId, cleanReason);
+
+      const cleanMob = dep?.userMobile ? normalizeMobile(dep.userMobile) : '';
+      if (cleanMob) {
+        const alertMsg = `Your deposit request for ₹${dep?.amount || 0} (UTR: ${dep?.utrNumber || 'N/A'}) was rejected by admin. Reason: "${cleanReason}".`;
+        await setDoc(
+          doc(db, 'users', cleanMob),
+          {
+            adminAlertMessage: alertMsg,
+            adminAlertTime: Date.now(),
+          },
+          { merge: true }
+        );
+      }
+
+      await logAdminAction(
+        'deposit_rejected',
+        cleanMob,
+        dep?.userName,
+        dep?.amount,
+        0,
+        cleanReason
+      );
+
+      showToast(`✓ Deposit rejected and alert sent to user!`);
+      return true;
+    } catch (err) {
+      console.error('rejectPaymentDepositWithReason error:', err);
+      showToast('Failed to reject deposit');
+      return false;
+    }
+  };
+
+  const dismissAdminAlert = async (): Promise<void> => {
+    setUser((prev) => ({
+      ...prev,
+      adminAlertMessage: undefined,
+      adminAlertTime: undefined,
+    }));
+    const cleanMob = normalizeMobile(user.mobile);
+    if (cleanMob) {
+      try {
+        await setDoc(
+          doc(db, 'users', cleanMob),
+          {
+            adminAlertMessage: null,
+            adminAlertTime: null,
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.warn('Failed to dismiss alert in Firestore:', err);
+      }
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -5034,6 +5460,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         redeemPromoCode,
         isPromoModalOpen,
         setIsPromoModalOpen,
+        customTasks,
+        createCustomTask,
+        updateCustomTask,
+        deleteCustomTask,
+        completeCustomTask,
+        auditLogs,
+        logAdminAction,
+        cleanTestData,
+        rejectWithdrawalWithReason,
+        rejectPaymentDepositWithReason,
+        dismissAdminAlert,
         isExitModalOpen,
         setIsExitModalOpen,
         isUpdateModalOpen,

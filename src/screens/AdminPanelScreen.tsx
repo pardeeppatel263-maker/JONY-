@@ -65,8 +65,23 @@ import {
   Landmark,
   Receipt,
   Save,
+  Filter,
+  AlertOctagon,
+  UserX,
+  History,
+  ListPlus,
 } from 'lucide-react';
-import { PlanItem, RegisteredUserAccount, PaymentDeposit, SupportTicket, PromoCode, AddMoneyTier, AdminSettings } from '../types';
+import {
+  PlanItem,
+  RegisteredUserAccount,
+  PaymentDeposit,
+  SupportTicket,
+  PromoCode,
+  AddMoneyTier,
+  AdminSettings,
+  AdminAuditLog,
+  CustomTaskItem,
+} from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { extractYouTubeId } from '../components/modals/VideoTaskModal';
 import {
@@ -162,6 +177,15 @@ export const AdminPanelScreen: React.FC = () => {
     createPromoCode,
     deletePromoCode,
     togglePromoCodeStatus,
+    customTasks,
+    createCustomTask,
+    updateCustomTask,
+    deleteCustomTask,
+    auditLogs,
+    logAdminAction,
+    cleanTestData,
+    rejectWithdrawalWithReason,
+    rejectPaymentDepositWithReason,
     navigate,
     goBack,
     showToast,
@@ -182,13 +206,45 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Active Tab - Persisted across reloads so admin never loses their place
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'deposits' | 'withdrawals' | 'users' | 'submissions' | 'plans' | 'notice' | 'gateway' | 'whatsapp' | 'settings' | 'backup' | 'tickets' | 'promos'
+    | 'dashboard'
+    | 'deposits'
+    | 'withdrawals'
+    | 'users'
+    | 'fraud'
+    | 'custom_tasks'
+    | 'audit'
+    | 'submissions'
+    | 'plans'
+    | 'notice'
+    | 'gateway'
+    | 'whatsapp'
+    | 'settings'
+    | 'backup'
+    | 'tickets'
+    | 'promos'
   >(() => {
     try {
       const savedTab = localStorage.getItem('zorotask_admin_active_tab') as any;
       if (
         savedTab &&
-        ['dashboard', 'deposits', 'withdrawals', 'users', 'submissions', 'plans', 'notice', 'gateway', 'whatsapp', 'settings', 'backup', 'tickets', 'promos'].includes(savedTab)
+        [
+          'dashboard',
+          'deposits',
+          'withdrawals',
+          'users',
+          'fraud',
+          'custom_tasks',
+          'audit',
+          'submissions',
+          'plans',
+          'notice',
+          'gateway',
+          'whatsapp',
+          'settings',
+          'backup',
+          'tickets',
+          'promos',
+        ].includes(savedTab)
       ) {
         return savedTab;
       }
@@ -197,6 +253,73 @@ export const AdminPanelScreen: React.FC = () => {
       return 'dashboard';
     }
   });
+
+  // Rejection Reason Modal State (for both withdrawals & deposits)
+  const [rejectModalData, setRejectModalData] = useState<{
+    isOpen: boolean;
+    type: 'withdrawal' | 'deposit';
+    id: string;
+    targetMobile?: string;
+    amount: number;
+    userTitle: string;
+    reason: string;
+  } | null>(null);
+
+  // Dynamic Custom Tasks State (Item 3)
+  const [isCustomTaskModalOpen, setIsCustomTaskModalOpen] = useState(false);
+  const [editingCustomTaskId, setEditingCustomTaskId] = useState<string | null>(null);
+  const [customTaskTitle, setCustomTaskTitle] = useState('');
+  const [customTaskDesc, setCustomTaskDesc] = useState('');
+  const [customTaskReward, setCustomTaskReward] = useState('25');
+  const [customTaskLink, setCustomTaskLink] = useState('');
+  const [customTaskCategory, setCustomTaskCategory] = useState<'telegram' | 'app' | 'social' | 'survey' | 'general'>('telegram');
+  const [customTaskActionLabel, setCustomTaskActionLabel] = useState('Join Channel');
+  const [customTaskFilterCategory, setCustomTaskFilterCategory] = useState<string>('all');
+
+  // Fraud & Multi-Account Detection State (Item 1)
+  const [fraudSearch, setFraudSearch] = useState('');
+  const [fraudViewTab, setFraudViewTab] = useState<'clusters' | 'suspicious' | 'all'>('clusters');
+
+  // Admin Audit Log Filter State (Item 4)
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+
+  // 1-Click Clean Test Data State (Item 7)
+  const [isCleanTestModalOpen, setIsCleanTestModalOpen] = useState(false);
+  const [isCleaningTestData, setIsCleaningTestData] = useState(false);
+  const [cleanTestResult, setCleanTestResult] = useState<{ deletedDeposits: number; deletedSubmissions: number; message: string } | null>(null);
+
+  // Group users by deviceFingerprint (or ipAddress) for Fraud & Multi-Account Detection
+  const deviceClusters = useMemo(() => {
+    const map = new Map<string, RegisteredUserAccount[]>();
+    registeredUsers.forEach((u) => {
+      const fp = u.deviceFingerprint && u.deviceFingerprint !== 'default_device' ? u.deviceFingerprint : null;
+      const ip = u.ipAddress && u.ipAddress !== '127.0.0.1' ? `IP:${u.ipAddress}` : null;
+      const key = fp || ip;
+      if (key) {
+        const arr = map.get(key) || [];
+        arr.push(u);
+        map.set(key, arr);
+      }
+    });
+    const clusters: { key: string; users: RegisteredUserAccount[] }[] = [];
+    map.forEach((users, key) => {
+      if (users.length > 1) {
+        clusters.push({ key, users });
+      }
+    });
+    return clusters.sort((a, b) => b.users.length - a.users.length);
+  }, [registeredUsers]);
+
+  const suspiciousUsersList = useMemo(() => {
+    return registeredUsers.filter(
+      (u) =>
+        u.isSuspicious ||
+        (u.referredBy &&
+          u.deviceFingerprint &&
+          registeredUsers.some((ru) => ru.referralCode === u.referredBy && ru.deviceFingerprint === u.deviceFingerprint))
+    );
+  }, [registeredUsers]);
 
   useEffect(() => {
     try {
@@ -1643,6 +1766,61 @@ export const AdminPanelScreen: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('fraud')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'fraud'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-300" />
+            <span>🛡️ Fraud &amp; Multi-Account</span>
+            {deviceClusters.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-white text-rose-700 animate-pulse">
+                {deviceClusters.length} CLUSTERS
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('custom_tasks')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'custom_tasks'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 font-black shadow-md shadow-cyan-500/25'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <ListPlus className="w-4 h-4" />
+            <span>📋 Custom Tasks</span>
+            {customTasks && customTasks.length > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                  activeTab === 'custom_tasks' ? 'bg-slate-950 text-cyan-300' : 'bg-cyan-500/20 text-cyan-300'
+                }`}
+              >
+                {customTasks.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'audit'
+                ? 'bg-slate-700 text-amber-300 border border-amber-400/40 shadow-md font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4 text-amber-400" />
+            <span>📜 Audit Logs</span>
+            {auditLogs && auditLogs.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-800 text-slate-300">
+                {auditLogs.length}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => setActiveTab('submissions')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
               activeTab === 'submissions'
@@ -2926,8 +3104,15 @@ export const AdminPanelScreen: React.FC = () => {
                         </button>
                         <button
                           onClick={() => {
-                            setRejectingDepositId(dep.id);
-                            setRejectReason('Invalid UTR number / payment screenshot not verified');
+                            setRejectModalData({
+                              isOpen: true,
+                              type: 'deposit',
+                              id: dep.id,
+                              targetMobile: dep.userMobile,
+                              amount: dep.amount,
+                              userTitle: `${dep.userName} (+91 ${dep.userMobile}) - UTR: ${dep.utrNumber || 'N/A'}`,
+                              reason: 'Invalid UTR reference number or duplicate screenshot',
+                            });
                           }}
                           className="py-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-red-500/30 active:scale-[0.98] transition"
                         >
@@ -3060,7 +3245,18 @@ export const AdminPanelScreen: React.FC = () => {
                           Mark Paid ✓
                         </button>
                         <button
-                          onClick={() => rejectWithdrawal(tx.id, 'Payout failed / invalid account details')}
+                          onClick={() => {
+                            const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
+                            setRejectModalData({
+                              isOpen: true,
+                              type: 'withdrawal',
+                              id: tx.id,
+                              targetMobile: u?.mobile || '',
+                              amount: tx.amount,
+                              userTitle: `${u?.name || 'User'} (+91 ${u?.mobile || 'Unknown'})`,
+                              reason: 'Payout verification issue / Account details mismatch',
+                            });
+                          }}
                           className="py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 font-bold text-xs border border-red-500/30"
                         >
                           Reject &amp; Refund
@@ -3313,6 +3509,786 @@ export const AdminPanelScreen: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB: FRAUD & MULTI-ACCOUNT DETECTION (ITEM 1) */}
+        {/* ========================================================= */}
+        {activeTab === 'fraud' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Header / Metric Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/30">
+                <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5 mb-1">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Multi-Account Clusters</span>
+                </div>
+                <div className="text-2xl font-black text-rose-300 font-mono">
+                  {deviceClusters.length}
+                </div>
+                <div className="text-[10px] text-rose-400/80 mt-0.5">
+                  Devices with &ge; 2 accounts
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+                <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5 mb-1">
+                  <AlertOctagon className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Suspicious / Self-Ref</span>
+                </div>
+                <div className="text-2xl font-black text-amber-300 font-mono">
+                  {suspiciousUsersList.length}
+                </div>
+                <div className="text-[10px] text-amber-400/80 mt-0.5">
+                  Accounts flagged for review
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                  <Ban className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Blocked Users</span>
+                </div>
+                <div className="text-2xl font-black text-white font-mono">
+                  {registeredUsers.filter((u) => u.isBlocked).length}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  Currently suspended
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                    <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Quick Clean Test Data</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Purge test deposits &amp; subs
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCleanTestModalOpen(true)}
+                  className="mt-2 py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-amber-500/30 flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <span>🧹 Clean Test Data</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Sub-Tabs & Search */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-1.5 overflow-x-auto">
+                <button
+                  onClick={() => setFraudViewTab('clusters')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    fraudViewTab === 'clusters'
+                      ? 'bg-rose-600 text-white font-black'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>Device Clusters ({deviceClusters.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setFraudViewTab('suspicious')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    fraudViewTab === 'suspicious'
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <AlertOctagon className="w-3.5 h-3.5" />
+                  <span>Suspicious / Self-Ref ({suspiciousUsersList.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setFraudViewTab('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    fraudViewTab === 'all'
+                      ? 'bg-blue-600 text-white font-black'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All Users Security ({registeredUsers.length})
+                </button>
+              </div>
+
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={fraudSearch}
+                  onChange={(e) => setFraudSearch(e.target.value)}
+                  placeholder="Search mobile, device ID, name..."
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder:text-slate-500 outline-none focus:border-rose-400 transition"
+                />
+              </div>
+            </div>
+
+            {/* Clusters View */}
+            {fraudViewTab === 'clusters' && (
+              <div className="space-y-4">
+                {deviceClusters.length === 0 ? (
+                  <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800/80 space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <h3 className="text-base font-bold text-white">No Multi-Account Clusters Detected!</h3>
+                    <p className="text-xs text-slate-400">All registered members appear to be on unique individual devices.</p>
+                  </div>
+                ) : (
+                  deviceClusters
+                    .filter(
+                      (c) =>
+                        !fraudSearch ||
+                        c.key.toLowerCase().includes(fraudSearch.toLowerCase()) ||
+                        c.users.some(
+                          (u) =>
+                            u.mobile.includes(fraudSearch) ||
+                            (u.name && u.name.toLowerCase().includes(fraudSearch.toLowerCase()))
+                        )
+                    )
+                    .map((cluster, cIdx) => {
+                      const totalClusterBal = cluster.users.reduce((acc, u) => acc + (u.balance || 0), 0);
+                      const allBlocked = cluster.users.every((u) => u.isBlocked);
+
+                      return (
+                        <div
+                          key={`cluster_${cIdx}`}
+                          className="bg-slate-900 rounded-2xl border border-rose-500/30 overflow-hidden shadow-lg"
+                        >
+                          <div className="bg-slate-950/80 p-3.5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                Cluster #{cIdx + 1}
+                              </span>
+                              <span className="text-xs font-mono font-bold text-slate-300">
+                                Device / Key: <span className="text-amber-400">{cluster.key}</span>
+                              </span>
+                              <span className="text-xs font-bold text-slate-400">
+                                ({cluster.users.length} Linked Accounts)
+                              </span>
+                              <span className="text-xs font-bold text-rose-400">
+                                Total Balance: ₹{totalClusterBal.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {!allBlocked ? (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const ok = window.confirm(
+                                      `🚨 Are you sure you want to BAN all ${cluster.users.length} accounts in this multi-account cluster?`
+                                    );
+                                    if (ok) {
+                                      for (const cu of cluster.users) {
+                                        await adminBlockUser(
+                                          cu.mobile,
+                                          `Multi-account device abuse cluster: ${cluster.key}`
+                                        );
+                                      }
+                                      showToast(`✓ All ${cluster.users.length} accounts in cluster have been suspended.`);
+                                    }
+                                  }}
+                                  className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Ban All in Cluster</span>
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-bold text-rose-400 bg-rose-950/60 px-2.5 py-1 rounded-lg border border-rose-500/30">
+                                  All Banned
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="p-3.5 divide-y divide-slate-800/80">
+                            {cluster.users.map((u) => {
+                              const isSelfRef =
+                                u.referredBy &&
+                                cluster.users.some((other) => other.referralCode === u.referredBy);
+
+                              return (
+                                <div
+                                  key={u.mobile}
+                                  className="py-2.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div
+                                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                        u.isBlocked
+                                          ? 'bg-rose-950 text-rose-400 border border-rose-500/30'
+                                          : 'bg-slate-800 text-white'
+                                      }`}
+                                    >
+                                      {u.name ? u.name[0].toUpperCase() : 'U'}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-white">
+                                          {u.name || 'Member'}
+                                        </span>
+                                        <span className="text-xs font-mono font-bold text-amber-400">
+                                          +91 {u.mobile}
+                                        </span>
+                                        {isSelfRef && (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-red-500 text-white animate-pulse">
+                                            SELF-REFERRAL
+                                          </span>
+                                        )}
+                                        {u.isBlocked && (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                                            SUSPENDED
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                        <span>Code: <b className="text-slate-300 font-mono">{u.referralCode}</b></span>
+                                        <span>Referred By: <b className="text-slate-300 font-mono">{u.referredBy || 'None'}</b></span>
+                                        <span>Joined: <b className="text-slate-300">{u.joinedDate || 'Recent'}</b></span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 self-end sm:self-center">
+                                    <span className="text-xs font-black text-emerald-400 mr-2">
+                                      ₹{(u.balance || 0).toLocaleString('en-IN')}
+                                    </span>
+
+                                    {u.isBlocked ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => adminUnblockUser(u.mobile)}
+                                        className="py-1 px-2.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold hover:bg-emerald-500/30 transition cursor-pointer"
+                                      >
+                                        Unban
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          adminBlockUser(
+                                            u.mobile,
+                                            `Suspended for multi-account abuse on device: ${cluster.key}`
+                                          )
+                                        }
+                                        className="py-1 px-2.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold hover:bg-rose-500/30 transition cursor-pointer"
+                                      >
+                                        Ban
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDirectAlertTargetMobile(u.mobile);
+                                        setDirectAlertTitle('Multi-Account Investigation Alert');
+                                        setDirectAlertMsg(
+                                          'Our fraud prevention system detected multiple accounts registered on your device. Please verify your identity.'
+                                        );
+                                        setDirectAlertModalOpen(true);
+                                      }}
+                                      className="py-1 px-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 text-xs font-bold hover:text-white transition cursor-pointer"
+                                      title="Send alert"
+                                    >
+                                      Alert
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            )}
+
+            {/* Suspicious / Self-Referral View */}
+            {fraudViewTab === 'suspicious' && (
+              <div className="space-y-3">
+                {suspiciousUsersList.length === 0 ? (
+                  <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800/80 space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <h3 className="text-base font-bold text-white">No Suspicious Self-Referrals Found</h3>
+                    <p className="text-xs text-slate-400">All referral trees look legitimate and un-clustered.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {suspiciousUsersList
+                      .filter(
+                        (u) =>
+                          !fraudSearch ||
+                          u.mobile.includes(fraudSearch) ||
+                          (u.name && u.name.toLowerCase().includes(fraudSearch.toLowerCase()))
+                      )
+                      .map((u) => (
+                        <div
+                          key={u.mobile}
+                          className="p-4 rounded-2xl bg-slate-900 border border-amber-500/30 space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-bold text-white">{u.name || 'Member'}</div>
+                              <div className="text-xs font-mono font-bold text-amber-400">+91 {u.mobile}</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              Self-Ref / Multi
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 space-y-1 bg-slate-950 p-2.5 rounded-xl border border-slate-800 font-mono">
+                            <div>Referred By: <strong className="text-white">{u.referredBy || 'None'}</strong></div>
+                            <div>Device: <strong className="text-slate-300">{u.deviceFingerprint || 'Unknown'}</strong></div>
+                            <div>Balance: <strong className="text-emerald-400">₹{(u.balance || 0).toLocaleString('en-IN')}</strong></div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                            {u.isBlocked ? (
+                              <button
+                                type="button"
+                                onClick={() => adminUnblockUser(u.mobile)}
+                                className="py-1 px-3 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold cursor-pointer"
+                              >
+                                Unban
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  adminBlockUser(u.mobile, 'Suspended for self-referral / duplicate account')
+                                }
+                                className="py-1 px-3 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold cursor-pointer"
+                              >
+                                Ban Account
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* All Users Security Check */}
+            {fraudViewTab === 'all' && (
+              <div className="space-y-3">
+                <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="p-3">User</th>
+                        <th className="p-3">Device Fingerprint</th>
+                        <th className="p-3">Referral Link</th>
+                        <th className="p-3">Balance</th>
+                        <th className="p-3">Security Status</th>
+                        <th className="p-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {registeredUsers
+                        .filter(
+                          (u) =>
+                            !fraudSearch ||
+                            u.mobile.includes(fraudSearch) ||
+                            (u.name && u.name.toLowerCase().includes(fraudSearch.toLowerCase()))
+                        )
+                        .map((u) => (
+                          <tr key={u.mobile} className="hover:bg-slate-800/40">
+                            <td className="p-3">
+                              <div className="font-bold text-white">{u.name || 'Member'}</div>
+                              <div className="text-[11px] font-mono text-amber-400">+91 {u.mobile}</div>
+                            </td>
+                            <td className="p-3 font-mono text-[10px] text-slate-400 max-w-[150px] truncate">
+                              {u.deviceFingerprint || 'standard_web'}
+                            </td>
+                            <td className="p-3 font-mono text-[11px] text-slate-300">
+                              {u.referredBy ? `by ${u.referredBy}` : 'Direct'}
+                            </td>
+                            <td className="p-3 font-black text-emerald-400">
+                              ₹{(u.balance || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-3">
+                              {u.isBlocked ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                                  Blocked
+                                </span>
+                              ) : u.isSuspicious ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                  Flagged
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                                  ✓ Clean
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              {u.isBlocked ? (
+                                <button
+                                  type="button"
+                                  onClick={() => adminUnblockUser(u.mobile)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold"
+                                >
+                                  Unban
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => adminBlockUser(u.mobile, 'Security suspension')}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-xs font-bold"
+                                >
+                                  Ban
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB: DYNAMIC CUSTOM TASK MANAGER (ITEM 3) */}
+        {/* ========================================================= */}
+        {activeTab === 'custom_tasks' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Header / Actions */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-2">
+                  <ListPlus className="w-4 h-4 text-cyan-400" />
+                  <span>Dynamic Custom Tasks &amp; Partner Missions</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Create, edit, pause, and publish custom tasks (Telegram, YouTube, App installs, Social, Web) live to all users.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingCustomTaskId(null);
+                  setCustomTaskTitle('');
+                  setCustomTaskDesc('');
+                  setCustomTaskReward('25');
+                  setCustomTaskLink('');
+                  setCustomTaskCategory('telegram');
+                  setCustomTaskActionLabel('Join Channel');
+                  setIsCustomTaskModalOpen(true);
+                }}
+                className="py-2 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-xs shadow-md shadow-cyan-500/20 hover:brightness-110 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create New Task</span>
+              </button>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              {(['all', 'telegram', 'app', 'social', 'survey', 'general'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCustomTaskFilterCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition ${
+                    customTaskFilterCategory === cat
+                      ? 'bg-cyan-500 text-slate-950 font-black'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Tasks List */}
+            {(!customTasks || customTasks.length === 0) ? (
+              <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800/80 space-y-3">
+                <ListPlus className="w-8 h-8 text-cyan-400 mx-auto" />
+                <h3 className="text-base font-bold text-white">No Custom Tasks Created Yet</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Click "+ Create New Task" above to publish your first live Telegram, YouTube, or App install mission with instant wallet rewards!
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {customTasks
+                  .filter((t) => customTaskFilterCategory === 'all' || t.category === customTaskFilterCategory)
+                  .map((task) => (
+                    <div
+                      key={task.id}
+                      className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3 flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            {task.category}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              task.status === 'active'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-500'
+                            }`}
+                          >
+                            {task.status}
+                          </span>
+                        </div>
+
+                        <div className="text-base font-black text-white mt-2">
+                          {task.title}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                          {task.description || 'No description provided.'}
+                        </p>
+
+                        <div className="mt-3 p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Reward:</span>
+                            <span className="font-black text-emerald-400 font-mono">+₹{task.reward}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">Completions:</span>
+                            <span className="font-bold text-white font-mono">{task.completionsCount || 0} users</span>
+                          </div>
+                          {task.link && (
+                            <div className="flex items-center justify-between text-[11px] truncate">
+                              <span className="text-slate-400">Link:</span>
+                              <a
+                                href={task.link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-cyan-400 hover:underline truncate max-w-[150px] inline-flex items-center gap-1"
+                              >
+                                <span>{task.link}</span>
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-3 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateCustomTask(task.id, {
+                              status: task.status === 'active' ? 'inactive' : 'active',
+                            });
+                          }}
+                          className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition ${
+                            task.status === 'active'
+                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                              : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+                          }`}
+                        >
+                          {task.status === 'active' ? 'Pause' : 'Activate'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCustomTaskId(task.id);
+                            setCustomTaskTitle(task.title);
+                            setCustomTaskDesc(task.description);
+                            setCustomTaskReward((task.reward || 25).toString());
+                            setCustomTaskLink(task.link || '');
+                            setCustomTaskCategory(task.category || 'telegram');
+                            setCustomTaskActionLabel(task.actionLabel || 'Complete');
+                            setIsCustomTaskModalOpen(true);
+                          }}
+                          className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
+                          title="Edit Task"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete task "${task.title}"?`)) {
+                              deleteCustomTask(task.id);
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-red-950/40 text-red-400 hover:bg-red-900/60 border border-red-500/30 transition"
+                          title="Delete Task"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB: ADMIN AUDIT LOGS (ITEM 4) */}
+        {/* ========================================================= */}
+        {activeTab === 'audit' && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Header / Search & Filter */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <h2 className="text-sm font-extrabold text-white flex items-center gap-2">
+                  <History className="w-4 h-4 text-amber-400" />
+                  <span>Administrative Action &amp; Audit Log</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Complete history of all balance adjustments, account bans, payout &amp; deposit reviews with reasons.
+                </p>
+              </div>
+
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  placeholder="Search target mobile, action, reason..."
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder:text-slate-500 outline-none focus:border-amber-400 transition"
+                />
+              </div>
+            </div>
+
+            {/* Action Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              {[
+                { id: 'all', label: 'All Actions' },
+                { id: 'balance_increase', label: '+ Credit Bal' },
+                { id: 'balance_decrease', label: '- Debit Bal' },
+                { id: 'user_ban', label: 'User Bans' },
+                { id: 'user_unban', label: 'User Unbans' },
+                { id: 'withdrawal_approved', label: 'Withdrawal Approvals' },
+                { id: 'withdrawal_rejected', label: 'Withdrawal Rejections' },
+                { id: 'deposit_approved', label: 'Deposit Approvals' },
+                { id: 'deposit_rejected', label: 'Deposit Rejections' },
+                { id: 'clean_test_data', label: 'Clean Test Data' },
+              ].map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => setAuditActionFilter(pill.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    auditActionFilter === pill.id
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Audit Logs Table */}
+            {(!auditLogs || auditLogs.length === 0) ? (
+              <div className="p-12 text-center bg-slate-900/60 rounded-3xl border border-slate-800/80 space-y-2">
+                <History className="w-8 h-8 text-amber-400 mx-auto" />
+                <h3 className="text-base font-bold text-white">No Audit Logs Yet</h3>
+                <p className="text-xs text-slate-400">
+                  Every balance change, ban, approval, or rejection performed will be automatically recorded here with timestamps and reasons.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">Time</th>
+                      <th className="p-3">Admin Action</th>
+                      <th className="p-3">Target User</th>
+                      <th className="p-3">Value / Difference</th>
+                      <th className="p-3">Mandatory Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 font-mono">
+                    {auditLogs
+                      .filter((log) => {
+                        if (auditActionFilter !== 'all' && log.adminAction !== auditActionFilter) return false;
+                        if (!auditSearch) return true;
+                        const s = auditSearch.toLowerCase();
+                        return (
+                          log.targetMobile.includes(s) ||
+                          log.reason.toLowerCase().includes(s) ||
+                          log.adminAction.toLowerCase().includes(s) ||
+                          (log.targetName && log.targetName.toLowerCase().includes(s))
+                        );
+                      })
+                      .map((log) => {
+                        const getActionBadge = () => {
+                          switch (log.adminAction) {
+                            case 'balance_increase':
+                              return <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Balance +Credit</span>;
+                            case 'balance_decrease':
+                              return <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">Balance -Debit</span>;
+                            case 'user_ban':
+                              return <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">User Banned</span>;
+                            case 'user_unban':
+                              return <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">User Unbanned</span>;
+                            case 'withdrawal_approved':
+                              return <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Withdrawal Approved</span>;
+                            case 'withdrawal_rejected':
+                              return <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">Withdrawal Rejected</span>;
+                            case 'deposit_approved':
+                              return <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Deposit Approved</span>;
+                            case 'deposit_rejected':
+                              return <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Deposit Rejected</span>;
+                            case 'clean_test_data':
+                              return <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">Test Cleaned</span>;
+                            default:
+                              return <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">{log.adminAction}</span>;
+                          }
+                        };
+
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-800/40">
+                            <td className="p-3 text-[11px] text-slate-400 whitespace-nowrap">
+                              {log.dateStr}
+                            </td>
+                            <td className="p-3 whitespace-nowrap">
+                              {getActionBadge()}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-white text-xs">
+                                {log.targetMobile === 'ALL_USERS' ? 'Broadcast' : `+91 ${log.targetMobile}`}
+                              </div>
+                              {log.targetName && (
+                                <div className="text-[10px] text-slate-400 font-sans">{log.targetName}</div>
+                              )}
+                            </td>
+                            <td className="p-3 text-xs">
+                              {log.difference ? (
+                                <span className={String(log.difference).startsWith('+') ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                                  {log.difference}
+                                </span>
+                              ) : log.newValue ? (
+                                <span className="text-slate-300">₹{log.newValue}</span>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-[11px] font-sans text-slate-300 max-w-xs">
+                              {log.reason}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -5343,10 +6319,10 @@ export const AdminPanelScreen: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <button
                 onClick={handleExportDatabase}
-                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-amber-400 transition text-left space-y-2 group"
+                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-amber-400 transition text-left space-y-2 group cursor-pointer"
               >
                 <Download className="w-6 h-6 text-amber-400 group-hover:scale-110 transition" />
                 <div className="font-bold text-white text-sm">Download JSON Backup</div>
@@ -5357,7 +6333,7 @@ export const AdminPanelScreen: React.FC = () => {
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-blue-400 transition text-left space-y-2 group"
+                className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-blue-400 transition text-left space-y-2 group cursor-pointer"
               >
                 <Upload className="w-6 h-6 text-blue-400 group-hover:scale-110 transition" />
                 <div className="font-bold text-white text-sm">Restore JSON Backup</div>
@@ -5371,6 +6347,18 @@ export const AdminPanelScreen: React.FC = () => {
                   accept=".json"
                   className="hidden"
                 />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCleanTestModalOpen(true)}
+                className="p-5 rounded-2xl bg-slate-950 border border-amber-500/30 hover:border-amber-400 transition text-left space-y-2 group cursor-pointer"
+              >
+                <Trash2 className="w-6 h-6 text-amber-400 group-hover:scale-110 transition" />
+                <div className="font-bold text-amber-300 text-sm">🧹 1-Click Clean Test Data</div>
+                <p className="text-xs text-slate-400">
+                  Safely purge test deposits &amp; mock task submissions without touching real users.
+                </p>
               </button>
             </div>
 
@@ -7428,6 +8416,344 @@ export const AdminPanelScreen: React.FC = () => {
                   <span>{isProcessingUserAction ? 'Unblocking...' : 'Confirm Unblock'}</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REJECTION REASON MODAL (WITHDRAWALS & DEPOSITS - ITEM 5) */}
+      {rejectModalData && rejectModalData.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-rose-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Reject {rejectModalData.type === 'withdrawal' ? 'Withdrawal Request' : 'Deposit Submission'}
+                  </h3>
+                  <span className="text-[10px] text-slate-400">
+                    User will receive this reason in their in-app banner alert
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalData(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Target User:</span>
+                <span className="font-bold text-white">{rejectModalData.userTitle}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Amount:</span>
+                <span className="font-mono font-bold text-amber-400">₹{rejectModalData.amount.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400 block">
+                Quick Preset Reason (Click to Fill):
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {(rejectModalData.type === 'withdrawal'
+                  ? [
+                      'Invalid UPI ID / Payment Address',
+                      'Bank Account Number / IFSC mismatch',
+                      'Suspicious multi-account device activity',
+                      'Minimum balance policy violation',
+                      'Name mismatch with bank records',
+                    ]
+                  : [
+                      'Invalid UTR reference number',
+                      'Fake / duplicate payment screenshot',
+                      'Amount mismatch with bank receipt',
+                      'Payment not credited to merchant account',
+                      'UTR already claimed by another user',
+                    ]
+                ).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setRejectModalData({ ...rejectModalData, reason: preset })}
+                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400 block">
+                Detailed Rejection Reason (Required) *
+              </label>
+              <textarea
+                rows={3}
+                value={rejectModalData.reason}
+                onChange={(e) => setRejectModalData({ ...rejectModalData, reason: e.target.value })}
+                placeholder="Explain why this request is rejected..."
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRejectModalData(null)}
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!rejectModalData.reason.trim()) {
+                    showToast('Please specify a rejection reason');
+                    return;
+                  }
+                  if (rejectModalData.type === 'withdrawal') {
+                    await rejectWithdrawalWithReason(
+                      rejectModalData.id,
+                      rejectModalData.targetMobile || '',
+                      rejectModalData.reason
+                    );
+                  } else {
+                    await rejectPaymentDepositWithReason(
+                      rejectModalData.id,
+                      rejectModalData.reason
+                    );
+                  }
+                  setRejectModalData(null);
+                }}
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>Confirm &amp; Alert User</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE / EDIT CUSTOM TASK MODAL (ITEM 3) */}
+      {isCustomTaskModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ListPlus className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white">
+                  {editingCustomTaskId ? 'Edit Custom Task' : 'Create Live Custom Task'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCustomTaskModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Task Title *</label>
+                <input
+                  type="text"
+                  value={customTaskTitle}
+                  onChange={(e) => setCustomTaskTitle(e.target.value)}
+                  placeholder="e.g. Join Official ZoroTask Telegram"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  value={customTaskDesc}
+                  onChange={(e) => setCustomTaskDesc(e.target.value)}
+                  placeholder="e.g. Join our official channel for daily promo codes and payout proofs."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Reward (₹) *</label>
+                  <input
+                    type="number"
+                    value={customTaskReward}
+                    onChange={(e) => setCustomTaskReward(e.target.value)}
+                    placeholder="25"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Category</label>
+                  <select
+                    value={customTaskCategory}
+                    onChange={(e) => setCustomTaskCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400 capitalize"
+                  >
+                    <option value="telegram">Telegram</option>
+                    <option value="app">App Download</option>
+                    <option value="social">Social Media</option>
+                    <option value="survey">Opinion Survey</option>
+                    <option value="general">General / Web</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Target Action Link (URL)</label>
+                <input
+                  type="text"
+                  value={customTaskLink}
+                  onChange={(e) => setCustomTaskLink(e.target.value)}
+                  placeholder="https://t.me/zorotask_official or https://play.google.com/..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Action Button Label</label>
+                <input
+                  type="text"
+                  value={customTaskActionLabel}
+                  onChange={(e) => setCustomTaskActionLabel(e.target.value)}
+                  placeholder="e.g. Join Channel / Install App / Subscribe"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsCustomTaskModalOpen(false)}
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!customTaskTitle.trim()) {
+                    showToast('Please enter a task title');
+                    return;
+                  }
+                  const rewardNum = parseFloat(customTaskReward) || 0;
+                  if (rewardNum <= 0) {
+                    showToast('Reward must be greater than ₹0');
+                    return;
+                  }
+
+                  if (editingCustomTaskId) {
+                    await updateCustomTask(editingCustomTaskId, {
+                      title: customTaskTitle.trim(),
+                      description: customTaskDesc.trim(),
+                      reward: rewardNum,
+                      link: customTaskLink.trim(),
+                      category: customTaskCategory,
+                      actionLabel: customTaskActionLabel.trim() || 'Complete',
+                    });
+                  } else {
+                    await createCustomTask({
+                      title: customTaskTitle.trim(),
+                      description: customTaskDesc.trim(),
+                      reward: rewardNum,
+                      link: customTaskLink.trim(),
+                      category: customTaskCategory,
+                      actionLabel: customTaskActionLabel.trim() || 'Complete',
+                      status: 'active',
+                    });
+                  }
+                  setIsCustomTaskModalOpen(false);
+                }}
+                className="py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>{editingCustomTaskId ? 'Save Changes' : 'Publish Task Live'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-CLICK CLEAN TEST DATA MODAL (ITEM 7) */}
+      {isCleanTestModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-bold text-white">1-Click Clean Test Data</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCleanTestModalOpen(false);
+                  setCleanTestResult(null);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 space-y-2">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span>What this automated tool does:</span>
+              </div>
+              <ul className="space-y-1 text-[11px] list-disc list-inside text-amber-200/90">
+                <li>Finds and permanently deletes dummy test deposits with UTRs containing <code>TEST</code> or <code>DEMO</code>.</li>
+                <li>Finds and purges mock task submissions from test accounts.</li>
+                <li><b>Safe Guarantee:</b> Real registered user accounts, real deposits, and balances are 100% preserved and untouched!</li>
+              </ul>
+            </div>
+
+            {cleanTestResult && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+                {cleanTestResult.message}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isCleaningTestData}
+                onClick={() => {
+                  setIsCleanTestModalOpen(false);
+                  setCleanTestResult(null);
+                }}
+                className="py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={isCleaningTestData}
+                onClick={async () => {
+                  setIsCleaningTestData(true);
+                  const res = await cleanTestData();
+                  setCleanTestResult(res);
+                  setIsCleaningTestData(false);
+                }}
+                className="py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isCleaningTestData ? 'Cleaning...' : 'Start Cleaning Now'}</span>
+              </button>
             </div>
           </div>
         </div>

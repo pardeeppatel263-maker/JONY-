@@ -131,6 +131,14 @@ export interface UserProfile {
   bankIfsc?: string;
   isBlocked?: boolean;
   blockedReason?: string;
+  deviceFingerprint?: string;
+  ipAddress?: string;
+  isSuspicious?: boolean;
+  suspiciousReason?: string;
+  adminAlertMessage?: string;
+  adminAlertTimestamp?: number;
+  completedCustomTasks?: string[];
+  notifications?: AppNotification[];
 }
 
 export interface RegisteredUserAccount extends UserProfile {
@@ -187,7 +195,7 @@ export interface PaymentDeposit {
 
 export interface TransactionItem {
   id: string;
-  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward';
+  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward' | 'task_earning';
   title: string;
   date: string;
   timestamp?: number;
@@ -275,4 +283,41 @@ export interface PromoCode {
   expiryDate?: string;
   description?: string;
 }
+
+export interface AdminAuditLog {
+  id: string;
+  timestamp: number;
+  dateStr: string;
+  adminAction:
+    | 'balance_increase'
+    | 'balance_decrease'
+    | 'user_ban'
+    | 'user_unban'
+    | 'withdrawal_approved'
+    | 'withdrawal_rejected'
+    | 'deposit_approved'
+    | 'deposit_rejected'
+    | 'custom_notification'
+    | 'clean_test_data';
+  targetMobile: string;
+  targetName?: string;
+  oldValue?: string | number;
+  newValue?: string | number;
+  difference?: string | number;
+  reason: string;
+}
+
+export interface CustomTaskItem {
+  id: string;
+  title: string;
+  description: string;
+  reward: number;
+  link: string;
+  category: 'telegram' | 'app' | 'social' | 'survey' | 'general';
+  actionLabel?: string;
+  status: 'active' | 'inactive';
+  completionsCount?: number;
+  createdAt: number;
+}
+
 

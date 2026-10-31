@@ -15,6 +15,8 @@ export type ScreenType =
   | 'help_center'
   | 'profile'
   | 'plan_detail'
+  | 'spin_win'
+  | 'leaderboard'
   | 'admin';
 
 export type BottomTabType = 'home' | 'member' | 'mission' | 'record' | 'me';
@@ -87,12 +89,42 @@ export interface AdminSettings {
   addMoneyTiers?: AddMoneyTier[];
   // VIP Plans persistent cloud backup
   plans?: PlanItem[];
+  // Lucky Spin & Win Settings (Feature 1)
+  spinEnabled?: boolean;
+  dailyFreeSpins?: number;
+  spinPrizes?: number[];
+  // Flash Announcement Banner (Feature 6)
+  flashBannerEnabled?: boolean;
+  flashBannerType?: 'alert' | 'offer' | 'info' | 'urgent';
+  flashBannerTag?: string;
+  flashBannerText?: string;
+  flashBannerAction?: 'member_plans' | 'spin_win' | 'mission' | 'add_money' | 'leaderboard' | 'none';
 }
 
 export interface AddMoneyTier {
   amount: number;
   bonus: number;
   popular?: boolean;
+}
+
+export interface ScratchCardItem {
+  id: string;
+  title: string;
+  amount: number;
+  isScratched: boolean;
+  createdAt: string;
+}
+
+export interface LeaderboardUser {
+  rank: number;
+  name: string;
+  mobile: string;
+  avatar?: string;
+  vipTag: string;
+  totalEarned?: number;
+  totalReferrals?: number;
+  prizeAmount: number;
+  badge?: string;
 }
 
 
@@ -139,6 +171,9 @@ export interface UserProfile {
   adminAlertTimestamp?: number;
   completedCustomTasks?: string[];
   notifications?: AppNotification[];
+  dailySpinsUsed?: number;
+  lastSpinDate?: string;
+  scratchCards?: ScratchCardItem[];
 }
 
 export interface RegisteredUserAccount extends UserProfile {
@@ -195,7 +230,7 @@ export interface PaymentDeposit {
 
 export interface TransactionItem {
   id: string;
-  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward' | 'task_earning';
+  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward' | 'task_earning' | 'spin_reward' | 'scratch_reward';
   title: string;
   date: string;
   timestamp?: number;

@@ -7,6 +7,9 @@ import { liveWithdrawalsList } from '../data/liveWithdrawalsData';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 import rewardsHeroImg from '../assets/images/rewards_hero_badge_1790931179815.jpg';
 import { PaymentBrandBadge } from '../components/PaymentIcons';
+import { SocialProofTrustCard } from '../components/home/SocialProofTrustCard';
+import { LuckySpinModal } from '../components/games/LuckySpinModal';
+import { WeeklyLeaderboardModal } from '../components/modals/WeeklyLeaderboardModal';
 import {
   Wallet,
   ShoppingBag,
@@ -27,6 +30,8 @@ import {
   Sparkles,
   AlertTriangle,
   Megaphone,
+  Trophy,
+  RotateCw,
 } from 'lucide-react';
 
 export const HomeScreen: React.FC = () => {
@@ -172,6 +177,20 @@ export const HomeScreen: React.FC = () => {
   };
 
   const quickActions = [
+    {
+      id: 'spin',
+      label: 'Spin & Win',
+      icon: RotateCw,
+      color: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+      action: () => app.setIsSpinModalOpen?.(true),
+    },
+    {
+      id: 'leaderboard',
+      label: 'Leaderboard',
+      icon: Trophy,
+      color: 'bg-yellow-50 text-amber-600 border-amber-100',
+      action: () => app.setIsLeaderboardModalOpen?.(true),
+    },
     {
       id: 'promo',
       label: 'Redeem Code',
@@ -361,6 +380,70 @@ export const HomeScreen: React.FC = () => {
                 <span>View</span>
                 <ArrowRight className="w-3 h-3" />
               </span>
+            </div>
+          )}
+
+          {/* Feature 6: Flash Announcement Banner & Broadcast */}
+          {adminSettings.flashBannerEnabled && adminSettings.flashBannerText && (
+            <div
+              onClick={() => {
+                const act = adminSettings.flashBannerAction;
+                if (act === 'spin_win') app.setIsSpinModalOpen?.(true);
+                else if (act === 'leaderboard') app.setIsLeaderboardModalOpen?.(true);
+                else if (act && act !== 'none') navigate(act);
+              }}
+              className={`rounded-2xl p-3 border shadow-md flex items-center justify-between cursor-pointer active:scale-98 transition-all overflow-hidden relative ${
+                adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
+                  ? 'bg-gradient-to-r from-rose-900 via-red-900 to-rose-950 text-white border-rose-500/50'
+                  : adminSettings.flashBannerType === 'info'
+                  ? 'bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white border-blue-400/50'
+                  : 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 border-amber-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                <div
+                  className={`w-7 h-7 rounded-xl flex items-center justify-center font-black shrink-0 ${
+                    adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : adminSettings.flashBannerType === 'info'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-slate-950 text-amber-300 animate-bounce'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                        adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
+                          ? 'bg-white/20 text-white'
+                          : adminSettings.flashBannerType === 'info'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-950 text-amber-300'
+                      }`}
+                    >
+                      {adminSettings.flashBannerTag || 'FLASH NOTICE'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-extrabold truncate mt-0.5">
+                    {adminSettings.flashBannerText}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className={`text-[10px] font-black px-2.5 py-1 rounded-xl shrink-0 flex items-center gap-1 shadow-xs ${
+                  adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
+                    ? 'bg-white text-rose-900'
+                    : adminSettings.flashBannerType === 'info'
+                    ? 'bg-white text-blue-900'
+                    : 'bg-slate-950 text-amber-300'
+                }`}
+              >
+                <span>Open</span>
+                <ArrowRight className="w-3 h-3 stroke-[3]" />
+              </div>
             </div>
           )}
 
@@ -576,46 +659,8 @@ export const HomeScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Compact Auto-Scrolling Recent Payouts Ticker (Single Sleek Bar) */}
-          {liveWithdrawals.length > 0 && liveWithdrawals[activeWithdrawalIdx] && (
-            <div
-              onClick={() => navigate('withdraw')}
-              className="cursor-pointer bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/90 rounded-2xl p-2.5 px-3 border border-emerald-200 shadow-xs flex items-center justify-between overflow-hidden hover:border-emerald-300 transition-all active:scale-98"
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                {/* Pulsing Live Dot & Label */}
-                <div className="flex items-center gap-1 shrink-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-2xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                  <span>LIVE</span>
-                </div>
-
-                {/* Ticker Item rotating 1-by-1 */}
-                <div
-                  key={activeWithdrawalIdx}
-                  className="flex items-center gap-1.5 min-w-0 flex-1 animate-in fade-in slide-in-from-bottom-2 duration-300 truncate"
-                >
-                  <span className="text-xs font-bold text-slate-800 truncate">
-                    {liveWithdrawals[activeWithdrawalIdx].name}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                    ({liveWithdrawals[activeWithdrawalIdx].phone})
-                  </span>
-                  <span className="text-[9px] text-emerald-800 bg-white border border-emerald-200 px-1.5 py-0.5 rounded-md font-bold shrink-0 flex items-center gap-1 shadow-2xs">
-                    <PaymentBrandBadge method={liveWithdrawals[activeWithdrawalIdx].method} size={11} />
-                    <span>{liveWithdrawals[activeWithdrawalIdx].method}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Amount Badge */}
-              <div className="shrink-0 pl-2 flex items-center gap-1 text-right">
-                <span className="text-xs font-black text-emerald-600 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  {liveWithdrawals[activeWithdrawalIdx].amount}
-                </span>
-                <ArrowRight className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              </div>
-            </div>
-          )}
+          {/* FEATURE 2: High-Converting Live Payout Ticker & Social Proof (Trust Booster) */}
+          <SocialProofTrustCard />
 
           {/* Install Official App & Download APK Section */}
           {!isStandalone && (
@@ -660,6 +705,18 @@ export const HomeScreen: React.FC = () => {
       <HomeAnnouncementModal
         isOpen={isNoticeModalOpen}
         onClose={handleDismissNotice}
+      />
+
+      {/* FEATURE 1: LUCKY SPIN & SCRATCH CARDS MODAL */}
+      <LuckySpinModal
+        isOpen={Boolean(app.isSpinModalOpen)}
+        onClose={() => app.setIsSpinModalOpen?.(false)}
+      />
+
+      {/* FEATURE 3: WEEKLY LEADERBOARD MODAL */}
+      <WeeklyLeaderboardModal
+        isOpen={Boolean(app.isLeaderboardModalOpen)}
+        onClose={() => app.setIsLeaderboardModalOpen?.(false)}
       />
     </div>
   );

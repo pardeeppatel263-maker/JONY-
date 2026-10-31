@@ -424,6 +424,23 @@ export const AdminPanelScreen: React.FC = () => {
     adminSettings.announcementButtonAction || 'member_plans'
   );
 
+  // Feature 6: Flash Announcement Banner & Broadcast
+  const [flashBannerEnabled, setFlashBannerEnabled] = useState(adminSettings.flashBannerEnabled ?? true);
+  const [flashBannerType, setFlashBannerType] = useState<'alert' | 'offer' | 'info' | 'urgent'>(
+    adminSettings.flashBannerType || 'offer'
+  );
+  const [flashBannerTag, setFlashBannerTag] = useState(adminSettings.flashBannerTag || 'MEGA BONUS');
+  const [flashBannerText, setFlashBannerText] = useState(
+    adminSettings.flashBannerText || '🔥 Sunday Special: Complete daily tasks now to earn instant Scratch Cards with up to ₹100 bonus cash!'
+  );
+  const [flashBannerAction, setFlashBannerAction] = useState<any>(
+    adminSettings.flashBannerAction || 'spin_win'
+  );
+
+  // Feature 1: Lucky Spin Settings
+  const [spinEnabledInput, setSpinEnabledInput] = useState(adminSettings.spinEnabled ?? true);
+  const [dailyFreeSpinsInput, setDailyFreeSpinsInput] = useState((adminSettings.dailyFreeSpins || 2).toString());
+
   // Filters & Search
   const [depositFilter, setDepositFilter] = useState<'all' | 'in_process' | 'approved' | 'rejected'>('in_process');
   const [depositSearch, setDepositSearch] = useState('');
@@ -4649,6 +4666,106 @@ export const AdminPanelScreen: React.FC = () => {
                 </div>
               </div>
 
+              {/* Feature 6: Top Flash Announcement Bar & Broadcast Config */}
+              <div className="pt-4 border-t border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>Feature 6: Top Flash Announcement Bar (Live Broadcast)</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Renders a prominent, eye-catching announcement bar right on users&apos; Home screen.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={flashBannerEnabled}
+                      onChange={(e) => setFlashBannerEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Banner Style / Theme
+                    </label>
+                    <select
+                      value={flashBannerType}
+                      onChange={(e) => setFlashBannerType(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                    >
+                      <option value="offer">Golden Offer / Reward (Amber)</option>
+                      <option value="alert">Urgent Alert / Caution (Red)</option>
+                      <option value="info">System Info / Notice (Blue)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Tag / Badge Text
+                    </label>
+                    <input
+                      type="text"
+                      value={flashBannerTag}
+                      onChange={(e) => setFlashBannerTag(e.target.value)}
+                      placeholder="e.g. MEGA OFFER, SUNDAY 2X BONUS"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400 font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Banner Announcement Text
+                  </label>
+                  <input
+                    type="text"
+                    value={flashBannerText}
+                    onChange={(e) => setFlashBannerText(e.target.value)}
+                    placeholder="e.g. 🔥 Sunday Special: Complete daily tasks now to earn instant Scratch Cards!"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Action Destination on Click
+                    </label>
+                    <select
+                      value={flashBannerAction}
+                      onChange={(e) => setFlashBannerAction(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                    >
+                      <option value="spin_win">Open Lucky Spin &amp; Win Wheel</option>
+                      <option value="leaderboard">Open Weekly Leaderboard Contest</option>
+                      <option value="member_plans">Open VIP Member Plans</option>
+                      <option value="mission">Open Mission Tasks</option>
+                      <option value="none">No Action (Display Only)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Daily Free Spins Limit (Feature 1)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={dailyFreeSpinsInput}
+                      onChange={(e) => setDailyFreeSpinsInput(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400 font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Save & Broadcast Button */}
               <div className="pt-2">
                 <button
@@ -4666,13 +4783,20 @@ export const AdminPanelScreen: React.FC = () => {
                         month: 'short',
                         year: 'numeric',
                       }),
+                      flashBannerEnabled: flashBannerEnabled,
+                      flashBannerType: flashBannerType,
+                      flashBannerTag: flashBannerTag,
+                      flashBannerText: flashBannerText,
+                      flashBannerAction: flashBannerAction,
+                      spinEnabled: spinEnabledInput,
+                      dailyFreeSpins: parseInt(dailyFreeSpinsInput) || 2,
                     });
-                    showToast('🎉 Home popup announcement saved & broadcasted live to all users!');
+                    showToast('🎉 Home popup announcement & Flash Banner saved and broadcasted live to all users!');
                   }}
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 font-black text-sm shadow-lg shadow-orange-500/20 hover:brightness-110 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Megaphone className="w-4 h-4" />
-                  <span>Save &amp; Broadcast Announcement Live to All Users</span>
+                  <span>Save &amp; Broadcast Announcement &amp; Flash Banner Live</span>
                 </button>
               </div>
             </div>

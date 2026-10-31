@@ -35,6 +35,7 @@ import {
   PromoCode,
   AdminAuditLog,
   CustomTaskItem,
+  ScratchCardItem,
 } from '../types';
 import {
   emptyUser,
@@ -239,6 +240,17 @@ interface AppContextType {
   rejectWithdrawalWithReason: (withdrawalId: string, userMobile: string, reason: string) => Promise<boolean>;
   rejectPaymentDepositWithReason: (depositId: string, reason: string) => Promise<boolean>;
   dismissAdminAlert: () => Promise<void>;
+
+  // Feature 1: Lucky Spin & Scratch Cards
+  isSpinModalOpen: boolean;
+  setIsSpinModalOpen: (open: boolean) => void;
+  spinLuckyWheel: (prizeIndex?: number) => Promise<{ prize: string; amount: number; isScratchCard?: boolean }>;
+  claimScratchCard: (cardId: string) => Promise<number>;
+  awardScratchCard: (title: string, amount: number) => void;
+
+  // Feature 3: Weekly Leaderboard Contest
+  isLeaderboardModalOpen: boolean;
+  setIsLeaderboardModalOpen: (open: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -589,6 +601,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isPromoModalOpen, setIsPromoModalOpen] = useState<boolean>(false);
+  const [isSpinModalOpen, setIsSpinModalOpen] = useState<boolean>(false);
+  const [isLeaderboardModalOpen, setIsLeaderboardModalOpen] = useState<boolean>(false);
 
   // 1 & 4. Dynamic Custom Tasks & Admin Audit Logs
   const [customTasks, setCustomTasks] = useState<CustomTaskItem[]>([]);
@@ -647,6 +661,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     announcementButtonText: 'Check VIP Plans ⭐',
     announcementButtonAction: 'member_plans',
     announcementDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    spinEnabled: true,
+    dailyFreeSpins: 2,
+    spinPrizes: [5, 10, 25, 50, 100, 0, 2, 15],
+    flashBannerEnabled: true,
+    flashBannerType: 'offer',
+    flashBannerTag: 'MEGA BONUS',
+    flashBannerText: '🔥 Sunday Special: Complete daily tasks now to earn instant Scratch Cards with up to ₹100 bonus cash!',
+    flashBannerAction: 'spin_win',
     paymentGatewayEnabled: false,
     paymentGatewayProvider: 'manual',
     paymentGatewayMerchantId: '',
@@ -1550,6 +1572,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     login: 'login',
     register: 'register',
     splash: 'splash',
+    spin_win: 'spin_win',
+    leaderboard: 'leaderboard',
   };
 
   const getScreenFromHash = (h: string): ScreenType | null => {
@@ -1621,6 +1645,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let modalClosed = false;
     if (isPromoModalOpen) {
       setIsPromoModalOpen(false);
+      modalClosed = true;
+    } else if (isSpinModalOpen) {
+      setIsSpinModalOpen(false);
+      modalClosed = true;
+    } else if (isLeaderboardModalOpen) {
+      setIsLeaderboardModalOpen(false);
       modalClosed = true;
     } else if (isSurveyModalOpen) {
       setIsSurveyModalOpen(false);
@@ -1843,6 +1873,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const navigate = (screen: ScreenType, plan?: PlanItem) => {
+    if (screen === 'spin_win') {
+      setIsSpinModalOpen(true);
+      return;
+    }
+    if (screen === 'leaderboard') {
+      setIsLeaderboardModalOpen(true);
+      return;
+    }
     if (plan) setSelectedPlan(plan);
     if (screen === currentScreen) return;
 
@@ -5197,6 +5235,175 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: `Completed! ₹${reward} credited.` };
   };
 
+  // Feature 1: Lucky Spin & Win
+  const spinLuckyWheel = async (prizeIndex?: number): Promise<{ prize: string; amount: number; isScratchCard?: boolean }> => {
+    const prizes = [
+      { label: '₹5 Cash', amount: 5 },
+      { label: '₹10 Cash', amount: 10 },
+      { label: '₹25 Cash', amount: 25 },
+      { label: '₹50 Cash', amount: 50 },
+      { label: '₹100 Mega', amount: 100 },
+      { label: '🎁 Scratch Card', amount: 0, isScratchCard: true },
+      { label: '₹2 Cash', amount: 2 },
+      { label: '₹15 Cash', amount: 15 },
+    ];
+
+    const idx = prizeIndex !== undefined ? prizeIndex : Math.floor(Math.random() * prizes.length);
+    const won = prizes[idx] || prizes[0];
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isSameDay = user.lastSpinDate === todayStr;
+    const spinsUsedToday = isSameDay ? (user.dailySpinsUsed || 0) + 1 : 1;
+
+    let updatedBalance = user.balance;
+    let updatedTodayEarnings = user.todayEarnings || 0;
+    let updatedTotalEarnings = user.totalEarnings || 0;
+    let updatedCards = [...(user.scratchCards || [])];
+    let newTxList = [...transactions];
+
+    if (won.isScratchCard) {
+      const newCard: ScratchCardItem = {
+        id: `sc_${Date.now()}`,
+        title: 'Lucky Wheel Bonus Card',
+        amount: [10, 20, 25, 50, 100][Math.floor(Math.random() * 5)],
+        isScratched: false,
+        createdAt: new Date().toLocaleDateString('en-IN'),
+      };
+      updatedCards.push(newCard);
+      showToast('🎁 You won an exclusive Scratch Card!');
+    } else if (won.amount > 0) {
+      updatedBalance += won.amount;
+      updatedTodayEarnings += won.amount;
+      updatedTotalEarnings += won.amount;
+
+      const newTx: TransactionItem = {
+        id: `tx_${Date.now()}_spin`,
+        type: 'spin_reward',
+        title: 'Lucky Spin & Win Reward',
+        date: new Date().toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        timestamp: Date.now(),
+        amount: won.amount,
+        isCredit: true,
+        status: 'completed',
+        note: `Won ₹${won.amount} from daily lucky wheel`,
+      };
+      newTxList = [newTx, ...newTxList];
+      setTransactions(newTxList);
+      showToast(`🎉 ₹${won.amount} Cash credited to your wallet!`);
+    }
+
+    const updatedUser: UserProfile = {
+      ...user,
+      balance: updatedBalance,
+      todayEarnings: updatedTodayEarnings,
+      totalEarnings: updatedTotalEarnings,
+      dailySpinsUsed: spinsUsedToday,
+      lastSpinDate: todayStr,
+      scratchCards: updatedCards,
+    };
+
+    setUser(updatedUser);
+
+    const cleanMob = normalizeMobile(user.mobile);
+    if (cleanMob) {
+      try {
+        await setDoc(doc(db, 'users', cleanMob), {
+          balance: updatedBalance,
+          todayEarnings: updatedTodayEarnings,
+          totalEarnings: updatedTotalEarnings,
+          dailySpinsUsed: spinsUsedToday,
+          lastSpinDate: todayStr,
+          scratchCards: updatedCards,
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Error saving spin result to Firestore:', err);
+      }
+    }
+
+    return { prize: won.label, amount: won.amount, isScratchCard: won.isScratchCard };
+  };
+
+  // Feature 1: Claim Scratch Card
+  const claimScratchCard = async (cardId: string): Promise<number> => {
+    const cards = user.scratchCards || [];
+    const target = cards.find((c) => c.id === cardId);
+    if (!target || target.isScratched) return 0;
+
+    const amt = target.amount || 10;
+    const updatedCards = cards.map((c) => (c.id === cardId ? { ...c, isScratched: true } : c));
+    const newBal = (user.balance || 0) + amt;
+    const newToday = (user.todayEarnings || 0) + amt;
+    const newTotal = (user.totalEarnings || 0) + amt;
+
+    const newTx: TransactionItem = {
+      id: `tx_${Date.now()}_sc`,
+      type: 'scratch_reward',
+      title: `${target.title} (Scratch Cash)`,
+      date: new Date().toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      timestamp: Date.now(),
+      amount: amt,
+      isCredit: true,
+      status: 'completed',
+      note: `Revealed ₹${amt} from scratch card`,
+    };
+
+    const updatedUser: UserProfile = {
+      ...user,
+      balance: newBal,
+      todayEarnings: newToday,
+      totalEarnings: newTotal,
+      scratchCards: updatedCards,
+    };
+
+    setUser(updatedUser);
+    setTransactions((prev) => [newTx, ...prev]);
+
+    const cleanMob = normalizeMobile(user.mobile);
+    if (cleanMob) {
+      try {
+        await setDoc(doc(db, 'users', cleanMob), {
+          balance: newBal,
+          todayEarnings: newToday,
+          totalEarnings: newTotal,
+          scratchCards: updatedCards,
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Error saving scratch card claim to Firestore:', err);
+      }
+    }
+
+    showToast(`🎉 ₹${amt} added from Scratch Card!`);
+    return amt;
+  };
+
+  // Feature 1: Award Scratch Card to User
+  const awardScratchCard = (title: string, amount: number) => {
+    const newCard: ScratchCardItem = {
+      id: `sc_${Date.now()}`,
+      title,
+      amount,
+      isScratched: false,
+      createdAt: new Date().toLocaleDateString('en-IN'),
+    };
+    const updatedCards = [...(user.scratchCards || []), newCard];
+    setUser((prev) => ({ ...prev, scratchCards: updatedCards }));
+    const cleanMob = normalizeMobile(user.mobile);
+    if (cleanMob) {
+      setDoc(doc(db, 'users', cleanMob), { scratchCards: updatedCards }, { merge: true }).catch(() => {});
+    }
+    showToast(`🎁 You earned a new Scratch Card: ${title}!`);
+  };
+
   // 7. 1-Click Clean Test Data
   const cleanTestData = async (): Promise<{ deletedDeposits: number; deletedSubmissions: number; message: string }> => {
     try {
@@ -5471,6 +5678,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rejectWithdrawalWithReason,
         rejectPaymentDepositWithReason,
         dismissAdminAlert,
+        isSpinModalOpen,
+        setIsSpinModalOpen,
+        spinLuckyWheel,
+        claimScratchCard,
+        awardScratchCard,
+        isLeaderboardModalOpen,
+        setIsLeaderboardModalOpen,
         isExitModalOpen,
         setIsExitModalOpen,
         isUpdateModalOpen,

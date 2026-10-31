@@ -3,11 +3,8 @@ import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
 import { BottomNav } from '../components/BottomNav';
 import { HomeAnnouncementModal } from '../components/modals/HomeAnnouncementModal';
-import { liveWithdrawalsList } from '../data/liveWithdrawalsData';
 import { downloadApkToDevice } from '../utils/apkDownloader';
 import rewardsHeroImg from '../assets/images/rewards_hero_badge_1790931179815.jpg';
-import { PaymentBrandBadge } from '../components/PaymentIcons';
-import { SocialProofTrustCard } from '../components/home/SocialProofTrustCard';
 import { LuckySpinModal } from '../components/games/LuckySpinModal';
 import { WeeklyLeaderboardModal } from '../components/modals/WeeklyLeaderboardModal';
 import {
@@ -137,20 +134,6 @@ export const HomeScreen: React.FC = () => {
 
   const isVideoPending = taskSubmissions.some((s: any) => s.status === 'pending' && s.taskType === 'youtube_video');
   const isVideoApproved = taskSubmissions.some((s: any) => s.status === 'approved' && s.taskType === 'youtube_video');
-
-  // Compact Auto-Scrolling Live Withdrawals Feed with 850 diverse names (700-1000 range)
-  const liveWithdrawals = liveWithdrawalsList;
-
-  const [activeWithdrawalIdx, setActiveWithdrawalIdx] = useState(() =>
-    Math.floor(Math.random() * liveWithdrawalsList.length)
-  );
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveWithdrawalIdx((prev) => (prev + 1) % liveWithdrawals.length);
-    }, 2400);
-    return () => clearInterval(timer);
-  }, [liveWithdrawals.length]);
 
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
 
@@ -658,9 +641,6 @@ export const HomeScreen: React.FC = () => {
               })}
             </div>
           </div>
-
-          {/* FEATURE 2: High-Converting Live Payout Ticker & Social Proof (Trust Booster) */}
-          <SocialProofTrustCard />
 
           {/* Install Official App & Download APK Section */}
           {!isStandalone && (

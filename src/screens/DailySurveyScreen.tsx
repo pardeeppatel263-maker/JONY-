@@ -8,7 +8,7 @@ export const DailySurveyScreen: React.FC = () => {
   const todaySurvey = surveys.find((s) => s.id === 'srv_today');
   const pastSurveys = surveys.filter((s) => s.id !== 'srv_today');
   const reward = adminSettings.dailySurveyReward || todaySurvey?.reward || 150;
-  const hasPaidPlan = (activeUserPlans || []).some((p) => p.level > 0);
+  const hasPaidPlan = (activeUserPlans || []).some((p) => p && typeof p.level === 'number' && p.level > 0);
   const isTrialExpired = !isFreeTrialActive && !hasPaidPlan;
 
   return (

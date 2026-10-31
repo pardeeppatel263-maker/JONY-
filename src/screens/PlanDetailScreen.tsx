@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { defaultLevel0Plan } from '../data/initialData';
 import { AppHeader } from '../components/AppHeader';
 import {
   CheckCircle2,
@@ -28,20 +29,20 @@ export const PlanDetailScreen: React.FC = () => {
     navigate,
     isFreeTrialActive,
   } = useApp();
-  const plan = selectedPlan || plans[1] || plans[0];
+  const plan = selectedPlan || plans[1] || plans[0] || defaultLevel0Plan;
   const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'upi'>('wallet');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const isAlreadyPurchased = (user.purchasedPlanIds || []).includes(plan.id) && plan.level > 0;
+  const isAlreadyPurchased = (user.purchasedPlanIds || []).includes(plan?.id) && (plan?.level ?? 0) > 0;
   const pendingDeposit = paymentDeposits.find(
     (d) =>
       d.status === 'in_process' &&
       d.depositType === 'plan_purchase' &&
-      (d.planLevel === plan.level || d.planTitle === plan.title)
+      (d.planLevel === plan?.level || d.planTitle === plan?.title)
   );
   const isPlanPending = Boolean(pendingDeposit);
-  const hasEnoughWalletBalance = user.balance >= plan.price;
-  const balanceDifference = plan.price - user.balance;
+  const hasEnoughWalletBalance = user.balance >= (plan?.price ?? 0);
+  const balanceDifference = (plan?.price ?? 0) - user.balance;
 
   const handleWalletPay = () => {
     if (isAlreadyPurchased) {

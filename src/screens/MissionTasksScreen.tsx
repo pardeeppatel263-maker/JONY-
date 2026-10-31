@@ -144,24 +144,24 @@ export const MissionTasksScreen: React.FC = () => {
             <div className="flex items-center justify-between relative z-10">
               <div className="space-y-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {activeUserPlans.map((p) => (
+                  {(activeUserPlans || []).map((p) => (
                     <span
-                      key={p.id}
+                      key={p?.id || `plan_${p?.level}`}
                       className="text-[10px] uppercase font-black bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full shadow-2xs"
                     >
-                      LV {p.level} • {p.levelTag}
+                      LV {p?.level ?? 0} • {p?.levelTag || p?.title}
                     </span>
                   ))}
-                  {activeUserPlans.length > 1 && (
+                  {(activeUserPlans?.length || 0) > 1 && (
                     <span className="text-[10px] font-bold bg-emerald-400/30 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full">
                       Combined Missions
                     </span>
                   )}
                 </div>
                 <h2 className="text-base font-black leading-tight text-white">
-                  {activeUserPlans.length > 1
-                    ? `${activeUserPlans.map((p) => `Level ${p.level}`).join(' + ')} Daily Missions`
-                    : `Level ${activeUserPlan.level} Daily Missions`} <br />
+                  {(activeUserPlans?.length || 0) > 1
+                    ? `${activeUserPlans.map((p) => `Level ${p?.level ?? 0}`).join(' + ')} Daily Missions`
+                    : `Level ${activeUserPlan?.level ?? 0} Daily Missions`} <br />
                   <span className="text-amber-300">Total {maxDailyVideos} Videos Available</span>
                 </h2>
                 <p className="text-[11px] text-blue-100 flex items-center gap-1">
@@ -201,7 +201,7 @@ export const MissionTasksScreen: React.FC = () => {
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : activeUserPlan.level === 0 ? (
+          ) : (activeUserPlan?.level ?? 0) === 0 ? (
             <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-3.5 border border-amber-200 shadow-2xs space-y-2">
               <div className="flex items-start gap-2.5">
                 <div className="p-1.5 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5">
@@ -235,7 +235,7 @@ export const MissionTasksScreen: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-xs font-black text-slate-800 uppercase tracking-wide block leading-none">
-                    Level {activeUserPlan.level} Tasks Quota
+                    Level {activeUserPlan?.level ?? 0} Tasks Quota
                   </span>
                   <span className="text-[10px] text-slate-400">
                     Total {maxDailyVideos} Videos ({todayVideosWatched} Completed, {remainingVideos} Remaining)
@@ -270,7 +270,7 @@ export const MissionTasksScreen: React.FC = () => {
             {!isAllVideosDone && (
               <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-100 text-[11px] text-slate-600 flex items-center justify-between">
                 <span>
-                  Your <b>Level {activeUserPlan.level}</b> includes <b>{maxDailyVideos} videos</b>. Earn <b>₹{perVideoReward}</b> reward per video.
+                  Your <b>Level {activeUserPlan?.level ?? 0}</b> includes <b>{maxDailyVideos} videos</b>. Earn <b>₹{perVideoReward}</b> reward per video.
                 </span>
                 <span className="text-xs font-black text-blue-700 shrink-0 ml-2">
                   ₹{perVideoReward}/VD
@@ -322,7 +322,7 @@ export const MissionTasksScreen: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Level {activeUserPlan.level} Video Tasks ({videoMissions.length} Total)</span>
+                  <span>Level {activeUserPlan?.level ?? 0} Video Tasks ({videoMissions.length} Total)</span>
                 </span>
                 <span className="text-[11px] font-bold text-slate-500">
                   {todayVideosWatched}/{maxDailyVideos} Done
@@ -364,7 +364,7 @@ export const MissionTasksScreen: React.FC = () => {
                             {task.title}
                           </h4>
                           <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                            LV {task.planLevel ?? activeUserPlan.level}
+                            LV {task.planLevel ?? activeUserPlan?.level ?? 0}
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
@@ -526,14 +526,14 @@ export const MissionTasksScreen: React.FC = () => {
                 </div>
 
                 {/* Active Plans Summary Bar */}
-                {activeUserPlans.length > 0 && activeUserPlans[0].level > 0 && (
+                {(activeUserPlans?.length || 0) > 0 && (activeUserPlans[0]?.level ?? 0) > 0 && (
                   <div className="p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="font-bold text-emerald-950">
-                        {activeUserPlans.length > 1
-                          ? `You have ${activeUserPlans.length} VIP Plans Active (${activeUserPlans.map((p) => `LV ${p.level}`).join(' + ')})`
-                          : `Level ${activeUserPlan.level} Active VIP Plan`}
+                        {(activeUserPlans?.length || 0) > 1
+                          ? `You have ${activeUserPlans.length} VIP Plans Active (${activeUserPlans.map((p) => `LV ${p?.level ?? 0}`).join(' + ')})`
+                          : `Level ${activeUserPlan?.level ?? 0} Active VIP Plan`}
                       </span>
                     </div>
                     <span className="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">
@@ -543,11 +543,11 @@ export const MissionTasksScreen: React.FC = () => {
                 )}
 
                 <div className="grid grid-cols-1 gap-2 text-xs">
-                  {plans.filter((p) => p.level > 0).map((p) => {
+                  {plans.filter((p) => (p?.level ?? 0) > 0).map((p) => {
                     const isPurchased =
                       (user.purchasedPlanIds && user.purchasedPlanIds.includes(p.id)) ||
-                      activeUserPlans.some((ap) => ap.level === p.level) ||
-                      activeUserPlan.level === p.level;
+                      (activeUserPlans || []).some((ap) => ap?.level === p.level) ||
+                      (activeUserPlan?.level ?? 0) === p.level;
 
                     return (
                       <div

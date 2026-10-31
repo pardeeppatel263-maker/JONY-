@@ -39,6 +39,7 @@ import {
 } from '../types';
 import {
   emptyUser,
+  defaultLevel0Plan,
   initialPlans,
   initialTransactions,
   initialSurveys,
@@ -519,8 +520,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [surveys, setSurveys] = useState<SurveyItem[]>([]);
 
   const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
-    if (!Array.isArray(list)) return [];
+    if (!Array.isArray(list) || list.length === 0) return initialPlans;
     const map = new Map<string, PlanItem>();
+    initialPlans.forEach((p) => map.set(p.id, p));
     list.forEach((p) => {
       if (p && p.id) {
         map.set(p.id, p);
@@ -529,8 +531,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Array.from(map.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
   };
 
-  const [plans, setPlans] = useState<PlanItem[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
+  const [plans, setPlans] = useState<PlanItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('taskvibe_plans');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return mergeWithInitialPlans(parsed);
+        }
+      }
+      return initialPlans;
+    } catch {
+      return initialPlans;
+    }
+  });
+  const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(() => {
+    try {
+      const saved = localStorage.getItem('taskvibe_selected_plan');
+      return saved ? JSON.parse(saved) : (initialPlans[1] || initialPlans[0] || defaultLevel0Plan);
+    } catch {
+      return initialPlans[1] || initialPlans[0] || defaultLevel0Plan;
+    }
+  });
 
   useEffect(() => {
     if (selectedPlan) {
@@ -3571,25 +3593,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // If user is within their 2-day free trial (or Admin enabled it), they get 2 Free Videos from Level 0!
   // Plus, any VIP levels they purchased or Admin assigned (Level 1, Level 2, etc.) are active simultaneously!
   const activeUserPlans: PlanItem[] = React.useMemo(() => {
+    const safePlans = Array.isArray(plans) && plans.length > 0 ? plans : initialPlans;
     const hasExplicitList = Array.isArray(user.purchasedPlanIds);
     const purchasedIds = user.purchasedPlanIds || [];
-    const validPurchased = plans.filter((p) => p.level > 0 && purchasedIds.includes(p.id));
+    const validPurchased = safePlans.filter(
+      (p) => p && typeof p.level === 'number' && p.level > 0 && purchasedIds.includes(p.id)
+    );
 
     // If legacy account has vipLevel > 0 and no explicit purchasedPlanIds array yet, include matching level plan
     if (!hasExplicitList && typeof user.vipLevel === 'number' && user.vipLevel > 0) {
-      const legacyMatch = plans.find((p) => p.level === user.vipLevel);
+      const legacyMatch = safePlans.find((p) => p && p.level === user.vipLevel);
       if (legacyMatch && !validPurchased.some((vp) => vp.id === legacyMatch.id)) {
         validPurchased.push(legacyMatch);
       }
     } else if (hasExplicitList && typeof user.vipLevel === 'number' && user.vipLevel > 0 && validPurchased.length === 0) {
-      const fallbackMatch = plans.find((p) => p.level === user.vipLevel);
+      const fallbackMatch = safePlans.find((p) => p && p.level === user.vipLevel);
       if (fallbackMatch) {
         validPurchased.push(fallbackMatch);
       }
     }
 
-    const sortedPurchased = validPurchased.sort((a, b) => a.level - b.level);
-    const level0FreePlan = plans.find((p) => p.level === 0) || plans[0];
+    const sortedPurchased = validPurchased.sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0));
+    const level0FreePlan = safePlans.find((p) => p && p.level === 0) || safePlans[0] || defaultLevel0Plan;
     // Free task is strictly only available for 2 days from registration date:
     const includeLevel0 = isFreeTrialActive && user.freeTrialOverride !== 'disabled';
 
@@ -3600,12 +3625,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [plans, user.vipLevel, user.purchasedPlanIds, user.freeTrialOverride, isFreeTrialActive]);
 
-  // Highest active plan (for badge and display fallback)
+  // Highest active plan (for badge and display fallback) - 100% Guaranteed to never be undefined
   const activeUserPlan: PlanItem = React.useMemo(() => {
-    if (activeUserPlans.length > 0) {
-      return activeUserPlans[activeUserPlans.length - 1];
+    if (activeUserPlans && activeUserPlans.length > 0) {
+      const highest = activeUserPlans[activeUserPlans.length - 1];
+      if (highest && typeof highest.level === 'number') {
+        return highest;
+      }
     }
-    return plans.find((p) => p.level === 0) || plans[0];
+    const safePlans = Array.isArray(plans) && plans.length > 0 ? plans : initialPlans;
+    return safePlans.find((p) => p && p.level === 0) || safePlans[0] || defaultLevel0Plan;
   }, [activeUserPlans, plans]);
 
   // Generate full composite list of video missions across all active plans!
@@ -3613,17 +3642,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const userDailyVideoMissions: VideoMissionDef[] = React.useMemo(() => {
     const list: VideoMissionDef[] = [];
     let overallIdx = 1;
-    activeUserPlans.forEach((plan) => {
-      const count = plan.dailyMissions || (plan.level === 0 ? 2 : 2);
+    (activeUserPlans || []).forEach((plan) => {
+      if (!plan) return;
+      const planLevel = typeof plan.level === 'number' ? plan.level : 0;
+      const count = plan.dailyMissions || (planLevel === 0 ? 2 : 2);
       for (let i = 1; i <= count; i++) {
         list.push({
           index: overallIdx,
-          planLevel: plan.level,
-          planTag: plan.levelTag || `Level ${plan.level}`,
+          planLevel,
+          planTag: plan.levelTag || `Level ${planLevel}`,
           levelIndex: i,
           levelTotal: count,
-          reward: plan.perMission,
-          title: `Level ${plan.level} (${plan.levelTag}) Video #${i}`,
+          reward: plan.perMission ?? 20,
+          title: `Level ${planLevel} (${plan.levelTag || `Level ${planLevel}`}) Video #${i}`,
         });
         overallIdx++;
       }

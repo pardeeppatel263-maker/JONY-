@@ -94,7 +94,7 @@ export const VideoTaskModal: React.FC = () => {
   const videoTitle =
     user.assignedVideoTitle ||
     activeMissionDef?.title ||
-    `Level ${activeUserPlan.level} Official Sponsor Video #${taskOrder}`;
+    `Level ${activeUserPlan?.level ?? 0} Official Sponsor Video #${taskOrder}`;
   const rewardAmount =
     user.assignedReward ||
     activeMissionDef?.reward ||
@@ -471,10 +471,10 @@ export const VideoTaskModal: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-black leading-none block">
-                  Level {activeMissionDef?.planLevel ?? activeUserPlan.level} Video #{activeMissionDef?.levelIndex ?? taskOrder} (Overall {taskOrder}/{maxDailyVideos})
+                  Level {activeMissionDef?.planLevel ?? activeUserPlan?.level ?? 0} Video #{activeMissionDef?.levelIndex ?? taskOrder} (Overall {taskOrder}/{maxDailyVideos})
                 </span>
                 <span className="text-[9px] font-bold bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full">
-                  {activeMissionDef?.planTag || activeUserPlan.badge}
+                  {activeMissionDef?.planTag || activeUserPlan?.badge || 'LV 0'}
                 </span>
               </div>
               <span className="text-[10px] text-emerald-400 font-medium">

@@ -42,15 +42,15 @@ export const MemberPlansScreen: React.FC = () => {
     new Set([
       ...userPurchasedIds,
       ...(user.vipLevel && user.vipLevel > 0
-        ? [plans.find((p) => p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
+        ? [plans.find((p) => p && p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
         : []),
     ])
   );
 
   const boughtLevels = activePlanIds
     .filter((id) => id !== 'plan_lv0')
-    .map((id) => plans.find((p) => p.id === id)?.level)
-    .filter(Boolean) as number[];
+    .map((id) => plans.find((p) => p && p.id === id)?.level)
+    .filter((l): l is number => typeof l === 'number');
 
   const handleSelectPlan = (plan: PlanItem) => {
     navigate('plan_detail', plan);
@@ -172,14 +172,14 @@ export const MemberPlansScreen: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
-                      Your Active Plans: {activeUserPlans.map((p) => `Level ${p.level}`).join(' + ')}
+                      Your Active Plans: {(activeUserPlans || []).map((p) => `Level ${p?.level ?? 0}`).join(' + ')}
                     </span>
                     <span className="text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-md">
-                      {activeUserPlans.length > 1 ? `${activeUserPlans.length} Plans Active` : activeUserPlan.badge}
+                      {(activeUserPlans?.length || 0) > 1 ? `${activeUserPlans.length} Plans Active` : (activeUserPlan?.badge || 'LV 0')}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5">
-                    Total {maxDailyVideos} Videos Daily ({activeUserPlans.map((p) => `LV${p.level}: ${p.dailyMissions} VD @ ₹${p.perMission}`).join(' + ')})
+                    Total {maxDailyVideos} Videos Daily ({(activeUserPlans || []).map((p) => `LV${p?.level ?? 0}: ${p?.dailyMissions ?? 2} VD @ ₹${p?.perMission ?? 20}`).join(' + ')})
                   </p>
                 </div>
               </div>

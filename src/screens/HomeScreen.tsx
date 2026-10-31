@@ -126,11 +126,11 @@ export const HomeScreen: React.FC = () => {
     new Set([
       ...userPurchasedIds,
       ...(user.vipLevel && user.vipLevel > 0
-        ? [plans.find((p: any) => p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
+        ? [plans.find((p: any) => p && p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
         : []),
     ])
   );
-  const boughtPlans = plans.filter((p: any) => activePlanIds.includes(p.id) && p.level > 0);
+  const boughtPlans = (plans || []).filter((p: any) => p && activePlanIds.includes(p.id) && (p.level ?? 0) > 0);
 
   const isVideoPending = taskSubmissions.some((s: any) => s.status === 'pending' && s.taskType === 'youtube_video');
   const isVideoApproved = taskSubmissions.some((s: any) => s.status === 'approved' && s.taskType === 'youtube_video');
@@ -562,7 +562,7 @@ export const HomeScreen: React.FC = () => {
                           className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200"
                         >
                           <ShieldCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                          <span>LV {bp.level} (₹{bp.price.toLocaleString('en-IN')})</span>
+                          <span>LV {bp?.level ?? 0} (₹{(bp?.price ?? 0).toLocaleString('en-IN')})</span>
                         </span>
                       ))}
                     </div>

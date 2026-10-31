@@ -91,6 +91,7 @@ import {
 } from '../utils/logoDownloader';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
+import { defaultLevel0Plan, initialPlans } from '../data/initialData';
 
 export interface AggregatedWithdrawal {
   id: string;
@@ -754,24 +755,27 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Helper to compute active plans for any user in the directory
   const getUserActivePlansList = (u: RegisteredUserAccount): PlanItem[] => {
+    const safePlans = Array.isArray(plans) && plans.length > 0 ? plans : initialPlans;
     const hasExplicitList = Array.isArray(u.purchasedPlanIds);
     const purchasedIds = u.purchasedPlanIds || [];
-    const validPurchased = plans.filter((p) => p.level > 0 && purchasedIds.includes(p.id));
+    const validPurchased = safePlans.filter(
+      (p) => p && typeof p.level === 'number' && p.level > 0 && purchasedIds.includes(p.id)
+    );
 
     if (!hasExplicitList && typeof u.vipLevel === 'number' && u.vipLevel > 0) {
-      const legacyMatch = plans.find((p) => p.level === u.vipLevel);
+      const legacyMatch = safePlans.find((p) => p && p.level === u.vipLevel);
       if (legacyMatch && !validPurchased.some((vp) => vp.id === legacyMatch.id)) {
         validPurchased.push(legacyMatch);
       }
     } else if (hasExplicitList && typeof u.vipLevel === 'number' && u.vipLevel > 0 && validPurchased.length === 0) {
-      const fallbackMatch = plans.find((p) => p.level === u.vipLevel);
+      const fallbackMatch = safePlans.find((p) => p && p.level === u.vipLevel);
       if (fallbackMatch) {
         validPurchased.push(fallbackMatch);
       }
     }
 
-    const sortedPurchased = validPurchased.sort((a, b) => a.level - b.level);
-    const level0FreePlan = plans.find((p) => p.level === 0) || plans[0];
+    const sortedPurchased = validPurchased.sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0));
+    const level0FreePlan = safePlans.find((p) => p && p.level === 0) || safePlans[0] || defaultLevel0Plan;
 
     const now = Date.now();
     const trialStart = u.trialStartedAt || u.joinedTimestamp || 0;

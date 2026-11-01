@@ -252,6 +252,12 @@ interface AppContextType {
   // Feature 3: Weekly Leaderboard Contest
   isLeaderboardModalOpen: boolean;
   setIsLeaderboardModalOpen: (open: boolean) => void;
+
+  // Feature: Mega Bonus Complete Control (Admin Managed)
+  isMegaBonusModalOpen: boolean;
+  setIsMegaBonusModalOpen: (open: boolean) => void;
+  claimMegaBonus: () => Promise<{ success: boolean; message: string; amount?: number }>;
+  adminResetMegaBonusClaims: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -625,6 +631,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isPromoModalOpen, setIsPromoModalOpen] = useState<boolean>(false);
   const [isSpinModalOpen, setIsSpinModalOpen] = useState<boolean>(false);
   const [isLeaderboardModalOpen, setIsLeaderboardModalOpen] = useState<boolean>(false);
+  const [isMegaBonusModalOpen, setIsMegaBonusModalOpen] = useState<boolean>(false);
 
   // 1 & 4. Dynamic Custom Tasks & Admin Audit Logs
   const [customTasks, setCustomTasks] = useState<CustomTaskItem[]>([]);
@@ -689,8 +696,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     flashBannerEnabled: true,
     flashBannerType: 'offer',
     flashBannerTag: 'MEGA BONUS',
-    flashBannerText: '🔥 Sunday Special: Complete daily tasks now to earn instant Scratch Cards with up to ₹100 bonus cash!',
-    flashBannerAction: 'spin_win',
+    flashBannerText: '🔥 Sunday Special: Complete daily tasks now to earn instant ₹100 bonus cash!',
+    flashBannerAction: 'mega_bonus',
+    megaBonusEnabled: true,
+    megaBonusTitle: 'Sunday Special Mega Bonus',
+    megaBonusTag: 'MEGA BONUS',
+    megaBonusDescription: '🔥 Sunday Special: Complete daily tasks now to earn instant ₹100 bonus cash credited directly into your wallet balance!',
+    megaBonusAmount: 100,
+    megaBonusTotalLimit: 100,
+    megaBonusClaimedCount: 14,
+    megaBonusClaimedUsers: [],
+    megaBonusPerUserLimit: 1,
+    megaBonusMinVipLevel: 0,
+    megaBonusRequireTasksCompleted: false,
+    megaBonusStartDate: '',
+    megaBonusEndDate: '',
+    megaBonusAutoExpire: true,
+    megaBonusAutoStopOnLimit: true,
+    megaBonusBannerTheme: 'amber',
     paymentGatewayEnabled: false,
     paymentGatewayProvider: 'manual',
     paymentGatewayMerchantId: '',
@@ -1673,6 +1696,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       modalClosed = true;
     } else if (isLeaderboardModalOpen) {
       setIsLeaderboardModalOpen(false);
+      modalClosed = true;
+    } else if (isMegaBonusModalOpen) {
+      setIsMegaBonusModalOpen(false);
       modalClosed = true;
     } else if (isSurveyModalOpen) {
       setIsSurveyModalOpen(false);
@@ -5435,6 +5461,183 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`🎁 You earned a new Scratch Card: ${title}!`);
   };
 
+  // Feature: Mega Bonus Claim & Admin Controls
+  const claimMegaBonus = async (): Promise<{ success: boolean; message: string; amount?: number }> => {
+    if (!user?.mobile) {
+      return { success: false, message: 'Please login to claim your Mega Bonus reward!' };
+    }
+    const isEnabled = adminSettings.megaBonusEnabled ?? true;
+    if (!isEnabled) {
+      return { success: false, message: 'Mega Bonus is currently closed by Administrator.' };
+    }
+
+    // Check Start Time
+    if (adminSettings.megaBonusStartDate) {
+      const startMs = new Date(adminSettings.megaBonusStartDate).getTime();
+      if (!isNaN(startMs) && startMs > Date.now()) {
+        return { success: false, message: `Mega Bonus has not started yet! Starts at ${adminSettings.megaBonusStartDate}` };
+      }
+    }
+
+    // Check End Time
+    if (adminSettings.megaBonusEndDate) {
+      const endMs = new Date(adminSettings.megaBonusEndDate).getTime();
+      if (!isNaN(endMs) && endMs < Date.now()) {
+        return { success: false, message: 'Mega Bonus campaign has ended.' };
+      }
+    }
+
+    // Check Quota Limit
+    const totalLimit = adminSettings.megaBonusTotalLimit || 0;
+    const claimedCount = adminSettings.megaBonusClaimedCount || 0;
+    if (totalLimit > 0 && claimedCount >= totalLimit) {
+      return { success: false, message: `Mega Bonus quota limit reached! All ${totalLimit} claims are taken.` };
+    }
+
+    // Check Already Claimed
+    const cleanMob = normalizeMobile(user.mobile);
+    const claimedUsers = adminSettings.megaBonusClaimedUsers || [];
+    if (
+      claimedUsers.includes(cleanMob) ||
+      claimedUsers.includes(user.mobile) ||
+      user.claimedMegaBonusAt
+    ) {
+      return { success: false, message: 'You have already claimed this Mega Bonus reward!' };
+    }
+
+    // Check VIP Eligibility
+    const minVip = adminSettings.megaBonusMinVipLevel || 0;
+    if ((user.vipLevel || 0) < minVip) {
+      return { success: false, message: `Requires VIP Level ${minVip}+ to claim this reward!` };
+    }
+
+    // Check Daily Tasks Requirement
+    if (adminSettings.megaBonusRequireTasksCompleted && (user.todayVideosWatched || 0) < 1) {
+      return { success: false, message: 'Please complete at least 1 daily task before claiming Mega Bonus!' };
+    }
+
+    const bonusAmount = adminSettings.megaBonusAmount || 100;
+    const nowIso = new Date().toISOString();
+    const displayDate = new Date().toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const newBalance = (user.balance || 0) + bonusAmount;
+    const newToday = (user.todayEarnings || 0) + bonusAmount;
+    const newTotal = (user.totalEarnings || user.totalEarned || 0) + bonusAmount;
+    const newClaimedCount = claimedCount + 1;
+    const newClaimedUsers = [...claimedUsers, cleanMob];
+
+    const bonusTx: TransactionItem = {
+      id: `tx_${Date.now()}_mb`,
+      type: 'bonus',
+      title: `🎁 ${adminSettings.megaBonusTitle || 'Mega Cash Bonus'}`,
+      date: displayDate,
+      timestamp: Date.now(),
+      amount: bonusAmount,
+      isCredit: true,
+      status: 'completed',
+      note: `Claimed ${adminSettings.megaBonusTag || 'Mega Bonus'} reward directly into wallet`,
+    };
+
+    const updatedUser: UserProfile = {
+      ...user,
+      balance: newBalance,
+      todayEarnings: newToday,
+      totalEarnings: newTotal,
+      totalEarned: newTotal,
+      claimedMegaBonusAt: nowIso,
+      claimedMegaBonusAmount: bonusAmount,
+    };
+
+    setUser(updatedUser);
+    setTransactions((prev) => [bonusTx, ...prev]);
+
+    // Check if auto stop on limit should trigger
+    const shouldAutoStop =
+      adminSettings.megaBonusAutoStopOnLimit &&
+      totalLimit > 0 &&
+      newClaimedCount >= totalLimit;
+
+    const updatedSettings: AdminSettings = {
+      ...adminSettings,
+      megaBonusClaimedCount: newClaimedCount,
+      megaBonusClaimedUsers: newClaimedUsers,
+      ...(shouldAutoStop ? { megaBonusEnabled: false } : {}),
+    };
+    setAdminSettings(updatedSettings);
+
+    try {
+      localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
+      localStorage.setItem('taskvibe_transactions', JSON.stringify([bonusTx, ...transactions]));
+      localStorage.setItem('taskvibe_admin_settings', JSON.stringify(updatedSettings));
+
+      if (cleanMob) {
+        await setDoc(
+          doc(db, 'users', cleanMob),
+          {
+            balance: newBalance,
+            todayEarnings: newToday,
+            totalEarnings: newTotal,
+            totalEarned: newTotal,
+            claimedMegaBonusAt: nowIso,
+            claimedMegaBonusAmount: bonusAmount,
+          },
+          { merge: true }
+        );
+      }
+
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        {
+          megaBonusClaimedCount: newClaimedCount,
+          megaBonusClaimedUsers: newClaimedUsers,
+          ...(shouldAutoStop ? { megaBonusEnabled: false } : {}),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Error saving mega bonus claim to Firestore:', err);
+    }
+
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 80,
+        origin: { y: 0.6 },
+      });
+    } catch {}
+
+    showToast(`🎉 ₹${bonusAmount} Mega Bonus credited directly to your Wallet!`);
+    return { success: true, message: `₹${bonusAmount} added to wallet!`, amount: bonusAmount };
+  };
+
+  const adminResetMegaBonusClaims = async (): Promise<void> => {
+    const updatedSettings: AdminSettings = {
+      ...adminSettings,
+      megaBonusClaimedCount: 0,
+      megaBonusClaimedUsers: [],
+    };
+    setAdminSettings(updatedSettings);
+    try {
+      localStorage.setItem('taskvibe_admin_settings', JSON.stringify(updatedSettings));
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        {
+          megaBonusClaimedCount: 0,
+          megaBonusClaimedUsers: [],
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Error resetting mega bonus claims in Firestore:', err);
+    }
+    showToast('Mega Bonus claims counter & user list reset to 0!');
+  };
+
   // 7. 1-Click Clean Test Data
   const cleanTestData = async (): Promise<{ deletedDeposits: number; deletedSubmissions: number; message: string }> => {
     try {
@@ -5716,6 +5919,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         awardScratchCard,
         isLeaderboardModalOpen,
         setIsLeaderboardModalOpen,
+        isMegaBonusModalOpen,
+        setIsMegaBonusModalOpen,
+        claimMegaBonus,
+        adminResetMegaBonusClaims,
         isExitModalOpen,
         setIsExitModalOpen,
         isUpdateModalOpen,

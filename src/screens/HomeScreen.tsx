@@ -7,6 +7,7 @@ import { downloadApkToDevice } from '../utils/apkDownloader';
 import rewardsHeroImg from '../assets/images/rewards_hero_badge_1790931179815.jpg';
 import { LuckySpinModal } from '../components/games/LuckySpinModal';
 import { WeeklyLeaderboardModal } from '../components/modals/WeeklyLeaderboardModal';
+import { MegaBonusModal } from '../components/modals/MegaBonusModal';
 import {
   Wallet,
   ShoppingBag,
@@ -366,14 +367,20 @@ export const HomeScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Feature 6: Flash Announcement Banner & Broadcast */}
+          {/* Feature 6: Flash Announcement Banner & Broadcast / Mega Bonus Banner */}
           {adminSettings.flashBannerEnabled && adminSettings.flashBannerText && (
             <div
               onClick={() => {
                 const act = adminSettings.flashBannerAction;
-                if (act === 'spin_win') app.setIsSpinModalOpen?.(true);
-                else if (act === 'leaderboard') app.setIsLeaderboardModalOpen?.(true);
-                else if (act && act !== 'none') navigate(act);
+                if (act === 'mega_bonus' || (!act && adminSettings.megaBonusEnabled) || adminSettings.flashBannerTag?.toLowerCase().includes('mega')) {
+                  app.setIsMegaBonusModalOpen?.(true);
+                } else if (act === 'spin_win') {
+                  app.setIsSpinModalOpen?.(true);
+                } else if (act === 'leaderboard') {
+                  app.setIsLeaderboardModalOpen?.(true);
+                } else if (act && act !== 'none') {
+                  navigate(act);
+                }
               }}
               className={`rounded-2xl p-3 border shadow-md flex items-center justify-between cursor-pointer active:scale-98 transition-all overflow-hidden relative ${
                 adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
@@ -396,7 +403,7 @@ export const HomeScreen: React.FC = () => {
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded ${
                         adminSettings.flashBannerType === 'alert' || adminSettings.flashBannerType === 'urgent'
@@ -406,8 +413,13 @@ export const HomeScreen: React.FC = () => {
                           : 'bg-slate-950 text-amber-300'
                       }`}
                     >
-                      {adminSettings.flashBannerTag || 'FLASH NOTICE'}
+                      {adminSettings.flashBannerTag || 'MEGA BONUS'}
                     </span>
+                    {Boolean(adminSettings.megaBonusTotalLimit && adminSettings.megaBonusTotalLimit > 0) && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-black/25 text-slate-950">
+                        ⚡ {adminSettings.megaBonusClaimedCount || 0}/{adminSettings.megaBonusTotalLimit}
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] font-extrabold truncate mt-0.5">
                     {adminSettings.flashBannerText}
@@ -697,6 +709,12 @@ export const HomeScreen: React.FC = () => {
       <WeeklyLeaderboardModal
         isOpen={Boolean(app.isLeaderboardModalOpen)}
         onClose={() => app.setIsLeaderboardModalOpen?.(false)}
+      />
+
+      {/* FEATURE: MEGA BONUS CLAIM MODAL */}
+      <MegaBonusModal
+        isOpen={Boolean(app.isMegaBonusModalOpen)}
+        onClose={() => app.setIsMegaBonusModalOpen?.(false)}
       />
     </div>
   );

@@ -187,6 +187,7 @@ export const AdminPanelScreen: React.FC = () => {
     cleanTestData,
     rejectWithdrawalWithReason,
     rejectPaymentDepositWithReason,
+    adminResetMegaBonusClaims,
     navigate,
     goBack,
     showToast,
@@ -217,6 +218,7 @@ export const AdminPanelScreen: React.FC = () => {
     | 'submissions'
     | 'plans'
     | 'notice'
+    | 'megabonus'
     | 'gateway'
     | 'whatsapp'
     | 'settings'
@@ -239,6 +241,7 @@ export const AdminPanelScreen: React.FC = () => {
           'submissions',
           'plans',
           'notice',
+          'megabonus',
           'gateway',
           'whatsapp',
           'settings',
@@ -441,6 +444,100 @@ export const AdminPanelScreen: React.FC = () => {
   // Feature 1: Lucky Spin Settings
   const [spinEnabledInput, setSpinEnabledInput] = useState(adminSettings.spinEnabled ?? true);
   const [dailyFreeSpinsInput, setDailyFreeSpinsInput] = useState((adminSettings.dailyFreeSpins || 2).toString());
+
+  // Feature: Mega Bonus Complete Control (Admin Managed)
+  const [megaBonusEnabled, setMegaBonusEnabled] = useState(adminSettings.megaBonusEnabled ?? true);
+  const [megaBonusTitle, setMegaBonusTitle] = useState(adminSettings.megaBonusTitle || 'Sunday Special Mega Bonus');
+  const [megaBonusTag, setMegaBonusTag] = useState(adminSettings.megaBonusTag || 'MEGA BONUS');
+  const [megaBonusDescription, setMegaBonusDescription] = useState(
+    adminSettings.megaBonusDescription ||
+      '🔥 Sunday Special: Complete daily tasks now to earn instant ₹100 bonus cash credited directly into your wallet balance!'
+  );
+  const [megaBonusAmount, setMegaBonusAmount] = useState((adminSettings.megaBonusAmount || 100).toString());
+  const [megaBonusTotalLimit, setMegaBonusTotalLimit] = useState((adminSettings.megaBonusTotalLimit || 100).toString());
+  const [megaBonusPerUserLimit, setMegaBonusPerUserLimit] = useState((adminSettings.megaBonusPerUserLimit || 1).toString());
+  const [megaBonusMinVipLevel, setMegaBonusMinVipLevel] = useState((adminSettings.megaBonusMinVipLevel || 0).toString());
+  const [megaBonusRequireTasksCompleted, setMegaBonusRequireTasksCompleted] = useState(
+    adminSettings.megaBonusRequireTasksCompleted ?? false
+  );
+  const [megaBonusStartDate, setMegaBonusStartDate] = useState(adminSettings.megaBonusStartDate || '');
+  const [megaBonusEndDate, setMegaBonusEndDate] = useState(adminSettings.megaBonusEndDate || '');
+  const [megaBonusAutoExpire, setMegaBonusAutoExpire] = useState(adminSettings.megaBonusAutoExpire ?? true);
+  const [megaBonusAutoStopOnLimit, setMegaBonusAutoStopOnLimit] = useState(adminSettings.megaBonusAutoStopOnLimit ?? true);
+  const [megaBonusBannerTheme, setMegaBonusBannerTheme] = useState<'amber' | 'alert' | 'info' | 'purple'>(
+    adminSettings.megaBonusBannerTheme || 'amber'
+  );
+  const [syncToFlashBanner, setSyncToFlashBanner] = useState(true);
+  const [megaBonusClaimSearch, setMegaBonusClaimSearch] = useState('');
+  const [isSavingMegaBonus, setIsSavingMegaBonus] = useState(false);
+
+  useEffect(() => {
+    if (adminSettings) {
+      if (adminSettings.megaBonusEnabled !== undefined) setMegaBonusEnabled(adminSettings.megaBonusEnabled);
+      if (adminSettings.megaBonusTitle) setMegaBonusTitle(adminSettings.megaBonusTitle);
+      if (adminSettings.megaBonusTag) setMegaBonusTag(adminSettings.megaBonusTag);
+      if (adminSettings.megaBonusDescription) setMegaBonusDescription(adminSettings.megaBonusDescription);
+      if (adminSettings.megaBonusAmount !== undefined) setMegaBonusAmount(adminSettings.megaBonusAmount.toString());
+      if (adminSettings.megaBonusTotalLimit !== undefined) setMegaBonusTotalLimit(adminSettings.megaBonusTotalLimit.toString());
+      if (adminSettings.megaBonusPerUserLimit !== undefined) setMegaBonusPerUserLimit(adminSettings.megaBonusPerUserLimit.toString());
+      if (adminSettings.megaBonusMinVipLevel !== undefined) setMegaBonusMinVipLevel(adminSettings.megaBonusMinVipLevel.toString());
+      if (adminSettings.megaBonusRequireTasksCompleted !== undefined) setMegaBonusRequireTasksCompleted(adminSettings.megaBonusRequireTasksCompleted);
+      if (adminSettings.megaBonusStartDate !== undefined) setMegaBonusStartDate(adminSettings.megaBonusStartDate);
+      if (adminSettings.megaBonusEndDate !== undefined) setMegaBonusEndDate(adminSettings.megaBonusEndDate);
+      if (adminSettings.megaBonusAutoExpire !== undefined) setMegaBonusAutoExpire(adminSettings.megaBonusAutoExpire);
+      if (adminSettings.megaBonusAutoStopOnLimit !== undefined) setMegaBonusAutoStopOnLimit(adminSettings.megaBonusAutoStopOnLimit);
+      if (adminSettings.megaBonusBannerTheme) setMegaBonusBannerTheme(adminSettings.megaBonusBannerTheme);
+    }
+  }, [adminSettings]);
+
+  const handleSaveMegaBonus = async (customEnabled?: boolean) => {
+    const isEn = customEnabled !== undefined ? customEnabled : megaBonusEnabled;
+    const amt = parseFloat(megaBonusAmount) || 100;
+    const limit = parseInt(megaBonusTotalLimit) || 0;
+    const perUser = parseInt(megaBonusPerUserLimit) || 1;
+    const minVip = parseInt(megaBonusMinVipLevel) || 0;
+
+    setIsSavingMegaBonus(true);
+    try {
+      await updateAdminSettings({
+        megaBonusEnabled: isEn,
+        megaBonusTitle: megaBonusTitle.trim(),
+        megaBonusTag: megaBonusTag.trim(),
+        megaBonusDescription: megaBonusDescription.trim(),
+        megaBonusAmount: amt,
+        megaBonusTotalLimit: limit,
+        megaBonusPerUserLimit: perUser,
+        megaBonusMinVipLevel: minVip,
+        megaBonusRequireTasksCompleted,
+        megaBonusStartDate,
+        megaBonusEndDate,
+        megaBonusAutoExpire,
+        megaBonusAutoStopOnLimit,
+        megaBonusBannerTheme,
+        ...(syncToFlashBanner
+          ? {
+              flashBannerEnabled: isEn,
+              flashBannerType: megaBonusBannerTheme === 'alert' ? 'alert' : megaBonusBannerTheme === 'info' ? 'info' : 'offer',
+              flashBannerTag: megaBonusTag.trim() || 'MEGA BONUS',
+              flashBannerText: megaBonusDescription.trim(),
+              flashBannerAction: 'mega_bonus',
+            }
+          : {}),
+      });
+
+      if (customEnabled !== undefined) {
+        setMegaBonusEnabled(customEnabled);
+        showToast(customEnabled ? '🎉 Mega Bonus is now ACTIVATED and LIVE on all users screens!' : '🛑 Mega Bonus has been STOPPED & CLOSED.');
+      } else {
+        showToast('🎉 Mega Bonus settings saved and broadcasted live to all users!');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Failed to save Mega Bonus settings');
+    } finally {
+      setIsSavingMegaBonus(false);
+    }
+  };
 
   // Filters & Search
   const [depositFilter, setDepositFilter] = useState<'all' | 'in_process' | 'approved' | 'rejected'>('in_process');
@@ -1876,6 +1973,21 @@ export const AdminPanelScreen: React.FC = () => {
             <Megaphone className="w-4 h-4" />
             <span>📢 Home Popup Notice</span>
             {noticeEnabled && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('megabonus')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'megabonus'
+                ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/25 ring-2 ring-amber-300'
+                : 'text-amber-400/90 hover:text-amber-300 hover:bg-amber-500/10 border border-amber-500/20'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>🎁 Mega Bonus Manager</span>
+            {(adminSettings.megaBonusEnabled ?? true) && (
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             )}
           </button>
@@ -4746,12 +4858,23 @@ export const AdminPanelScreen: React.FC = () => {
                       onChange={(e) => setFlashBannerAction(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
                     >
+                      <option value="mega_bonus">🎁 Open Mega Bonus Reward Claim Modal (Recommended)</option>
                       <option value="spin_win">Open Lucky Spin &amp; Win Wheel</option>
                       <option value="leaderboard">Open Weekly Leaderboard Contest</option>
                       <option value="member_plans">Open VIP Member Plans</option>
                       <option value="mission">Open Mission Tasks</option>
                       <option value="none">No Action (Display Only)</option>
                     </select>
+                    <div className="pt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('megabonus')}
+                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Configure Mega Bonus Timing &amp; Limits in Mega Bonus Manager &rarr;</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -4803,6 +4926,790 @@ export const AdminPanelScreen: React.FC = () => {
                   <span>Save &amp; Broadcast Announcement &amp; Flash Banner Live</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB: MEGA BONUS MANAGER (Complete Admin Control Center)  */}
+        {/* ========================================================= */}
+        {activeTab === 'megabonus' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Top Hero Banner */}
+            <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 rounded-3xl p-6 text-slate-950 shadow-xl shadow-amber-500/20 relative overflow-hidden">
+              <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/20 rounded-full blur-2xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-950 text-amber-300 text-[10px] font-black uppercase tracking-wider">
+                      ADMIN CONTROL CENTER
+                    </span>
+                    {megaBonusEnabled ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 text-[10px] font-black border border-emerald-400/40">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        ACTIVE &amp; LIVE
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 text-slate-300 text-[10px] font-black">
+                        <span className="w-2 h-2 rounded-full bg-rose-400" />
+                        STOPPED / CLOSED
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-950 flex items-center gap-2">
+                    <Sparkles className="w-6 h-6 fill-slate-950" />
+                    <span>Mega Bonus &amp; Special Reward Manager</span>
+                  </h2>
+                  <p className="text-xs font-bold text-slate-900/90 max-w-xl">
+                    Kab Dena Hai, Kab Band Karna Hai, Kitna Cash Limit Dena Hai &amp; Kis Kis User Ko Dena Hai — sab kuch yahan se live control karein.
+                  </p>
+                </div>
+
+                {/* Instant Master Toggle Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {megaBonusEnabled ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveMegaBonus(false)}
+                      disabled={isSavingMegaBonus}
+                      className="px-4 py-2.5 rounded-xl bg-slate-950 text-rose-400 font-black text-xs hover:bg-slate-900 active:scale-95 transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                    >
+                      <XCircle className="w-4 h-4 text-rose-400" />
+                      <span>Stop / Close Now</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveMegaBonus(true)}
+                      disabled={isSavingMegaBonus}
+                      className="px-4 py-2.5 rounded-xl bg-slate-950 text-emerald-400 font-black text-xs hover:bg-slate-900 active:scale-95 transition flex items-center gap-1.5 shadow-md cursor-pointer animate-pulse"
+                    >
+                      <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+                      <span>Activate Live Now</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+                  Per User Bonus
+                </span>
+                <p className="text-xl font-black text-white">
+                  ₹{megaBonusAmount}
+                </p>
+                <p className="text-[10px] text-amber-400 font-semibold">Direct Wallet Cash</p>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-cyan-400" />
+                  Total Quota Limit
+                </span>
+                <p className="text-xl font-black text-white">
+                  {adminSettings.megaBonusClaimedCount || 0}{' '}
+                  <span className="text-xs text-slate-400 font-bold">
+                    / {parseInt(megaBonusTotalLimit) ? `${megaBonusTotalLimit} users` : 'Unlimited'}
+                  </span>
+                </p>
+                <p className="text-[10px] text-cyan-400 font-semibold">
+                  {parseInt(megaBonusTotalLimit) && (adminSettings.megaBonusClaimedCount || 0) >= parseInt(megaBonusTotalLimit)
+                    ? '⚠️ Quota Full'
+                    : parseInt(megaBonusTotalLimit)
+                    ? `${Math.max(0, parseInt(megaBonusTotalLimit) - (adminSettings.megaBonusClaimedCount || 0))} spots remaining`
+                    : 'Unlimited Claims'}
+                </p>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+                  Total Distributed
+                </span>
+                <p className="text-xl font-black text-emerald-400">
+                  ₹{((adminSettings.megaBonusClaimedCount || 0) * (parseFloat(megaBonusAmount) || 0)).toLocaleString('en-IN')}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold">
+                  To {adminSettings.megaBonusClaimedCount || 0} members
+                </p>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  Timing Mode
+                </span>
+                <p className="text-xs font-black text-white truncate pt-1">
+                  {megaBonusEndDate
+                    ? `Auto-Closes: ${new Date(megaBonusEndDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                    : 'Manual Admin Stop'}
+                </p>
+                <p className="text-[10px] text-purple-400 font-semibold">
+                  {megaBonusAutoStopOnLimit ? 'Auto-stop on full quota' : 'Stays on until closed'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Master ON/OFF Switch Card */}
+            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${megaBonusEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                  <span>Mega Bonus Status Switch</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Turning ON displays the Golden Announcement Banner on all users&apos; Home Screens with 1-click claim button.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-300">
+                  {megaBonusEnabled ? '🟢 Enabled (Running)' : '🔴 Disabled (Offline)'}
+                </span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={megaBonusEnabled}
+                    onChange={(e) => setMegaBonusEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-14 h-7 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[4px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* 2-Column Grid: KAB DENA HAI & KAB BAND KARNA HAI */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              
+              {/* Card 1: KAB DENA HAI (Launch & Start Timing) */}
+              <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">1. Kab Dena Hai (Start Timing)</h3>
+                    <p className="text-[11px] text-slate-400">Configure when the bonus goes live</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Scheduled Start Date &amp; Time (Optional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={megaBonusStartDate}
+                      onChange={(e) => setMegaBonusStartDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Leave blank to start immediately right now. If set, countdown will show until start time.
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-1.5">
+                      ⚡ Quick Start Presets:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMegaBonusStartDate('');
+                          setMegaBonusEnabled(true);
+                          showToast('Start mode set to: Instant Live Now!');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400 text-[11px] font-bold text-amber-300 text-left cursor-pointer transition"
+                      >
+                        ⚡ Start Right Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          now.setHours(18, 0, 0, 0);
+                          setMegaBonusStartDate(now.toISOString().slice(0, 16));
+                          showToast('Start scheduled: Today 06:00 PM');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        🌆 Today 06:00 PM
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tmrw = new Date();
+                          tmrw.setDate(tmrw.getDate() + 1);
+                          tmrw.setHours(9, 0, 0, 0);
+                          setMegaBonusStartDate(tmrw.toISOString().slice(0, 16));
+                          showToast('Start scheduled: Tomorrow 09:00 AM');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        🌅 Tomorrow 09:00 AM
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+                          const nextSun = new Date(now.getTime() + daysUntilSunday * 24 * 3600 * 1000);
+                          nextSun.setHours(8, 0, 0, 0);
+                          setMegaBonusStartDate(nextSun.toISOString().slice(0, 16));
+                          showToast('Start scheduled: Next Sunday 08:00 AM');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-amber-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        ☀️ Sunday 08:00 AM
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: KAB BAND KARNA HAI (Expiry & Stop Timing) */}
+              <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                  <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-black">
+                    <XCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">2. Kab Band Karna Hai (Expiry / Stop)</h3>
+                    <p className="text-[11px] text-slate-400">Configure when the bonus automatically closes</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">
+                      Auto-Expire End Date &amp; Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={megaBonusEndDate}
+                      onChange={(e) => setMegaBonusEndDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-rose-400"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      A live countdown timer will display on user screens until this end date.
+                    </p>
+                  </div>
+
+                  {/* Auto Expire and Auto Stop Checks */}
+                  <div className="space-y-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={megaBonusAutoExpire}
+                        onChange={(e) => setMegaBonusAutoExpire(e.target.checked)}
+                        className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700"
+                      />
+                      <span>Auto turn OFF Mega Bonus when End Date arrives</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={megaBonusAutoStopOnLimit}
+                        onChange={(e) => setMegaBonusAutoStopOnLimit(e.target.checked)}
+                        className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700"
+                      />
+                      <span>Auto turn OFF when Total Quota Limit is full</span>
+                    </label>
+                  </div>
+
+                  <div className="pt-1">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-1.5">
+                      ⏳ Quick Expiry Presets:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 2 * 3600 * 1000);
+                          setMegaBonusEndDate(d.toISOString().slice(0, 16));
+                          showToast('Expiry set: 2 Hours from now');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-rose-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        ⏱️ Run for 2 Hours
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date(Date.now() + 24 * 3600 * 1000);
+                          setMegaBonusEndDate(d.toISOString().slice(0, 16));
+                          showToast('Expiry set: 24 Hours (1 Day)');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-rose-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        📅 Run for 24 Hours
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+                          const nextSun = new Date(now.getTime() + daysUntilSunday * 24 * 3600 * 1000);
+                          nextSun.setHours(23, 59, 0, 0);
+                          setMegaBonusEndDate(nextSun.toISOString().slice(0, 16));
+                          showToast('Expiry set: Sunday Midnight (11:59 PM)');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-rose-400 text-[11px] font-bold text-slate-300 text-left cursor-pointer transition"
+                      >
+                        🌙 Sunday Midnight
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMegaBonusEndDate('');
+                          showToast('Expiry cleared: Manual Stop mode');
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 border border-slate-700 hover:border-slate-500 text-[11px] font-bold text-slate-400 text-left cursor-pointer transition"
+                      >
+                        ♾️ No Auto Expiry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: KITNA LIMIT & ELIGIBILITY (Amount, Quota, VIP Level) */}
+            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-5">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">3. Kitna Limit &amp; Eligibility (Bonus Amount &amp; Quota)</h3>
+                  <p className="text-[11px] text-slate-400">Set cash reward amount, maximum user claims, and qualification rules</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Bonus Amount per User */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 block">
+                    Cash Bonus Amount per User (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs font-black text-amber-400">₹</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10000}
+                      value={megaBonusAmount}
+                      onChange={(e) => setMegaBonusAmount(e.target.value)}
+                      placeholder="100"
+                      className="w-full pl-7 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-black outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[20, 50, 100, 200, 500].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setMegaBonusAmount(preset.toString())}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                          megaBonusAmount === preset.toString()
+                            ? 'bg-amber-400 text-slate-950 font-black'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        ₹{preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Total Quota Claims Limit */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 block">
+                    Total Claims Quota Limit (Max Users)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    value={megaBonusTotalLimit}
+                    onChange={(e) => setMegaBonusTotalLimit(e.target.value)}
+                    placeholder="100 (0 for unlimited)"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-black outline-none focus:border-cyan-400"
+                  />
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { label: '50 Users', val: '50' },
+                      { label: '100 Users', val: '100' },
+                      { label: '250 Users', val: '250' },
+                      { label: '500 Users', val: '500' },
+                      { label: 'Unlimited', val: '0' },
+                    ].map((item) => (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => setMegaBonusTotalLimit(item.val)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                          megaBonusTotalLimit === item.val
+                            ? 'bg-cyan-400 text-slate-950 font-black'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Minimum VIP Level Eligibility */}
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Minimum VIP Membership Required
+                  </label>
+                  <select
+                    value={megaBonusMinVipLevel}
+                    onChange={(e) => setMegaBonusMinVipLevel(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="0">All Registered Users (Level 0 Starter &amp; Above)</option>
+                    <option value="1">Level 1 VIP+ Only</option>
+                    <option value="2">Level 2 VIP+ Only</option>
+                    <option value="3">Level 3 VIP+ Only</option>
+                    <option value="4">Level 4 VIP+ Only</option>
+                  </select>
+                </div>
+
+                {/* Per-User Limit */}
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Claims Per User Limit
+                  </label>
+                  <select
+                    value={megaBonusPerUserLimit}
+                    onChange={(e) => setMegaBonusPerUserLimit(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="1">1 Time per User (Strict Single Claim)</option>
+                    <option value="2">2 Times per User</option>
+                    <option value="3">3 Times per User</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Requirement Checkbox */}
+              <div className="pt-1 border-t border-slate-800">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={megaBonusRequireTasksCompleted}
+                    onChange={(e) => setMegaBonusRequireTasksCompleted(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700"
+                  />
+                  <span>User must complete at least 1 daily video task/survey before claiming this bonus</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Card 4: BANNER CUSTOMIZATION & LIVE PREVIEW (Matches Screenshot!) */}
+            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-black">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">4. Home Banner Customization &amp; Live Preview</h3>
+                  <p className="text-[11px] text-slate-400">Controls the exact banner displayed on the user&apos;s home screen</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Tag / Badge Text
+                  </label>
+                  <input
+                    type="text"
+                    value={megaBonusTag}
+                    onChange={(e) => setMegaBonusTag(e.target.value)}
+                    placeholder="MEGA BONUS"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-black outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Bonus Title / Campaign Name
+                  </label>
+                  <input
+                    type="text"
+                    value={megaBonusTitle}
+                    onChange={(e) => setMegaBonusTitle(e.target.value)}
+                    placeholder="Sunday Special Mega Bonus"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-bold outline-none focus:border-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Banner Text / Subtitle (Shown on Home Banner &amp; Modal)
+                </label>
+                <input
+                  type="text"
+                  value={megaBonusDescription}
+                  onChange={(e) => setMegaBonusDescription(e.target.value)}
+                  placeholder="🔥 Sunday Special: Complete daily tasks now to earn instant ₹100 bonus cash!"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Banner Theme Color
+                  </label>
+                  <select
+                    value={megaBonusBannerTheme}
+                    onChange={(e) => setMegaBonusBannerTheme(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                  >
+                    <option value="amber">Amber Golden (Matches Screenshot ⭐)</option>
+                    <option value="alert">Crimson Alert (Red 🔥)</option>
+                    <option value="info">Indigo Blue (Notice 💎)</option>
+                    <option value="purple">Royal Purple (Crown 👑)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={syncToFlashBanner}
+                      onChange={(e) => setSyncToFlashBanner(e.target.checked)}
+                      className="w-4 h-4 rounded text-amber-500 bg-slate-950 border-slate-700"
+                    />
+                    <span>Sync automatically to Home Top Banner</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* LIVE REAL-TIME PREVIEW MATCHING USER'S SCREENSHOT */}
+              <div className="pt-2">
+                <span className="text-[11px] font-bold text-slate-400 block mb-1.5 flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-amber-400" />
+                  Live Home Screen Banner Preview (How Users See It):
+                </span>
+                
+                <div
+                  className={`rounded-2xl p-3 border shadow-md flex items-center justify-between transition-all overflow-hidden relative ${
+                    megaBonusBannerTheme === 'alert'
+                      ? 'bg-gradient-to-r from-rose-900 via-red-900 to-rose-950 text-white border-rose-500/50'
+                      : megaBonusBannerTheme === 'info'
+                      ? 'bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white border-blue-400/50'
+                      : megaBonusBannerTheme === 'purple'
+                      ? 'bg-gradient-to-r from-purple-900 via-indigo-950 to-purple-950 text-white border-purple-400/50'
+                      : 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-slate-950 border-amber-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-black shrink-0 ${
+                        megaBonusBannerTheme === 'alert'
+                          ? 'bg-rose-500 text-white'
+                          : megaBonusBannerTheme === 'info'
+                          ? 'bg-blue-500 text-white'
+                          : megaBonusBannerTheme === 'purple'
+                          ? 'bg-purple-500 text-white'
+                          : 'bg-slate-950 text-amber-300 animate-bounce'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                            megaBonusBannerTheme === 'alert' || megaBonusBannerTheme === 'info' || megaBonusBannerTheme === 'purple'
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-950 text-amber-300'
+                          }`}
+                        >
+                          {megaBonusTag || 'MEGA BONUS'}
+                        </span>
+                        {parseInt(megaBonusTotalLimit) > 0 && (
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-black/25 text-slate-950">
+                            ⚡ {adminSettings.megaBonusClaimedCount || 0}/{megaBonusTotalLimit}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-extrabold truncate mt-0.5">
+                        {megaBonusDescription}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`text-[10px] font-black px-2.5 py-1 rounded-xl shrink-0 flex items-center gap-1 shadow-xs ${
+                      megaBonusBannerTheme === 'alert' || megaBonusBannerTheme === 'info' || megaBonusBannerTheme === 'purple'
+                        ? 'bg-white text-slate-950'
+                        : 'bg-slate-950 text-amber-300'
+                    }`}
+                  >
+                    <span>Open</span>
+                    <ArrowRight className="w-3 h-3 stroke-[3]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5: AUDIT LOG & CLAIMED USERS LIST */}
+            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-black">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">5. Claimed Users List &amp; Quota Reset</h3>
+                    <p className="text-[11px] text-slate-400">
+                      {adminSettings.megaBonusClaimedCount || 0} members have claimed ₹
+                      {((adminSettings.megaBonusClaimedCount || 0) * (parseFloat(megaBonusAmount) || 0)).toLocaleString('en-IN')} so far
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (
+                      window.confirm(
+                        'Are you sure you want to RESET the Mega Bonus claim counter and user list back to 0? This will allow all members to claim the bonus again.'
+                      )
+                    ) {
+                      await adminResetMegaBonusClaims();
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-400 border border-amber-500/30 text-xs font-black flex items-center gap-1.5 active:scale-95 transition cursor-pointer self-start sm:self-auto"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reset Counter to 0 (New Round)</span>
+                </button>
+              </div>
+
+              {/* Search bar */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search claimed users by mobile number or name..."
+                  value={megaBonusClaimSearch}
+                  onChange={(e) => setMegaBonusClaimSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-amber-400"
+                />
+              </div>
+
+              {/* Claimers list */}
+              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                {(() => {
+                  const mobiles = adminSettings.megaBonusClaimedUsers || [];
+                  const list = mobiles
+                    .map((m) => {
+                      const clean = (m || '').replace(/\D/g, '').slice(-10);
+                      const userObj = registeredUsers.find(
+                        (u) => (u.mobile || '').replace(/\D/g, '').slice(-10) === clean
+                      );
+                      return {
+                        mobile: m,
+                        name: userObj?.name || 'Registered Member',
+                        vipLevel: userObj?.vipLevel || 0,
+                        balance: userObj?.balance || 0,
+                        claimedAt: userObj?.claimedMegaBonusAt
+                          ? new Date(userObj.claimedMegaBonusAt).toLocaleDateString('en-IN', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Recorded',
+                      };
+                    })
+                    .filter(
+                      (u) =>
+                        !megaBonusClaimSearch ||
+                        u.mobile.includes(megaBonusClaimSearch) ||
+                        u.name.toLowerCase().includes(megaBonusClaimSearch.toLowerCase())
+                    );
+
+                  if (list.length === 0) {
+                    return (
+                      <div className="py-8 text-center text-xs text-slate-500 bg-slate-950/50 rounded-2xl border border-dashed border-slate-800">
+                        {mobiles.length === 0
+                          ? 'No users have claimed this Mega Bonus yet. Turn ON the switch above to start distributing!'
+                          : 'No matching users found for this search.'}
+                      </div>
+                    );
+                  }
+
+                  return list.map((item, idx) => (
+                    <div
+                      key={`${item.mobile}_${idx}`}
+                      className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <p className="font-bold text-white flex items-center gap-1.5">
+                            <span>{item.name}</span>
+                            <span className="text-[10px] text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded font-mono">
+                              {item.mobile}
+                            </span>
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            Claimed: {item.claimedAt} • VIP Level {item.vipLevel}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-xs font-black text-emerald-400">
+                          +₹{megaBonusAmount}
+                        </span>
+                        <p className="text-[10px] text-slate-500">Credited to Wallet</p>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* Big Save & Broadcast Action Button */}
+            <div className="pt-2 sticky bottom-4 z-20">
+              <button
+                type="button"
+                onClick={() => handleSaveMegaBonus()}
+                disabled={isSavingMegaBonus}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 font-black text-sm shadow-xl shadow-orange-500/25 hover:brightness-110 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSavingMegaBonus ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Saving Mega Bonus Settings to Cloud Firestore...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5 fill-slate-950" />
+                    <span>Save Mega Bonus Settings &amp; Broadcast Live to All Users</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         )}

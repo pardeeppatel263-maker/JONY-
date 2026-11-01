@@ -53,7 +53,16 @@
         "merchantName": { "type": "string" },
         "announcementMessage": { "type": "string" },
         "withdrawalDaysNotice": { "type": "string" },
-        "payoutTimingNotice": { "type": "string" }
+        "payoutTimingNotice": { "type": "string" },
+        "megaBonusEnabled": { "type": "boolean" },
+        "megaBonusTitle": { "type": "string" },
+        "megaBonusTag": { "type": "string" },
+        "megaBonusDescription": { "type": "string" },
+        "megaBonusAmount": { "type": "number" },
+        "megaBonusTotalLimit": { "type": "number" },
+        "megaBonusClaimedCount": { "type": "number" },
+        "megaBonusStartDate": { "type": "string" },
+        "megaBonusEndDate": { "type": "string" }
       }
     },
     "Plan": {

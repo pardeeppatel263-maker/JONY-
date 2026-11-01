@@ -108,7 +108,9 @@ export const RecordScreen: React.FC = () => {
       tx.displayStatus === 'completed' ||
       tx.type === 'video_reward' ||
       tx.type === 'survey_reward' ||
-      tx.type === 'referral_reward'
+      tx.type === 'referral_reward' ||
+      tx.type === 'bonus' ||
+      tx.type === 'mega_bonus'
     );
   };
 

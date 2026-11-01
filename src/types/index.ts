@@ -98,7 +98,24 @@ export interface AdminSettings {
   flashBannerType?: 'alert' | 'offer' | 'info' | 'urgent';
   flashBannerTag?: string;
   flashBannerText?: string;
-  flashBannerAction?: 'member_plans' | 'spin_win' | 'mission' | 'add_money' | 'leaderboard' | 'none';
+  flashBannerAction?: 'mega_bonus' | 'member_plans' | 'spin_win' | 'mission' | 'add_money' | 'leaderboard' | 'none';
+  // Mega Bonus Complete Control (Admin Panel Managed)
+  megaBonusEnabled?: boolean;
+  megaBonusTitle?: string;
+  megaBonusTag?: string;
+  megaBonusDescription?: string;
+  megaBonusAmount?: number;
+  megaBonusTotalLimit?: number; // 0 for unlimited, >0 for max number of claims
+  megaBonusClaimedCount?: number;
+  megaBonusClaimedUsers?: string[]; // Array of mobiles that have claimed
+  megaBonusPerUserLimit?: number;
+  megaBonusMinVipLevel?: number; // 0 = all users, 1 = Level 1+, etc.
+  megaBonusRequireTasksCompleted?: boolean; // Must have completed daily tasks
+  megaBonusStartDate?: string; // YYYY-MM-DDTHH:mm
+  megaBonusEndDate?: string; // YYYY-MM-DDTHH:mm
+  megaBonusAutoExpire?: boolean; // Auto turn off when past endDate
+  megaBonusAutoStopOnLimit?: boolean; // Auto turn off when total quota reached
+  megaBonusBannerTheme?: 'amber' | 'alert' | 'info' | 'purple';
 }
 
 export interface AddMoneyTier {
@@ -174,6 +191,8 @@ export interface UserProfile {
   dailySpinsUsed?: number;
   lastSpinDate?: string;
   scratchCards?: ScratchCardItem[];
+  claimedMegaBonusAt?: string;
+  claimedMegaBonusAmount?: number;
 }
 
 export interface RegisteredUserAccount extends UserProfile {
@@ -230,7 +249,7 @@ export interface PaymentDeposit {
 
 export interface TransactionItem {
   id: string;
-  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward' | 'task_earning' | 'spin_reward' | 'scratch_reward';
+  type: 'purchase_reward' | 'survey_reward' | 'referral_reward' | 'withdrawal' | 'add_money' | 'purchase' | 'video_reward' | 'promo_reward' | 'task_earning' | 'spin_reward' | 'scratch_reward' | 'bonus' | 'mega_bonus';
   title: string;
   date: string;
   timestamp?: number;

@@ -47,6 +47,7 @@ import {
   initialNotifications,
 } from '../data/initialData';
 import { getFormattedDayInfo } from '../utils/dateUtils';
+import { getApiUrl, callDirectDramPayPayin } from '../utils/drampay';
 
 // Cutoff timestamp for 2-day free trial eligibility:
 // All accounts registered prior to this timestamp have their trial expired (removed from screen).
@@ -5852,27 +5853,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       setPaymentDeposits((prev) => [newDeposit, ...prev]);
 
-      const res = await fetch('/api/drampay/payin/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantId: adminSettings.drampayMerchantId,
-          secretKey: adminSettings.drampaySecretKey,
-          merchantOrderId,
-          amount,
-          name: user.name || 'Member',
-          mobile: user.mobile,
-          email: user.email || `${user.mobile}@zorotask.com`,
-          deeplink: true,
-        }),
-      });
-
-      const rawText = await res.text();
       let data: any = {};
       try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { success: false, msg: rawText || `HTTP ${res.status}` };
+        const res = await fetch(getApiUrl('/api/drampay/payin/create'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            merchantId: adminSettings.drampayMerchantId || '58',
+            secretKey: adminSettings.drampaySecretKey || 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
+            merchantOrderId,
+            amount,
+            name: user.name || 'Member',
+            mobile: user.mobile,
+            email: user.email || `${user.mobile}@zorotask.com`,
+            deeplink: true,
+          }),
+        });
+
+        const rawText = await res.text();
+        const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+        if (!isHtml) {
+          try {
+            data = JSON.parse(rawText);
+          } catch {}
+        }
+      } catch (networkErr) {
+        console.warn('Backend fetch failed, will try direct DramPay gateway fallback:', networkErr);
+      }
+
+      // If backend failed, was unreachable, or returned HTML (e.g. inside Android APK):
+      if (!data?.success || !data?.data) {
+        console.log('[DramPay] Activating direct gateway client fallback...');
+        const directRes = await callDirectDramPayPayin(
+          adminSettings.drampayMerchantId || '58',
+          adminSettings.drampaySecretKey || 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
+          merchantOrderId,
+          amount,
+          user.name || 'Member',
+          user.mobile
+        );
+        if (directRes.success && directRes.data) {
+          data = directRes;
+        } else if (!data?.msg && directRes.msg) {
+          data = { success: false, msg: directRes.msg };
+        }
       }
 
       if (data.success && data.data) {
@@ -5896,9 +5920,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: 'DramPay order initialized successfully',
         };
       } else {
+        const cleanMsg =
+          typeof data.msg === 'string' && !data.msg.startsWith('<') && !data.msg.includes('<html')
+            ? data.msg
+            : 'Could not connect to online gateway. Please click "Use Manual QR Mode".';
         return {
           success: false,
-          message: data.msg || data.message || 'Failed to create DramPay order',
+          message: cleanMsg,
         };
       }
     } catch (err: any) {
@@ -5911,21 +5939,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     merchantOrderId: string
   ): Promise<{ success: boolean; isPaid: boolean; status?: string; message?: string }> => {
     try {
-      const res = await fetch('/api/drampay/payin/status', {
+      const res = await fetch(getApiUrl('/api/drampay/payin/status'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          merchantId: adminSettings.drampayMerchantId,
-          secretKey: adminSettings.drampaySecretKey,
+          merchantId: adminSettings.drampayMerchantId || '58',
+          secretKey: adminSettings.drampaySecretKey || 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
           merchantOrderId,
         }),
       });
       const rawText = await res.text();
       let data: any = {};
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { code: res.status, msg: rawText || `HTTP ${res.status}` };
+      const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+      if (!isHtml) {
+        try {
+          data = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          data = { code: res.status, msg: 'Invalid JSON' };
+        }
       }
 
       const status = data?.data?.status ?? data?.status;

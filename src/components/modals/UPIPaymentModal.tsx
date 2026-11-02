@@ -471,7 +471,9 @@ export const UPIPaymentModal: React.FC = () => {
                   <span>DramPay Gateway Notice</span>
                 </div>
                 <p className="text-[11px] text-rose-800 leading-snug">
-                  {drampayError}
+                  {typeof drampayError === 'string' && (drampayError.startsWith('<') || drampayError.includes('<html'))
+                    ? 'Payment server offline or connecting to gateway. Please retry or click "Use Manual QR Mode".'
+                    : drampayError}
                 </p>
                 <div className="flex items-center gap-2 pt-1">
                   <button

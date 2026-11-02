@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -404,6 +405,522 @@ async function startServer() {
       return res.json({ success: false, isAuthorized: false, state: 'unknown' });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // DRAMPAY PAYMENT GATEWAY API PROXY ROUTES
+  // Official Docs: https://drampay.net/doc/doc.html
+  // ==========================================
+
+  // In-memory runtime config for DramPay
+  const drampayConfig = {
+    merchantId: process.env.DRAMPAY_MERCHANT_ID || '',
+    secretKey: process.env.DRAMPAY_SECRET_KEY || '',
+    baseUrl: process.env.DRAMPAY_BASE_URL || 'https://drampay.net',
+  };
+
+  // In-memory map of recorded DramPay orders (with webhook status updates)
+  const drampayOrders = new Map<string, any>();
+
+  // Signature calculation function as per DramPay doc:
+  // 1. Sort keys by ASCII
+  // 2. key=value&key=value (exclude empty values and 'sign')
+  // 3. Append &key=secretKey
+  // 4. MD5 hash in lowercase
+  function generateDramPaySign(params: Record<string, any>, secretKey: string): string {
+    const keys = Object.keys(params)
+      .filter((k) => k !== 'sign' && params[k] !== undefined && params[k] !== null && params[k] !== '')
+      .sort();
+    const stringA = keys.map((k) => `${k}=${params[k]}`).join('&');
+    const stringToSign = `${stringA}&key=${secretKey}`;
+    return crypto.createHash('md5').update(stringToSign, 'utf8').digest('hex').toLowerCase();
+  }
+
+  // Get or Update DramPay Runtime Config
+  app.get('/api/drampay/config', (_req, res) => {
+    return res.json({
+      success: true,
+      configured: Boolean(drampayConfig.merchantId && drampayConfig.secretKey),
+      merchantId: drampayConfig.merchantId,
+      baseUrl: drampayConfig.baseUrl,
+      hasSecretKey: Boolean(drampayConfig.secretKey),
+    });
+  });
+
+  app.post('/api/drampay/config', (req, res) => {
+    const { merchantId, secretKey, baseUrl } = req.body || {};
+    if (merchantId !== undefined) drampayConfig.merchantId = String(merchantId).trim();
+    if (secretKey !== undefined) drampayConfig.secretKey = String(secretKey).trim();
+    if (baseUrl !== undefined) drampayConfig.baseUrl = String(baseUrl).trim() || 'https://drampay.net';
+    return res.json({
+      success: true,
+      message: 'DramPay gateway configuration updated successfully',
+      configured: Boolean(drampayConfig.merchantId && drampayConfig.secretKey),
+      merchantId: drampayConfig.merchantId,
+    });
+  });
+
+  // 1. Payin Submit (Create Payment Order)
+  // Calls https://drampay.net/api/payin/submit
+  app.post('/api/drampay/payin/create', async (req, res) => {
+    try {
+      const {
+        merchantId = drampayConfig.merchantId,
+        secretKey = drampayConfig.secretKey,
+        merchantOrderId = `ZT${Date.now()}${Math.floor(100 + Math.random() * 900)}`,
+        amount,
+        name = 'ZoroTask Member',
+        mobile = '',
+        email = '',
+        notifyUrl,
+        returnUrl,
+        deeplink = true,
+        clientIp,
+        userAgent,
+        mode,
+        payType,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({
+          success: false,
+          code: 400,
+          msg: 'DramPay Merchant ID and Secret Key are required. Please configure them in the Admin Panel settings or .env file.',
+        });
+      }
+
+      if (!amount || Number(amount) <= 0) {
+        return res.status(400).json({
+          success: false,
+          code: 400,
+          msg: 'Valid amount is required',
+        });
+      }
+
+      const hostUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const defaultNotifyUrl = `${hostUrl}/api/drampay/payin/notify`;
+      const defaultReturnUrl = `${hostUrl}/#wallet?payment=success&orderId=${merchantOrderId}`;
+
+      // Formatted amount (DramPay expects string amount)
+      const formattedAmount = Number(amount).toFixed(2);
+      const userIp = clientIp || req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip || '106.51.12.34';
+      const userAgentStr = userAgent || req.headers['user-agent'] || 'Mozilla/5.0 (Linux; Android 13)';
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        merchantOrderId: String(merchantOrderId),
+        amount: formattedAmount,
+        notifyUrl: notifyUrl || defaultNotifyUrl,
+        returnUrl: returnUrl || defaultReturnUrl,
+        name: String(name).slice(0, 50),
+        deeplink: Boolean(deeplink),
+        clientIp: userIp,
+        userAgent: userAgentStr,
+      };
+
+      if (mobile) params.mobile = String(mobile).replace(/\D/g, '').slice(-10);
+      if (email) params.email = String(email);
+      if (mode) params.mode = mode;
+      if (payType) params.payType = payType;
+
+      // Generate signature
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/submit`;
+      console.log(`[DramPay-Payin] Sending order to ${endpoint} with merchantId ${activeMerchantId}`);
+
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      const responseData: any = await apiRes.json();
+      console.log('[DramPay-Payin] Response:', JSON.stringify(responseData));
+
+      // Record in local cache
+      drampayOrders.set(merchantOrderId, {
+        merchantOrderId,
+        amount: formattedAmount,
+        platformOrderId: responseData?.data?.orderId,
+        status: responseData?.data?.status || '0',
+        payUrl: responseData?.data?.payUrl,
+        deeplink: responseData?.data?.deeplink,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      return res.json({
+        success: responseData?.code === 200,
+        code: responseData?.code,
+        msg: responseData?.msg || 'OK',
+        data: {
+          ...responseData?.data,
+          merchantOrderId,
+        },
+      });
+    } catch (err: any) {
+      console.error('[DramPay-Payin-Error]', err);
+      return res.status(500).json({
+        success: false,
+        code: 500,
+        msg: err.message || 'Failed to initiate DramPay payment',
+      });
+    }
+  });
+
+  // 2. Payin Status Query
+  // Calls https://drampay.net/api/payin/status
+  app.post('/api/drampay/payin/status', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+        merchantOrderId,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!merchantOrderId) {
+        return res.status(400).json({ success: false, msg: 'merchantOrderId is required' });
+      }
+
+      // Check in-memory webhook cache first
+      const cached = drampayOrders.get(merchantOrderId);
+      if (cached && (cached.status === '1' || cached.status === 1)) {
+        return res.json({
+          success: true,
+          code: 200,
+          msg: 'Success (Webhook Verified)',
+          data: {
+            orderId: cached.platformOrderId,
+            merchantOrderId,
+            status: '1',
+            amount: Number(cached.amount),
+            payAmount: Number(cached.payAmount || cached.amount),
+          },
+        });
+      }
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({ success: false, msg: 'Merchant credentials missing' });
+      }
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        merchantOrderId: String(merchantOrderId),
+      };
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/status`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const responseData: any = await apiRes.json();
+
+      // Update cache
+      if (responseData?.code === 200 && responseData?.data) {
+        const existing = drampayOrders.get(merchantOrderId) || {};
+        drampayOrders.set(merchantOrderId, {
+          ...existing,
+          ...responseData.data,
+          updatedAt: Date.now(),
+        });
+      }
+
+      return res.json(responseData);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 3. Payin Webhook Callback
+  // DramPay POSTs here upon payment completion
+  app.post('/api/drampay/payin/notify', (req, res) => {
+    try {
+      const payload = req.body || {};
+      console.log('[DramPay-Webhook-Payin]', JSON.stringify(payload));
+      const { merchantOrderId, status, orderId, amount, payAmount } = payload;
+
+      if (merchantOrderId) {
+        const existing = drampayOrders.get(merchantOrderId) || {};
+        drampayOrders.set(merchantOrderId, {
+          ...existing,
+          merchantOrderId,
+          platformOrderId: orderId,
+          amount,
+          payAmount,
+          status: String(status), // "1" = success
+          webhookReceivedAt: Date.now(),
+        });
+      }
+
+      // Per DramPay Docs: "商户返回 success 即认为通知成功"
+      return res.status(200).send('success');
+    } catch (err: any) {
+      console.error('[DramPay-Webhook-Error]', err);
+      return res.status(200).send('success');
+    }
+  });
+
+  // 4. Payin UTR Check
+  // Calls https://drampay.net/api/payin/utr/check
+  app.post('/api/drampay/payin/utr/check', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+        utr,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!utr) {
+        return res.status(400).json({ success: false, msg: 'UTR number is required' });
+      }
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({ success: false, msg: 'Merchant credentials missing' });
+      }
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        utr: String(utr).trim(),
+      };
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/utr/check`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const responseData = await apiRes.json();
+      return res.json(responseData);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 5. Payin UTR Fix (Claim unassigned UTR to order)
+  // Calls https://drampay.net/api/payin/utr/fix
+  app.post('/api/drampay/payin/utr/fix', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+        merchantOrderId,
+        utr,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!merchantOrderId || !utr) {
+        return res.status(400).json({ success: false, msg: 'merchantOrderId and utr are required' });
+      }
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({ success: false, msg: 'Merchant credentials missing' });
+      }
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        merchantOrderId: String(merchantOrderId).trim(),
+        utr: String(utr).trim(),
+      };
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/utr/fix`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const responseData = await apiRes.json();
+      return res.json(responseData);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 6. DramPay Balance Detail Query
+  // Calls https://drampay.net/api/payin/balance/detail
+  app.post('/api/drampay/balance', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({
+          success: false,
+          msg: 'DramPay credentials not configured. Please enter Merchant ID and Secret Key in Admin Panel.',
+        });
+      }
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+      };
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/balance/detail`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const responseData = await apiRes.json();
+      return res.json(responseData);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 7. Payout Submit (Withdrawal Disbursal)
+  // Calls https://drampay.net/api/payout/submit
+  app.post('/api/drampay/payout/create', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+        merchantPayoutId = `PO${Date.now()}${Math.floor(100 + Math.random() * 900)}`,
+        amount,
+        name,
+        type = '1', // "0" Bank Card, "1" UPI
+        upi,
+        account,
+        ifsc,
+        mobile,
+        notifyUrl,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({
+          success: false,
+          msg: 'DramPay credentials missing for payout',
+        });
+      }
+
+      const hostUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const defaultNotifyUrl = `${hostUrl}/api/drampay/payout/notify`;
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        merchantPayoutId: String(merchantPayoutId),
+        amount: Number(amount).toFixed(2),
+        name: String(name || 'Member').slice(0, 50),
+        type: String(type),
+        notifyUrl: notifyUrl || defaultNotifyUrl,
+      };
+
+      if (type === '1' || type === 1) {
+        if (!upi) return res.status(400).json({ success: false, msg: 'UPI address is required for UPI payout' });
+        params.upi = String(upi).trim();
+      } else {
+        if (!account || !ifsc) {
+          return res.status(400).json({ success: false, msg: 'Bank Account and IFSC are required for Bank payout' });
+        }
+        params.account = String(account).trim();
+        params.ifsc = String(ifsc).trim().toUpperCase();
+      }
+
+      if (mobile) params.mobile = String(mobile).replace(/\D/g, '');
+
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payout/submit`;
+      console.log(`[DramPay-Payout] Submitting payout to ${endpoint}`);
+
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      const responseData = await apiRes.json();
+      return res.json(responseData);
+    } catch (err: any) {
+      console.error('[DramPay-Payout-Error]', err);
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 8. Payout Query
+  // Calls https://drampay.net/api/payout/query
+  app.post('/api/drampay/payout/query', async (req, res) => {
+    try {
+      const {
+        merchantId,
+        secretKey,
+        merchantPayoutId,
+      } = req.body || {};
+
+      const activeMerchantId = merchantId || drampayConfig.merchantId;
+      const activeSecretKey = secretKey || drampayConfig.secretKey;
+
+      if (!merchantPayoutId) {
+        return res.status(400).json({ success: false, msg: 'merchantPayoutId is required' });
+      }
+
+      if (!activeMerchantId || !activeSecretKey) {
+        return res.status(400).json({ success: false, msg: 'Merchant credentials missing' });
+      }
+
+      const params: Record<string, any> = {
+        merchantId: Number(activeMerchantId),
+        merchantPayoutId: String(merchantPayoutId),
+      };
+      params.sign = generateDramPaySign(params, activeSecretKey);
+
+      const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payout/query`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const responseData = await apiRes.json();
+      return res.json(responseData);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 9. Payout Webhook Callback
+  app.post('/api/drampay/payout/notify', (req, res) => {
+    try {
+      const payload = req.body || {};
+      console.log('[DramPay-Webhook-Payout]', JSON.stringify(payload));
+      return res.status(200).send('success');
+    } catch (err: any) {
+      return res.status(200).send('success');
     }
   });
 

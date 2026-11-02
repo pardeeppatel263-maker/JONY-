@@ -258,6 +258,37 @@ interface AppContextType {
   setIsMegaBonusModalOpen: (open: boolean) => void;
   claimMegaBonus: () => Promise<{ success: boolean; message: string; amount?: number }>;
   adminResetMegaBonusClaims: () => Promise<void>;
+
+  // DramPay API Gateway Methods
+  initiateDramPayPayment: (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ) => Promise<{
+    success: boolean;
+    orderId?: string;
+    merchantOrderId?: string;
+    payUrl?: string;
+    deeplink?: string;
+    depositId?: string;
+    message?: string;
+  }>;
+  checkDramPayStatus: (
+    depositId: string,
+    merchantOrderId: string
+  ) => Promise<{ success: boolean; isPaid: boolean; status?: string; message?: string }>;
+  verifyDramPayUtr: (
+    depositId: string,
+    merchantOrderId: string,
+    utr: string
+  ) => Promise<{ success: boolean; message: string }>;
+  disburseDramPayPayout: (
+    txId: string,
+    amount: number,
+    payoutMethod: 'upi' | 'bank',
+    details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
+  ) => Promise<{ success: boolean; message: string; data?: any }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -714,15 +745,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     megaBonusAutoExpire: true,
     megaBonusAutoStopOnLimit: true,
     megaBonusBannerTheme: 'amber',
-    paymentGatewayEnabled: false,
-    paymentGatewayProvider: 'manual',
+    paymentGatewayEnabled: true,
+    paymentGatewayProvider: 'drampay',
     paymentGatewayMerchantId: '',
     paymentGatewayApiKey: '',
     paymentGatewayApiSecret: '',
     paymentGatewayWebhookSecret: '',
     paymentGatewayCallbackUrl: '',
-    paymentGatewayAutoApprove: false,
-    paymentGatewayTestMode: true,
+    paymentGatewayAutoApprove: true,
+    paymentGatewayTestMode: false,
+    drampayEnabled: true,
+    drampayMerchantId: '',
+    drampaySecretKey: '',
+    drampayBaseUrl: 'https://drampay.net',
+    drampayAutoApprove: true,
+    drampayAutoPayoutEnabled: true,
+    drampayUpiMode: 'both',
     withdrawalStartTime: '10:00',
     withdrawalEndTime: '18:00',
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
@@ -5761,6 +5799,219 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // DramPay API Gateway Methods
+  const initiateDramPayPayment = async (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ): Promise<{
+    success: boolean;
+    orderId?: string;
+    merchantOrderId?: string;
+    payUrl?: string;
+    deeplink?: string;
+    depositId?: string;
+    message?: string;
+  }> => {
+    try {
+      const merchantOrderId = `ZT${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
+      const depositId = `dep_${Date.now()}`;
+      const nowTime =
+        new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ', Today';
+
+      const newDeposit: PaymentDeposit = {
+        id: depositId,
+        userId: user.referralCode || 'USER',
+        userName: user.name || 'Member',
+        userMobile: user.mobile,
+        amount,
+        bonus,
+        planLevel: plan ? plan.level : undefined,
+        planTitle: plan ? plan.levelTag || `Level ${plan.level}` : undefined,
+        depositType,
+        adminUpiId: adminSettings.adminUpiId || 'drampay@gateway',
+        utrNumber: `DP_${merchantOrderId}`,
+        submittedAt: nowTime,
+        timestamp: Date.now(),
+        status: 'in_process',
+        gateway: 'drampay',
+        gatewayOrderId: merchantOrderId,
+      };
+
+      try {
+        await setDoc(doc(db, 'deposits', depositId), newDeposit);
+      } catch (e) {
+        console.warn('Could not write deposit to Firestore:', e);
+      }
+      setPaymentDeposits((prev) => [newDeposit, ...prev]);
+
+      const res = await fetch('/api/drampay/payin/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: adminSettings.drampayMerchantId,
+          secretKey: adminSettings.drampaySecretKey,
+          merchantOrderId,
+          amount,
+          name: user.name || 'Member',
+          mobile: user.mobile,
+          email: user.email || `${user.mobile}@zorotask.com`,
+          deeplink: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        const updatedDeposit: PaymentDeposit = {
+          ...newDeposit,
+          gatewayPayUrl: data.data.payUrl,
+          gatewayDeeplink: data.data.deeplink,
+        };
+        setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
+        try {
+          await setDoc(doc(db, 'deposits', depositId), updatedDeposit, { merge: true });
+        } catch {}
+
+        return {
+          success: true,
+          orderId: data.data.orderId,
+          merchantOrderId,
+          payUrl: data.data.payUrl,
+          deeplink: data.data.deeplink,
+          depositId,
+          message: 'DramPay order initialized successfully',
+        };
+      } else {
+        return {
+          success: false,
+          message: data.msg || data.message || 'Failed to create DramPay order',
+        };
+      }
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error creating DramPay order' };
+    }
+  };
+
+  const checkDramPayStatus = async (
+    depositId: string,
+    merchantOrderId: string
+  ): Promise<{ success: boolean; isPaid: boolean; status?: string; message?: string }> => {
+    try {
+      const res = await fetch('/api/drampay/payin/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: adminSettings.drampayMerchantId,
+          secretKey: adminSettings.drampaySecretKey,
+          merchantOrderId,
+        }),
+      });
+      const data = await res.json();
+      const status = data?.data?.status ?? data?.status;
+      if (status === '1' || status === 1) {
+        await approvePaymentDeposit(depositId);
+        return { success: true, isPaid: true, status: '1', message: 'Payment confirmed and credited!' };
+      }
+      return {
+        success: true,
+        isPaid: false,
+        status: String(status || '0'),
+        message: status === '2' ? 'Order expired' : 'Waiting for payment confirmation',
+      };
+    } catch (err: any) {
+      return { success: false, isPaid: false, message: err.message };
+    }
+  };
+
+  const verifyDramPayUtr = async (
+    depositId: string,
+    merchantOrderId: string,
+    utr: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const checkRes = await fetch('/api/drampay/payin/utr/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: adminSettings.drampayMerchantId,
+          secretKey: adminSettings.drampaySecretKey,
+          utr,
+        }),
+      });
+      const checkData = await checkRes.json();
+
+      const fixRes = await fetch('/api/drampay/payin/utr/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: adminSettings.drampayMerchantId,
+          secretKey: adminSettings.drampaySecretKey,
+          merchantOrderId,
+          utr,
+        }),
+      });
+      const fixData = await fixRes.json();
+
+      if (fixData?.code === 200 || checkData?.data?.status === '0' || checkData?.data?.status === '1') {
+        await approvePaymentDeposit(depositId);
+        showToast(`✓ UTR ${utr} verified with DramPay! Balance credited.`);
+        return { success: true, message: 'UTR verified and credited successfully!' };
+      }
+
+      return {
+        success: false,
+        message: fixData?.msg || checkData?.msg || 'UTR not recognized or already claimed.',
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Error verifying UTR' };
+    }
+  };
+
+  const disburseDramPayPayout = async (
+    txId: string,
+    amount: number,
+    payoutMethod: 'upi' | 'bank',
+    details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
+  ): Promise<{ success: boolean; message: string; data?: any }> => {
+    try {
+      const payoutId = `PO${Date.now()}`;
+      const res = await fetch('/api/drampay/payout/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: adminSettings.drampayMerchantId,
+          secretKey: adminSettings.drampaySecretKey,
+          merchantPayoutId: payoutId,
+          amount,
+          name: details.name || user.name || 'Member',
+          type: payoutMethod === 'bank' ? '0' : '1',
+          upi: details.upiId,
+          account: details.account,
+          ifsc: details.ifsc,
+          mobile: details.mobile || user.mobile,
+        }),
+      });
+      const data = await res.json();
+      if (data?.code === 200) {
+        const approvedNote = `Disbursed via DramPay Payout API (UTR: ${data?.data?.utr || 'Processing'}, PayoutID: ${data?.data?.payoutId || payoutId})`;
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.id === txId
+              ? { ...t, status: 'verified', note: approvedNote, gatewayPayoutId: data?.data?.payoutId }
+              : t
+          )
+        );
+        showToast(`✓ Payout of ₹${amount} initiated via DramPay!`);
+        return { success: true, message: 'Payout submitted successfully', data: data.data };
+      } else {
+        return { success: false, message: data?.msg || 'DramPay payout failed' };
+      }
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  };
+
   const dismissAdminAlert = async (): Promise<void> => {
     setUser((prev) => ({
       ...prev,
@@ -5933,6 +6184,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         triggerOneClickUpdate,
         exitApp,
         registerBackHandler,
+        initiateDramPayPayment,
+        checkDramPayStatus,
+        verifyDramPayUtr,
+        disburseDramPayPayout,
       }}
     >
       {children}

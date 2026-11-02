@@ -64,7 +64,7 @@ export interface AdminSettings {
   announcementDate?: string;
   // Payment Gateway API Settings
   paymentGatewayEnabled?: boolean;
-  paymentGatewayProvider?: 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual';
+  paymentGatewayProvider?: 'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual';
   paymentGatewayMerchantId?: string;
   paymentGatewayApiKey?: string;
   paymentGatewayApiSecret?: string;
@@ -72,6 +72,14 @@ export interface AdminSettings {
   paymentGatewayCallbackUrl?: string;
   paymentGatewayAutoApprove?: boolean;
   paymentGatewayTestMode?: boolean;
+  // DramPay API Gateway Configuration
+  drampayEnabled?: boolean;
+  drampayMerchantId?: string;
+  drampaySecretKey?: string;
+  drampayBaseUrl?: string;
+  drampayAutoApprove?: boolean;
+  drampayAutoPayoutEnabled?: boolean;
+  drampayUpiMode?: 'deeplink' | 'payurl' | 'both';
   // Withdrawal window & timings
   withdrawalStartTime?: string;
   withdrawalEndTime?: string;
@@ -245,6 +253,10 @@ export interface PaymentDeposit {
   timestamp?: number;
   status: 'in_process' | 'approved' | 'rejected';
   rejectionReason?: string;
+  gateway?: 'drampay' | 'manual';
+  gatewayOrderId?: string;
+  gatewayPayUrl?: string;
+  gatewayDeeplink?: string;
 }
 
 export interface TransactionItem {
@@ -263,6 +275,7 @@ export interface TransactionItem {
   utrNumber?: string;
   payoutMethod?: 'upi' | 'bank';
   payoutDetails?: string;
+  gatewayPayoutId?: string;
 }
 
 export interface TaskItem {

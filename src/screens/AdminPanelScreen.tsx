@@ -70,6 +70,7 @@ import {
   UserX,
   History,
   ListPlus,
+  Loader2,
 } from 'lucide-react';
 import {
   PlanItem,
@@ -155,6 +156,7 @@ export const AdminPanelScreen: React.FC = () => {
     rejectPaymentDeposit,
     approveWithdrawal,
     rejectWithdrawal,
+    disburseDramPayPayout,
     adjustUserBalance,
     approveTaskSubmission,
     rejectTaskSubmission,
@@ -339,9 +341,9 @@ export const AdminPanelScreen: React.FC = () => {
   const [selectedUserLedger, setSelectedUserLedger] = useState<UserFinancialSummary | null>(null);
 
   // Payment Gateway API State
-  const [gatewayEnabled, setGatewayEnabled] = useState(adminSettings.paymentGatewayEnabled ?? false);
-  const [gatewayProvider, setGatewayProvider] = useState<'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual'>(
-    adminSettings.paymentGatewayProvider || 'manual'
+  const [gatewayEnabled, setGatewayEnabled] = useState(adminSettings.paymentGatewayEnabled ?? true);
+  const [gatewayProvider, setGatewayProvider] = useState<'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual'>(
+    (adminSettings.paymentGatewayProvider as any) || 'drampay'
   );
   const [gatewayMerchantId, setGatewayMerchantId] = useState(adminSettings.paymentGatewayMerchantId || '');
   const [gatewayApiKey, setGatewayApiKey] = useState(adminSettings.paymentGatewayApiKey || '');
@@ -349,18 +351,35 @@ export const AdminPanelScreen: React.FC = () => {
   const [gatewayWebhookSecret, setGatewayWebhookSecret] = useState(adminSettings.paymentGatewayWebhookSecret || '');
   const [gatewayCallbackUrl, setGatewayCallbackUrl] = useState(
     adminSettings.paymentGatewayCallbackUrl ||
-      (typeof window !== 'undefined' ? `${window.location.origin}/api/payment/callback` : 'https://api.zorotask.com/payment/callback')
+      (typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : 'https://api.zorotask.com/api/drampay/payin/notify')
   );
-  const [gatewayAutoApprove, setGatewayAutoApprove] = useState(adminSettings.paymentGatewayAutoApprove ?? false);
-  const [gatewayTestMode, setGatewayTestMode] = useState(adminSettings.paymentGatewayTestMode ?? true);
+  const [gatewayAutoApprove, setGatewayAutoApprove] = useState(adminSettings.paymentGatewayAutoApprove ?? true);
+  const [gatewayTestMode, setGatewayTestMode] = useState(adminSettings.paymentGatewayTestMode ?? false);
   const [showGatewaySecret, setShowGatewaySecret] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
+  // DramPay API Specific State
+  const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? true);
+  const [drampayMerchantId, setDrampayMerchantId] = useState(adminSettings.drampayMerchantId || '');
+  const [drampaySecretKey, setDrampaySecretKey] = useState(adminSettings.drampaySecretKey || '');
+  const [drampayBaseUrl, setDrampayBaseUrl] = useState(adminSettings.drampayBaseUrl || 'https://drampay.net');
+  const [drampayAutoApprove, setDrampayAutoApprove] = useState(adminSettings.drampayAutoApprove ?? true);
+  const [drampayAutoPayoutEnabled, setDrampayAutoPayoutEnabled] = useState(adminSettings.drampayAutoPayoutEnabled ?? true);
+  const [drampayUpiMode, setDrampayUpiMode] = useState<'deeplink' | 'payurl' | 'both'>(adminSettings.drampayUpiMode || 'both');
+  const [showDrampaySecret, setShowDrampaySecret] = useState(false);
+  const [drampayBalanceData, setDrampayBalanceData] = useState<any>(null);
+  const [isFetchingDrampayBalance, setIsFetchingDrampayBalance] = useState(false);
+  const [drampayTestStatus, setDrampayTestStatus] = useState<string | null>(null);
+  const [drampayUtrInput, setDrampayUtrInput] = useState('');
+  const [drampayUtrResult, setDrampayUtrResult] = useState<any>(null);
+  const [isCheckingDrampayUtr, setIsCheckingDrampayUtr] = useState(false);
+  const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
+
   useEffect(() => {
     if (adminSettings) {
       if (adminSettings.paymentGatewayEnabled !== undefined) setGatewayEnabled(adminSettings.paymentGatewayEnabled);
-      if (adminSettings.paymentGatewayProvider) setGatewayProvider(adminSettings.paymentGatewayProvider);
+      if (adminSettings.paymentGatewayProvider) setGatewayProvider(adminSettings.paymentGatewayProvider as any);
       if (adminSettings.paymentGatewayMerchantId !== undefined) setGatewayMerchantId(adminSettings.paymentGatewayMerchantId);
       if (adminSettings.paymentGatewayApiKey !== undefined) setGatewayApiKey(adminSettings.paymentGatewayApiKey);
       if (adminSettings.paymentGatewayApiSecret !== undefined) setGatewayApiSecret(adminSettings.paymentGatewayApiSecret);
@@ -368,6 +387,13 @@ export const AdminPanelScreen: React.FC = () => {
       if (adminSettings.paymentGatewayCallbackUrl !== undefined) setGatewayCallbackUrl(adminSettings.paymentGatewayCallbackUrl);
       if (adminSettings.paymentGatewayAutoApprove !== undefined) setGatewayAutoApprove(adminSettings.paymentGatewayAutoApprove);
       if (adminSettings.paymentGatewayTestMode !== undefined) setGatewayTestMode(adminSettings.paymentGatewayTestMode);
+      if (adminSettings.drampayEnabled !== undefined) setDrampayEnabled(adminSettings.drampayEnabled);
+      if (adminSettings.drampayMerchantId !== undefined) setDrampayMerchantId(adminSettings.drampayMerchantId);
+      if (adminSettings.drampaySecretKey !== undefined) setDrampaySecretKey(adminSettings.drampaySecretKey);
+      if (adminSettings.drampayBaseUrl !== undefined) setDrampayBaseUrl(adminSettings.drampayBaseUrl);
+      if (adminSettings.drampayAutoApprove !== undefined) setDrampayAutoApprove(adminSettings.drampayAutoApprove);
+      if (adminSettings.drampayAutoPayoutEnabled !== undefined) setDrampayAutoPayoutEnabled(adminSettings.drampayAutoPayoutEnabled);
+      if (adminSettings.drampayUpiMode !== undefined) setDrampayUpiMode(adminSettings.drampayUpiMode);
     }
   }, [adminSettings]);
 
@@ -385,13 +411,132 @@ export const AdminPanelScreen: React.FC = () => {
         paymentGatewayCallbackUrl: gatewayCallbackUrl.trim(),
         paymentGatewayAutoApprove: gatewayAutoApprove,
         paymentGatewayTestMode: gatewayTestMode,
+        drampayEnabled,
+        drampayMerchantId: (drampayMerchantId || gatewayMerchantId).trim(),
+        drampaySecretKey: (drampaySecretKey || gatewayApiKey).trim(),
+        drampayBaseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
+        drampayAutoApprove,
+        drampayAutoPayoutEnabled,
+        drampayUpiMode,
       });
-      showToast('✓ Payment Gateway API settings saved to Cloud Firestore!');
+
+      // Synchronize with backend proxy config
+      fetch('/api/drampay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: (drampayMerchantId || gatewayMerchantId).trim(),
+          secretKey: (drampaySecretKey || gatewayApiKey).trim(),
+          baseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
+        }),
+      }).catch(console.warn);
+
+      showToast('✓ DramPay & Payment Gateway settings saved to Cloud Firestore!');
     } catch (err) {
       console.error(err);
       showToast('❌ Failed to save Gateway settings');
     } finally {
       setIsSavingGateway(false);
+    }
+  };
+
+  const handleFetchDrampayBalance = async () => {
+    const activeMid = (drampayMerchantId || gatewayMerchantId).trim();
+    const activeKey = (drampaySecretKey || gatewayApiKey).trim();
+    if (!activeMid || !activeKey) {
+      showToast('❌ Please enter DramPay Merchant ID and Secret Key first');
+      return;
+    }
+    setIsFetchingDrampayBalance(true);
+    try {
+      const res = await fetch('/api/drampay/balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: activeMid,
+          secretKey: activeKey,
+        }),
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        setDrampayBalanceData(data.data);
+        showToast('✓ Real-time DramPay Balance fetched successfully!');
+      } else {
+        showToast(`❌ DramPay Error: ${data.msg || 'Failed to fetch balance'}`);
+      }
+    } catch (err: any) {
+      showToast(`❌ Network Error: ${err.message}`);
+    } finally {
+      setIsFetchingDrampayBalance(false);
+    }
+  };
+
+  const handleTestDrampayConnection = async () => {
+    const activeMid = (drampayMerchantId || gatewayMerchantId).trim();
+    const activeKey = (drampaySecretKey || gatewayApiKey).trim();
+    if (!activeMid || !activeKey) {
+      showToast('❌ Please enter DramPay Merchant ID and Secret Key');
+      return;
+    }
+    setDrampayTestStatus('Testing MD5 Signature & API Connection...');
+    try {
+      const res = await fetch('/api/drampay/payin/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: activeMid,
+          secretKey: activeKey,
+          merchantOrderId: 'TEST_PING_' + Date.now(),
+        }),
+      });
+      const data = await res.json();
+      if (data.code === 200 || data.msg?.includes('Order') || data.code === 400 || data.code === 500) {
+        setDrampayTestStatus(`✓ Connected to DramPay Gateway! Response: ${data.msg || 'OK'} (Code: ${data.code})`);
+        showToast('✓ DramPay API connection verified!');
+      } else {
+        setDrampayTestStatus(`⚠️ Response: ${data.msg || JSON.stringify(data)}`);
+      }
+    } catch (err: any) {
+      setDrampayTestStatus(`❌ Failed: ${err.message}`);
+    }
+  };
+
+  const handleCheckDrampayUtr = async () => {
+    const activeMid = (drampayMerchantId || gatewayMerchantId).trim();
+    const activeKey = (drampaySecretKey || gatewayApiKey).trim();
+    if (!drampayUtrInput.trim()) {
+      showToast('❌ Please enter a UTR number to check');
+      return;
+    }
+    setIsCheckingDrampayUtr(true);
+    setDrampayUtrResult(null);
+    try {
+      const res = await fetch('/api/drampay/payin/utr/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: activeMid,
+          secretKey: activeKey,
+          utr: drampayUtrInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      setDrampayUtrResult(data);
+      if (data.code === 200 && data.data) {
+        const statusLabel =
+          data.data.status === '0'
+            ? 'Available to Claim (₹' + data.data.amount + ')'
+            : data.data.status === '1'
+            ? 'Already Claimed'
+            : 'Not Found';
+        showToast(`✓ UTR Status: ${statusLabel}`);
+      } else {
+        showToast(`DramPay: ${data.msg || 'No data found'}`);
+      }
+    } catch (err: any) {
+      showToast(`❌ UTR check error: ${err.message}`);
+    } finally {
+      setIsCheckingDrampayUtr(false);
     }
   };
 
@@ -3370,30 +3515,87 @@ export const AdminPanelScreen: React.FC = () => {
                     </div>
 
                     {tx.status === 'pending' && (
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                      <div className="space-y-2 pt-2 border-t border-slate-800">
+                        {/* 1-Click DramPay Automated Payout Button */}
                         <button
-                          onClick={() => approveWithdrawal(tx.id)}
-                          className="py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
-                        >
-                          Mark Paid ✓
-                        </button>
-                        <button
-                          onClick={() => {
+                          type="button"
+                          onClick={async () => {
                             const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
-                            setRejectModalData({
-                              isOpen: true,
-                              type: 'withdrawal',
-                              id: tx.id,
-                              targetMobile: u?.mobile || '',
-                              amount: tx.amount,
-                              userTitle: `${u?.name || 'User'} (+91 ${u?.mobile || 'Unknown'})`,
-                              reason: 'Payout verification issue / Account details mismatch',
-                            });
+                            setProcessingPayoutId(tx.id);
+                            
+                            // Extract payout credentials from transaction note
+                            let upiId = '';
+                            let account = '';
+                            let ifsc = '';
+                            let holderName = u?.name || 'Member';
+                            
+                            if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
+                              const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
+                              const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
+                              const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
+                              account = accMatch ? accMatch[1].trim() : '';
+                              ifsc = ifscMatch ? ifscMatch[1].trim() : '';
+                              if (holderMatch) holderName = holderMatch[1].trim();
+                            } else {
+                              const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
+                              upiId = upiMatch ? upiMatch[1].trim() : (tx.note?.replace('UPI:', '').trim() || u?.upiId || '');
+                            }
+
+                            await disburseDramPayPayout(
+                              tx.id,
+                              tx.amount,
+                              tx.payoutMethod || (account ? 'bank' : 'upi'),
+                              {
+                                upiId,
+                                account,
+                                ifsc,
+                                name: holderName,
+                                mobile: u?.mobile,
+                              }
+                            );
+                            setProcessingPayoutId(null);
                           }}
-                          className="py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 font-bold text-xs border border-red-500/30"
+                          disabled={processingPayoutId === tx.id}
+                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-98 transition disabled:opacity-60 cursor-pointer"
                         >
-                          Reject &amp; Refund
+                          {processingPayoutId === tx.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Disbursing via DramPay API...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                              <span>⚡ Disburse via DramPay API ({tx.payoutMethod === 'bank' ? 'Bank Transfer' : 'Instant UPI'})</span>
+                            </>
+                          )}
                         </button>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => approveWithdrawal(tx.id)}
+                            className="py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                          >
+                            Mark Paid Manually ✓
+                          </button>
+                          <button
+                            onClick={() => {
+                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
+                              setRejectModalData({
+                                isOpen: true,
+                                type: 'withdrawal',
+                                id: tx.id,
+                                targetMobile: u?.mobile || '',
+                                amount: tx.amount,
+                                userTitle: `${u?.name || 'User'} (+91 ${u?.mobile || 'Unknown'})`,
+                                reason: 'Payout verification issue / Account details mismatch',
+                              });
+                            }}
+                            className="py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 font-bold text-xs border border-red-500/30"
+                          >
+                            Reject &amp; Refund
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -6489,21 +6691,26 @@ export const AdminPanelScreen: React.FC = () => {
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
+                    { id: 'drampay', name: 'DramPay (Official)', tag: 'UPI Deeplink, Cashier & Payout API', icon: '⚡' },
                     { id: 'phonepe', name: 'PhonePe PG', tag: 'Direct UPI & Cards', renderIcon: () => <PhonePeIcon size={20} className="rounded-xs" /> },
                     { id: 'razorpay', name: 'Razorpay', tag: 'Standard PG', icon: '🔵' },
                     { id: 'cashfree', name: 'Cashfree', tag: 'Auto Settlements', icon: '🟢' },
                     { id: 'paytm', name: 'Paytm PG', tag: 'All UPI & NetBanking', renderIcon: () => <PaytmIcon size={20} className="rounded-xs" /> },
-                    { id: 'upi_gateway', name: 'Instant UPI API', tag: 'QR / Webhook API', renderIcon: () => <UpiIcon size={20} className="rounded-xs" /> },
                     { id: 'manual', name: 'Manual UPI QR', tag: 'Screenshot + UTR Review', icon: '📱' },
                   ].map((prov) => {
                     const isSelected = gatewayProvider === prov.id;
                     return (
                       <div
                         key={prov.id}
-                        onClick={() => setGatewayProvider(prov.id as any)}
+                        onClick={() => {
+                          setGatewayProvider(prov.id as any);
+                          if (prov.id === 'drampay') {
+                            setGatewayCallbackUrl(typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : '');
+                          }
+                        }}
                         className={`p-3 rounded-2xl border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-emerald-950/40 border-emerald-500 ring-1 ring-emerald-500/50'
+                            ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/50'
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                         }`}
                       >
@@ -6511,9 +6718,16 @@ export const AdminPanelScreen: React.FC = () => {
                           <span className="text-lg leading-none">
                             {prov.renderIcon ? prov.renderIcon() : prov.icon}
                           </span>
-                          {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
                         </div>
-                        <div className="text-xs font-bold text-white">{prov.name}</div>
+                        <div className="text-xs font-bold text-white flex items-center gap-1">
+                          <span>{prov.name}</span>
+                          {prov.id === 'drampay' && (
+                            <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-400">{prov.tag}</div>
                       </div>
                     );
@@ -6525,14 +6739,17 @@ export const AdminPanelScreen: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                 <div className="flex items-center justify-between p-2">
                   <div>
-                    <span className="text-xs font-bold text-slate-200 block">Test / Sandbox Mode</span>
-                    <span className="text-[10px] text-slate-400">Use test API keys without real money deduction</span>
+                    <span className="text-xs font-bold text-slate-200 block">Auto-Approve on Callback</span>
+                    <span className="text-[10px] text-slate-400">Automatically credit wallet balance when DramPay confirms payment (status=1)</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setGatewayTestMode(!gatewayTestMode)}
+                    onClick={() => {
+                      setGatewayAutoApprove(!gatewayAutoApprove);
+                      setDrampayAutoApprove(!drampayAutoApprove);
+                    }}
                     className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                      gatewayTestMode ? 'bg-amber-500 justify-end' : 'bg-slate-700 justify-start'
+                      gatewayAutoApprove ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
                     }`}
                   >
                     <span className="bg-white w-4 h-4 rounded-full shadow-md" />
@@ -6541,14 +6758,14 @@ export const AdminPanelScreen: React.FC = () => {
 
                 <div className="flex items-center justify-between p-2">
                   <div>
-                    <span className="text-xs font-bold text-slate-200 block">Auto-Approve on Callback</span>
-                    <span className="text-[10px] text-slate-400">Automatically credit wallet when Gateway confirms success</span>
+                    <span className="text-xs font-bold text-slate-200 block">DramPay 1-Click Payouts</span>
+                    <span className="text-[10px] text-slate-400">Enable automated disbursement to member UPI / Bank via Payout API</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setGatewayAutoApprove(!gatewayAutoApprove)}
+                    onClick={() => setDrampayAutoPayoutEnabled(!drampayAutoPayoutEnabled)}
                     className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                      gatewayAutoApprove ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
+                      drampayAutoPayoutEnabled ? 'bg-amber-500 justify-end' : 'bg-slate-700 justify-start'
                     }`}
                   >
                     <span className="bg-white w-4 h-4 rounded-full shadow-md" />
@@ -6556,133 +6773,338 @@ export const AdminPanelScreen: React.FC = () => {
                 </div>
               </div>
 
-              {/* API Credentials */}
-              <div className="space-y-3.5 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
-                    <Key className="w-4 h-4" />
-                    <span>API Credentials ({gatewayProvider.toUpperCase()})</span>
+              {/* DRAMPAY SPECIFIC CONFIGURATION */}
+              {gatewayProvider === 'drampay' && (
+                <div className="space-y-4 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-amber-500/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+                    <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
+                      <Zap className="w-4 h-4 fill-amber-400 text-amber-400" />
+                      <span>DramPay Payment Gateway Configuration (drampay.net)</span>
+                    </div>
+                    <a
+                      href="https://drampay.net/doc/doc.html"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-amber-300 hover:text-white flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20"
+                    >
+                      <span>Official API Docs</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
-                  <span className="text-[10px] text-slate-500">256-Bit Encrypted Storage</span>
-                </div>
 
-                {/* Merchant ID */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    Merchant ID (MID) / Client ID
-                  </label>
-                  <input
-                    type="text"
-                    value={gatewayMerchantId}
-                    onChange={(e) => setGatewayMerchantId(e.target.value)}
-                    placeholder={
-                      gatewayProvider === 'phonepe'
-                        ? 'e.g. PGTESTPAYUAT or M22A7...'
-                        : gatewayProvider === 'razorpay'
-                        ? 'e.g. rzp_live_xxxxxxxx or rzp_test_xxxxxxxx'
-                        : 'Enter your Merchant ID / App ID'
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Merchant ID */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        DramPay Merchant ID (merchantId) <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={drampayMerchantId || gatewayMerchantId}
+                        onChange={(e) => {
+                          setDrampayMerchantId(e.target.value);
+                          setGatewayMerchantId(e.target.value);
+                        }}
+                        placeholder="e.g. 100826"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400 transition"
+                      />
+                      <p className="text-[10px] text-slate-500">Your assigned merchant ID from drampay.net</p>
+                    </div>
 
-                {/* API Key / Salt Key */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    API Key / Salt Key / App ID
-                  </label>
-                  <input
-                    type="text"
-                    value={gatewayApiKey}
-                    onChange={(e) => setGatewayApiKey(e.target.value)}
-                    placeholder="Enter API Key / Salt Key"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                  />
-                </div>
+                    {/* Secret Key */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-300">
+                          DramPay Secret Key (MD5 Key) <span className="text-red-400">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowDrampaySecret(!showDrampaySecret)}
+                          className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
+                        >
+                          {showDrampaySecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showDrampaySecret ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showDrampaySecret ? 'text' : 'password'}
+                        value={drampaySecretKey || gatewayApiKey}
+                        onChange={(e) => {
+                          setDrampaySecretKey(e.target.value);
+                          setGatewayApiKey(e.target.value);
+                        }}
+                        placeholder="e.g. 9a8b7c6d5e4f3a2b1c0d"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400 transition"
+                      />
+                      <p className="text-[10px] text-slate-500">Used for ASCII-sorted MD5 request &amp; webhook signatures</p>
+                    </div>
+                  </div>
 
-                {/* API Secret / Salt Index */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300">
-                      API Secret / Key Secret / Salt Index
-                    </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Base API URL */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        DramPay API Host URL
+                      </label>
+                      <input
+                        type="text"
+                        value={drampayBaseUrl}
+                        onChange={(e) => setDrampayBaseUrl(e.target.value)}
+                        placeholder="https://drampay.net"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none focus:border-amber-400 transition"
+                      />
+                    </div>
+
+                    {/* Preferred Mode */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        Payment Launch Mode
+                      </label>
+                      <select
+                        value={drampayUpiMode}
+                        onChange={(e) => setDrampayUpiMode(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none focus:border-amber-400 transition"
+                      >
+                        <option value="both">Both UPI Deeplink + Web Cashier (Recommended)</option>
+                        <option value="deeplink">Instant UPI Deeplink (PhonePe, GPay, Paytm)</option>
+                        <option value="payurl">DramPay Cashier Page (payUrl)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Webhook URLs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        Payin Notify URL (Paste in DramPay Merchant Console)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : ''}
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-amber-300 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => copyText(`${window.location.origin}/api/drampay/payin/notify`, 'Payin Notify URL')}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
+                          title="Copy"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        Payout Notify URL (Paste in DramPay Merchant Console)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payout/notify` : ''}
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-amber-300 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => copyText(`${window.location.origin}/api/drampay/payout/notify`, 'Payout Notify URL')}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
+                          title="Copy"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* REAL-TIME BALANCE CARD */}
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-white">Live DramPay Merchant Balance</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleFetchDrampayBalance}
+                        disabled={isFetchingDrampayBalance}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isFetchingDrampayBalance ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        <span>Check Balance</span>
+                      </button>
+                    </div>
+
+                    {drampayBalanceData && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center animate-in fade-in">
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                          <span className="text-[10px] text-slate-400 block">Available Balance</span>
+                          <span className="text-sm font-black text-emerald-400">₹{drampayBalanceData.balance || 0}</span>
+                        </div>
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                          <span className="text-[10px] text-slate-400 block">Settleable Amount</span>
+                          <span className="text-sm font-black text-amber-400">₹{drampayBalanceData.settleableAmount || 0}</span>
+                        </div>
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                          <span className="text-[10px] text-slate-400 block">Total Collected</span>
+                          <span className="text-sm font-black text-white">₹{drampayBalanceData.totalPayAmount || 0}</span>
+                        </div>
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                          <span className="text-[10px] text-slate-400 block">Platform Fees</span>
+                          <span className="text-sm font-black text-rose-400">₹{drampayBalanceData.totalFeeAmount || 0}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* UTR DIAGNOSTIC & FIX TOOL */}
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <span className="text-xs font-bold text-slate-200 block">
+                      Live DramPay UTR Search &amp; Claim Tool (/api/payin/utr/check)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={drampayUtrInput}
+                        onChange={(e) => setDrampayUtrInput(e.target.value)}
+                        placeholder="Enter 12-digit UTR to check directly on DramPay..."
+                        className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCheckDrampayUtr}
+                        disabled={isCheckingDrampayUtr}
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {isCheckingDrampayUtr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                        <span>Check UTR</span>
+                      </button>
+                    </div>
+                    {drampayUtrResult && (
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300">
+                        <span className="text-emerald-400 font-bold">API Result:</span> {JSON.stringify(drampayUtrResult)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* TEST CONNECTION BUTTON & STATUS */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => setShowGatewaySecret(!showGatewaySecret)}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
+                      onClick={handleTestDrampayConnection}
+                      className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition"
                     >
-                      {showGatewaySecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                      <span>{showGatewaySecret ? 'Hide' : 'Show'}</span>
+                      <Server className="w-4 h-4 text-amber-400" />
+                      <span>Test DramPay Connection &amp; MD5 Sign</span>
                     </button>
+                    {drampayTestStatus && (
+                      <span className="text-xs font-mono text-slate-300 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
+                        {drampayTestStatus}
+                      </span>
+                    )}
                   </div>
-                  <input
-                    type={showGatewaySecret ? 'text' : 'password'}
-                    value={gatewayApiSecret}
-                    onChange={(e) => setGatewayApiSecret(e.target.value)}
-                    placeholder="Enter API Secret / Salt Index (e.g. 1)"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                  />
                 </div>
+              )}
 
-                {/* Webhook Secret */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    Webhook Secret / Verification Token (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={gatewayWebhookSecret}
-                    onChange={(e) => setGatewayWebhookSecret(e.target.value)}
-                    placeholder="Webhook secret for signature validation"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                  />
-                </div>
+              {/* OTHER GATEWAY CREDENTIALS (IF NOT DRAMPAY) */}
+              {gatewayProvider !== 'drampay' && gatewayProvider !== 'manual' && (
+                <div className="space-y-3.5 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
+                      <Key className="w-4 h-4" />
+                      <span>API Credentials ({gatewayProvider.toUpperCase()})</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">256-Bit Encrypted Storage</span>
+                  </div>
 
-                {/* Callback URL */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-300 block">
-                    Webhook / Server Callback URL (Paste into Gateway Dashboard)
-                  </label>
-                  <div className="flex items-center gap-2">
+                  {/* Merchant ID */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-300 block">
+                      Merchant ID (MID) / Client ID
+                    </label>
                     <input
                       type="text"
-                      value={gatewayCallbackUrl}
-                      onChange={(e) => setGatewayCallbackUrl(e.target.value)}
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none focus:border-emerald-400"
+                      value={gatewayMerchantId}
+                      onChange={(e) => setGatewayMerchantId(e.target.value)}
+                      placeholder="Enter Merchant ID"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
                     />
-                    <button
-                      type="button"
-                      onClick={() => copyText(gatewayCallbackUrl, 'Callback URL')}
-                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shrink-0"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy</span>
-                    </button>
                   </div>
-                  <p className="text-[10px] text-slate-500">
-                    Copy and paste this URL into your merchant dashboard under Webhook / IPN Settings.
-                  </p>
+
+                  {/* API Key */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-300 block">
+                      API Key / Salt Key / App ID
+                    </label>
+                    <input
+                      type="text"
+                      value={gatewayApiKey}
+                      onChange={(e) => setGatewayApiKey(e.target.value)}
+                      placeholder="Enter API Key / Salt Key"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
+                    />
+                  </div>
+
+                  {/* API Secret */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-300">
+                        API Secret / Key Secret / Salt Index
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowGatewaySecret(!showGatewaySecret)}
+                        className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
+                      >
+                        {showGatewaySecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        <span>{showGatewaySecret ? 'Hide' : 'Show'}</span>
+                      </button>
+                    </div>
+                    <input
+                      type={showGatewaySecret ? 'text' : 'password'}
+                      value={gatewayApiSecret}
+                      onChange={(e) => setGatewayApiSecret(e.target.value)}
+                      placeholder="Enter API Secret"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
+                    />
+                  </div>
+
+                  {/* Callback URL */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-300 block">
+                      Webhook / Server Callback URL
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={gatewayCallbackUrl}
+                        onChange={(e) => setGatewayCallbackUrl(e.target.value)}
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyText(gatewayCallbackUrl, 'Callback URL')}
+                        className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shrink-0"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
                 <button
-                  type="button"
-                  onClick={handleTestGateway}
-                  className="w-full sm:w-auto px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition border border-slate-700 active:scale-98"
-                >
-                  <Server className="w-4 h-4 text-emerald-400" />
-                  <span>Test API Connection</span>
-                </button>
-
-                <button
                   type="submit"
                   disabled={isSavingGateway}
-                  className="w-full sm:flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <CheckCheck className="w-4 h-4" />
-                  <span>{isSavingGateway ? 'Saving Settings...' : 'Save & Activate Gateway API'}</span>
+                  <span>{isSavingGateway ? 'Saving Settings...' : 'Save & Deploy DramPay API Gateway'}</span>
                 </button>
               </div>
             </form>

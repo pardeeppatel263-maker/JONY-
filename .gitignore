@@ -7,4 +7,3 @@ coverage/
 .env*
 !.env.example
 .tmp_apk/
-bun.lock

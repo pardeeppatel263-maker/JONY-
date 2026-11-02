@@ -5861,7 +5861,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { success: false, msg: rawText || `HTTP ${res.status}` };
+      }
+
       if (data.success && data.data) {
         const updatedDeposit: PaymentDeposit = {
           ...newDeposit,
@@ -5907,7 +5914,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           merchantOrderId,
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { code: res.status, msg: rawText || `HTTP ${res.status}` };
+      }
+
       const status = data?.data?.status ?? data?.status;
       if (status === '1' || status === 1) {
         await approvePaymentDeposit(depositId);
@@ -5939,7 +5953,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           utr,
         }),
       });
-      const checkData = await checkRes.json();
+      const checkText = await checkRes.text();
+      let checkData: any = {};
+      try {
+        checkData = checkText ? JSON.parse(checkText) : {};
+      } catch {
+        checkData = { code: checkRes.status, msg: checkText };
+      }
 
       const fixRes = await fetch('/api/drampay/payin/utr/fix', {
         method: 'POST',
@@ -5951,7 +5971,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           utr,
         }),
       });
-      const fixData = await fixRes.json();
+      const fixText = await fixRes.text();
+      let fixData: any = {};
+      try {
+        fixData = fixText ? JSON.parse(fixText) : {};
+      } catch {
+        fixData = { code: fixRes.status, msg: fixText };
+      }
 
       if (fixData?.code === 200 || checkData?.data?.status === '0' || checkData?.data?.status === '1') {
         await approvePaymentDeposit(depositId);
@@ -5992,7 +6018,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           mobile: details.mobile || user.mobile,
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { code: res.status, msg: rawText };
+      }
       if (data?.code === 200) {
         const approvedNote = `Disbursed via DramPay Payout API (UTR: ${data?.data?.utr || 'Processing'}, PayoutID: ${data?.data?.payoutId || payoutId})`;
         setTransactions((prev) =>

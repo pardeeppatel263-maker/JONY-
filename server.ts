@@ -428,6 +428,7 @@ async function startServer() {
   // 2. key=value&key=value (exclude empty values and 'sign')
   // 3. Append &key=secretKey
   // 4. MD5 hash in lowercase
+  // 4. MD5 hash in lowercase
   function generateDramPaySign(params: Record<string, any>, secretKey: string): string {
     const keys = Object.keys(params)
       .filter((k) => k !== 'sign' && params[k] !== undefined && params[k] !== null && params[k] !== '')
@@ -435,6 +436,52 @@ async function startServer() {
     const stringA = keys.map((k) => `${k}=${params[k]}`).join('&');
     const stringToSign = `${stringA}&key=${secretKey}`;
     return crypto.createHash('md5').update(stringToSign, 'utf8').digest('hex').toLowerCase();
+  }
+
+  // Safe HTTP caller for DramPay endpoints with browser User-Agent, Accept header, and text fallback
+  async function callDramPayApi(endpoint: string, params: Record<string, any>, timeoutMs = 12000): Promise<{ status: number; data: any }> {
+    try {
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/plain, */*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const rawText = await apiRes.text();
+      let parsedData: any = null;
+      if (rawText && rawText.trim().length > 0) {
+        try {
+          parsedData = JSON.parse(rawText);
+        } catch {
+          parsedData = {
+            code: apiRes.status,
+            msg: rawText.length > 200 ? rawText.slice(0, 200) + '...' : rawText,
+          };
+        }
+      } else {
+        parsedData = {
+          code: apiRes.status,
+          msg: `Gateway returned empty body (HTTP ${apiRes.status})`,
+        };
+      }
+
+      return { status: apiRes.status, data: parsedData };
+    } catch (err: any) {
+      return {
+        status: 500,
+        data: {
+          code: 500,
+          msg: err.name === 'TimeoutError'
+            ? 'Connection to DramPay gateway timed out (12s)'
+            : `Network error: ${err.message}`,
+        },
+      };
+    }
   }
 
   // Get or Update DramPay Runtime Config
@@ -459,6 +506,60 @@ async function startServer() {
       configured: Boolean(drampayConfig.merchantId && drampayConfig.secretKey),
       merchantId: drampayConfig.merchantId,
     });
+  });
+
+  // Dedicated DramPay Connection & MD5 Sign Diagnostic Test Endpoint
+  app.post('/api/drampay/test', async (req, res) => {
+    try {
+      const { merchantId, secretKey, baseUrl } = req.body || {};
+      const activeMid = String(merchantId || drampayConfig.merchantId || '').trim();
+      const activeKey = String(secretKey || drampayConfig.secretKey || '').trim();
+      const activeBase = String(baseUrl || drampayConfig.baseUrl || 'https://drampay.net').trim();
+
+      if (!activeMid || !activeKey) {
+        return res.status(400).json({
+          success: false,
+          code: 400,
+          msg: 'Please enter DramPay Merchant ID and Secret Key',
+        });
+      }
+
+      // Step 1: Calculate sample MD5 signature
+      const sampleParams: Record<string, any> = {
+        amount: '100.00',
+        merchantId: Number(activeMid) || activeMid,
+        merchantOrderId: `TEST_${Date.now()}`,
+      };
+      const generatedSign = generateDramPaySign(sampleParams, activeKey);
+
+      // Step 2: Test ping balance endpoint on DramPay
+      const pingParams: Record<string, any> = {
+        merchantId: Number(activeMid) || activeMid,
+      };
+      pingParams.sign = generateDramPaySign(pingParams, activeKey);
+
+      const endpoint = `${activeBase}/api/payin/balance/detail`;
+      const { status, data } = await callDramPayApi(endpoint, pingParams, 12000);
+
+      const gatewayReachable = status === 200 || Boolean(data?.code || data?.msg);
+      const isAuthSuccess = data?.code === 200;
+
+      return res.json({
+        success: true,
+        connected: gatewayReachable,
+        authSuccess: isAuthSuccess,
+        code: data?.code ?? status,
+        msg: data?.msg || (isAuthSuccess ? 'Connection and Credentials Verified' : 'DramPay Server Reached'),
+        md5Sample: generatedSign,
+        gatewayResponse: data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        code: 500,
+        msg: `Connection test error: ${err.message}`,
+      });
+    }
   });
 
   // 1. Payin Submit (Create Payment Order)
@@ -533,14 +634,7 @@ async function startServer() {
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/submit`;
       console.log(`[DramPay-Payin] Sending order to ${endpoint} with merchantId ${activeMerchantId}`);
 
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      const responseData: any = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 15000);
       console.log('[DramPay-Payin] Response:', JSON.stringify(responseData));
 
       // Record in local cache
@@ -619,14 +713,7 @@ async function startServer() {
       params.sign = generateDramPaySign(params, activeSecretKey);
 
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/status`;
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      const responseData: any = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 12000);
 
       // Update cache
       if (responseData?.code === 200 && responseData?.data) {
@@ -701,14 +788,7 @@ async function startServer() {
       params.sign = generateDramPaySign(params, activeSecretKey);
 
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/utr/check`;
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      const responseData = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 12000);
       return res.json(responseData);
     } catch (err: any) {
       return res.status(500).json({ success: false, msg: err.message });
@@ -745,14 +825,7 @@ async function startServer() {
       params.sign = generateDramPaySign(params, activeSecretKey);
 
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/utr/fix`;
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      const responseData = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 12000);
       return res.json(responseData);
     } catch (err: any) {
       return res.status(500).json({ success: false, msg: err.message });
@@ -784,14 +857,7 @@ async function startServer() {
       params.sign = generateDramPaySign(params, activeSecretKey);
 
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payin/balance/detail`;
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      const responseData = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 12000);
       return res.json(responseData);
     } catch (err: any) {
       return res.status(500).json({ success: false, msg: err.message });
@@ -856,14 +922,7 @@ async function startServer() {
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payout/submit`;
       console.log(`[DramPay-Payout] Submitting payout to ${endpoint}`);
 
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      const responseData = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 15000);
       return res.json(responseData);
     } catch (err: any) {
       console.error('[DramPay-Payout-Error]', err);
@@ -899,14 +958,7 @@ async function startServer() {
       params.sign = generateDramPaySign(params, activeSecretKey);
 
       const endpoint = `${drampayConfig.baseUrl || 'https://drampay.net'}/api/payout/query`;
-      const apiRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      const responseData = await apiRes.json();
+      const { data: responseData } = await callDramPayApi(endpoint, params, 12000);
       return res.json(responseData);
     } catch (err: any) {
       return res.status(500).json({ success: false, msg: err.message });

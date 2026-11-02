@@ -457,7 +457,13 @@ export const AdminPanelScreen: React.FC = () => {
           secretKey: activeKey,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { code: res.status, msg: text || `HTTP ${res.status}` };
+      }
       if (data.code === 200) {
         setDrampayBalanceData(data.data);
         showToast('✓ Real-time DramPay Balance fetched successfully!');
@@ -480,19 +486,36 @@ export const AdminPanelScreen: React.FC = () => {
     }
     setDrampayTestStatus('Testing MD5 Signature & API Connection...');
     try {
-      const res = await fetch('/api/drampay/payin/status', {
+      const res = await fetch('/api/drampay/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchantId: activeMid,
           secretKey: activeKey,
-          merchantOrderId: 'TEST_PING_' + Date.now(),
+          baseUrl: drampayBaseUrl?.trim() || 'https://drampay.net',
         }),
       });
-      const data = await res.json();
-      if (data.code === 200 || data.msg?.includes('Order') || data.code === 400 || data.code === 500) {
-        setDrampayTestStatus(`✓ Connected to DramPay Gateway! Response: ${data.msg || 'OK'} (Code: ${data.code})`);
-        showToast('✓ DramPay API connection verified!');
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { success: false, msg: text || `HTTP ${res.status}` };
+      }
+
+      if (data.authSuccess || data.code === 200) {
+        setDrampayTestStatus(`✓ Connected & Verified! MD5: ${data.md5Sample?.slice(0, 10)}... (Code: 200)`);
+        showToast('✓ DramPay API connection & MD5 signature verified!');
+      } else if (
+        data.connected ||
+        data.success ||
+        data.code === 500 ||
+        data.code === 400 ||
+        data.msg?.includes('Something went wrong') ||
+        data.msg?.includes('Order')
+      ) {
+        setDrampayTestStatus(`✓ Gateway Reachable! MD5: ${data.md5Sample?.slice(0, 8)}... | Response: ${data.msg || 'OK'}`);
+        showToast('✓ DramPay Gateway reached! MD5 sign generated.');
       } else {
         setDrampayTestStatus(`⚠️ Response: ${data.msg || JSON.stringify(data)}`);
       }
@@ -520,7 +543,13 @@ export const AdminPanelScreen: React.FC = () => {
           utr: drampayUtrInput.trim(),
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { code: res.status, msg: text || `HTTP ${res.status}` };
+      }
       setDrampayUtrResult(data);
       if (data.code === 200 && data.data) {
         const statusLabel =

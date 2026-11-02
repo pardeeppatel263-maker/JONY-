@@ -415,8 +415,8 @@ async function startServer() {
 
   // In-memory runtime config for DramPay
   const drampayConfig = {
-    merchantId: process.env.DRAMPAY_MERCHANT_ID || '',
-    secretKey: process.env.DRAMPAY_SECRET_KEY || '',
+    merchantId: process.env.DRAMPAY_MERCHANT_ID || '58',
+    secretKey: process.env.DRAMPAY_SECRET_KEY || 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
     baseUrl: process.env.DRAMPAY_BASE_URL || 'https://drampay.net',
   };
 
@@ -591,8 +591,14 @@ async function startServer() {
         payType,
       } = req.body || {};
 
-      const activeMerchantId = merchantId || drampayConfig.merchantId;
-      const activeSecretKey = secretKey || drampayConfig.secretKey;
+      const activeMerchantId =
+        merchantId && String(merchantId).trim() !== '' && String(merchantId).toLowerCase() !== 'int32'
+          ? String(merchantId).trim()
+          : drampayConfig.merchantId;
+      const activeSecretKey =
+        secretKey && String(secretKey).trim() !== ''
+          ? String(secretKey).trim()
+          : drampayConfig.secretKey;
 
       if (!activeMerchantId || !activeSecretKey) {
         return res.status(400).json({

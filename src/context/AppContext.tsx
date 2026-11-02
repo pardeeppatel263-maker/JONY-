@@ -755,8 +755,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentGatewayAutoApprove: true,
     paymentGatewayTestMode: false,
     drampayEnabled: true,
-    drampayMerchantId: '',
-    drampaySecretKey: '',
+    drampayMerchantId: '58',
+    drampaySecretKey: 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
     drampayBaseUrl: 'https://drampay.net',
     drampayAutoApprove: true,
     drampayAutoPayoutEnabled: true,
@@ -1323,6 +1323,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               announcementMessage: (cloudSettings.announcementMessage || defaultAdminSettings.announcementMessage || '').replace(/TaskVibe/gi, 'ZoroTask'),
               announcementTag: (cloudSettings.announcementTag && cloudSettings.announcementTag !== 'NEW UPDATE') ? cloudSettings.announcementTag : 'NOTICE',
               youtubeVideoTitle: (cloudSettings.youtubeVideoTitle || defaultAdminSettings.youtubeVideoTitle || '').replace(/TaskVibe/gi, 'ZoroTask'),
+              drampayMerchantId: (cloudSettings.drampayMerchantId && cloudSettings.drampayMerchantId.trim() && cloudSettings.drampayMerchantId.trim().toLowerCase() !== 'int32')
+                ? cloudSettings.drampayMerchantId.trim()
+                : defaultAdminSettings.drampayMerchantId,
+              drampaySecretKey: (cloudSettings.drampaySecretKey && cloudSettings.drampaySecretKey.trim())
+                ? cloudSettings.drampaySecretKey.trim()
+                : defaultAdminSettings.drampaySecretKey,
             };
             if (Array.isArray(cloudSettings.plans) && cloudSettings.plans.length > 0) {
               const sorted = [...cloudSettings.plans].sort((a, b) => (a.level || 0) - (b.level || 0));

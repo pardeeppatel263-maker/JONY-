@@ -38,8 +38,12 @@ export const UPIPaymentModal: React.FC = () => {
   } = useApp();
 
   // Mode: 'drampay' (Instant Online Gateway) or 'manual' (QR Screenshot + UTR)
+  // Only auto-select DramPay if both Merchant ID and Secret Key are actually configured
   const isDrampayConfigured = Boolean(
-    (adminSettings.paymentGatewayProvider === 'drampay' || adminSettings.drampayEnabled)
+    (adminSettings.paymentGatewayProvider === 'drampay' || adminSettings.drampayEnabled) &&
+    adminSettings.drampayMerchantId?.trim() &&
+    adminSettings.drampaySecretKey?.trim() &&
+    adminSettings.drampayMerchantId.trim().toLowerCase() !== 'int32'
   );
 
   const [paymentMode, setPaymentMode] = useState<'drampay' | 'manual'>(
@@ -128,6 +132,18 @@ export const UPIPaymentModal: React.FC = () => {
 
   // Create DramPay order on demand
   const createDramPaySession = async () => {
+    if (
+      !adminSettings.drampayMerchantId?.trim() ||
+      !adminSettings.drampaySecretKey?.trim() ||
+      adminSettings.drampayMerchantId.trim().toLowerCase() === 'int32'
+    ) {
+      setDrampayError(
+        'DramPay Gateway credentials not configured in Admin Panel. Please click "Use Manual QR Mode" below to pay instantly via UPI QR & UTR, or enter valid DramPay credentials in Admin Panel settings.'
+      );
+      setDrampayLoading(false);
+      return;
+    }
+
     setDrampayLoading(true);
     setDrampayError(null);
     try {

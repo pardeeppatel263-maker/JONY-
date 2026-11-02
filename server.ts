@@ -524,6 +524,14 @@ async function startServer() {
         });
       }
 
+      if (activeMid.toLowerCase() === 'int32' || isNaN(Number(activeMid))) {
+        return res.status(400).json({
+          success: false,
+          code: 400,
+          msg: "❌ 'int32' documentation ka data type hai, Merchant ID nahi! Kripya apna numeric DramPay Merchant ID dalein (e.g. 100826) jo DramPay dashboard par milta hai.",
+        });
+      }
+
       // Step 1: Calculate sample MD5 signature
       const sampleParams: Record<string, any> = {
         amount: '100.00',
@@ -591,6 +599,14 @@ async function startServer() {
           success: false,
           code: 400,
           msg: 'DramPay Merchant ID and Secret Key are required. Please configure them in the Admin Panel settings or .env file.',
+        });
+      }
+
+      if (String(activeMerchantId).toLowerCase() === 'int32' || isNaN(Number(activeMerchantId))) {
+        return res.status(400).json({
+          success: false,
+          code: 400,
+          msg: "❌ Invalid Merchant ID 'int32'. Please enter your real numeric DramPay Merchant ID (e.g. 100826) in the Admin Panel settings.",
         });
       }
 

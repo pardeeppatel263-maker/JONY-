@@ -6837,7 +6837,13 @@ export const AdminPanelScreen: React.FC = () => {
                         placeholder="e.g. 100826"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400 transition"
                       />
-                      <p className="text-[10px] text-slate-500">Your assigned merchant ID from drampay.net</p>
+                      <p className="text-[10px] text-slate-500">Your assigned numeric merchant ID from drampay.net dashboard (e.g. 100826)</p>
+                      {(drampayMerchantId || gatewayMerchantId).trim().toLowerCase() === 'int32' && (
+                        <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] leading-relaxed">
+                          <strong className="block text-rose-200 font-bold mb-0.5">⚠️ Yahan &apos;int32&apos; Mat Likhein!</strong>
+                          &apos;int32&apos; documentation ka data type hai, Merchant ID nahi. Kripya apna numeric Merchant ID (jaise: 100826) dalein jo aapko DramPay support / merchant panel se mila hai.
+                        </div>
+                      )}
                     </div>
 
                     {/* Secret Key */}

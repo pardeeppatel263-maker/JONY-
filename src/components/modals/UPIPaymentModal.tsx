@@ -19,6 +19,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../PaymentIcons';
+import { sanitizeUpiPayeeName } from '../../utils/drampay';
 
 export const UPIPaymentModal: React.FC = () => {
   const {
@@ -89,12 +90,14 @@ export const UPIPaymentModal: React.FC = () => {
   )}`;
 
   // Dynamic QR Code: use DramPay deeplink/payUrl if in DramPay mode, else admin QR
-  const qrCodeData =
+  const rawQrCodeData =
     paymentMode === 'drampay' && drampayOrder
       ? drampayOrder.deeplink || drampayOrder.payUrl || upiIntentUri
       : adminSettings.adminQrCodeUrl && adminSettings.adminQrCodeUrl.trim() !== ''
       ? adminSettings.adminQrCodeUrl.trim()
       : upiIntentUri;
+
+  const qrCodeData = sanitizeUpiPayeeName(rawQrCodeData, adminMerchantName || 'ZoroTask');
 
   const qrCodeUrl = qrCodeData.startsWith('http') && !qrCodeData.includes('upi://')
     ? qrCodeData
@@ -269,7 +272,8 @@ export const UPIPaymentModal: React.FC = () => {
         localStorage.setItem('taskvibe_pending_plan', JSON.stringify(pendingPlanForUPI));
       }
 
-      const targetUri = drampayOrder?.deeplink || drampayOrder?.payUrl || upiIntentUri;
+      const rawTargetUri = drampayOrder?.deeplink || drampayOrder?.payUrl || upiIntentUri;
+      const targetUri = sanitizeUpiPayeeName(rawTargetUri, adminMerchantName || 'ZoroTask');
       window.location.href = targetUri;
     } catch {
       if (drampayOrder?.payUrl) {

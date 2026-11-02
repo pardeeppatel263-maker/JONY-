@@ -659,6 +659,18 @@ async function startServer() {
       const { data: responseData } = await callDramPayApi(endpoint, params, 15000);
       console.log('[DramPay-Payin] Response:', JSON.stringify(responseData));
 
+      // Sanitize deeplink Payee Name if gateway returned 'Test Merchant'
+      let cleanDeeplink = responseData?.data?.deeplink;
+      if (cleanDeeplink && typeof cleanDeeplink === 'string' && cleanDeeplink.startsWith('upi://')) {
+        cleanDeeplink = cleanDeeplink.replace(/([?&])pn=([^&]*)/i, (match: string, prefix: string, val: string) => {
+          const decoded = decodeURIComponent(val || '');
+          if (!decoded || decoded.toLowerCase().includes('test') || decoded.toLowerCase() === 'merchant') {
+            return `${prefix}pn=${encodeURIComponent('ZoroTask')}`;
+          }
+          return match;
+        });
+      }
+
       // Record in local cache
       drampayOrders.set(merchantOrderId, {
         merchantOrderId,
@@ -666,7 +678,7 @@ async function startServer() {
         platformOrderId: responseData?.data?.orderId,
         status: responseData?.data?.status || '0',
         payUrl: responseData?.data?.payUrl,
-        deeplink: responseData?.data?.deeplink,
+        deeplink: cleanDeeplink,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -677,6 +689,7 @@ async function startServer() {
         msg: responseData?.msg || 'OK',
         data: {
           ...responseData?.data,
+          deeplink: cleanDeeplink,
           merchantOrderId,
         },
       });

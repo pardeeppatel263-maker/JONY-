@@ -308,6 +308,17 @@ export function generateClientDramPaySign(params: Record<string, any>, secretKey
   return pureJsMd5(stringToSign);
 }
 
+export function sanitizeUpiPayeeName(uri?: string, brandName = 'ZoroTask'): string {
+  if (!uri || typeof uri !== 'string' || !uri.startsWith('upi://')) return uri || '';
+  return uri.replace(/([?&])pn=([^&]*)/i, (match, prefix, val) => {
+    const decoded = decodeURIComponent(val || '');
+    if (!decoded || decoded.toLowerCase().includes('test') || decoded.toLowerCase() === 'merchant') {
+      return `${prefix}pn=${encodeURIComponent(brandName)}`;
+    }
+    return match;
+  });
+}
+
 // Direct Client-Side Fallback Caller (Bypasses backend if local WebView / offline)
 export async function callDirectDramPayPayin(
   merchantId: string | number,
@@ -350,6 +361,9 @@ export async function callDirectDramPayPayin(
     }
 
     if (json.code === 200 && json.data) {
+      if (json.data.deeplink) {
+        json.data.deeplink = sanitizeUpiPayeeName(json.data.deeplink, 'ZoroTask');
+      }
       return {
         success: true,
         data: {

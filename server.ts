@@ -1017,7 +1017,7 @@ async function startServer() {
   // ==========================================
 
   const qopayConfig = {
-    userToken: process.env.QOPAY_USER_TOKEN || '',
+    userToken: process.env.QOPAY_USER_TOKEN || '1ff0e5b2dd0096245789f08a9df5cc1c',
     baseUrl: process.env.QOPAY_BASE_URL || 'https://qo-pay.com',
   };
 

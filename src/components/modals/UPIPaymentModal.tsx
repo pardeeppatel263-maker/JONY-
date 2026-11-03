@@ -138,7 +138,11 @@ export const UPIPaymentModal: React.FC = () => {
 
   const qrCodeData = sanitizeUpiPayeeName(rawQrCodeData, adminMerchantName || 'ZoroTask');
 
-  const qrCodeUrl = qrCodeData.startsWith('http') && !qrCodeData.includes('upi://')
+  const isDirectImage =
+    qrCodeData.startsWith('data:image/') ||
+    (/\.(png|jpe?g|webp|gif|svg)($|\?)/i.test(qrCodeData) && !qrCodeData.includes('create-qr-code'));
+
+  const qrCodeUrl = isDirectImage
     ? qrCodeData
     : `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
         qrCodeData

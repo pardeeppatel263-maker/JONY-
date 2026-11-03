@@ -773,7 +773,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     megaBonusAutoStopOnLimit: true,
     megaBonusBannerTheme: 'amber',
     paymentGatewayEnabled: true,
-    paymentGatewayProvider: 'drampay',
+    paymentGatewayProvider: 'qopay',
     paymentGatewayMerchantId: '',
     paymentGatewayApiKey: '',
     paymentGatewayApiSecret: '',
@@ -781,7 +781,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentGatewayCallbackUrl: '',
     paymentGatewayAutoApprove: true,
     // DramPay API Gateway Configuration
-    drampayEnabled: true,
+    drampayEnabled: false,
     drampayMerchantId: '58',
     drampaySecretKey: 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
     drampayBaseUrl: 'https://drampay.net',
@@ -789,8 +789,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drampayAutoPayoutEnabled: true,
     drampayUpiMode: 'both',
     // QO Pay API Gateway Configuration (https://qo-pay.com)
-    qopayEnabled: false,
-    qopayUserToken: '',
+    qopayEnabled: true,
+    qopayUserToken: '1ff0e5b2dd0096245789f08a9df5cc1c',
     qopayBaseUrl: 'https://qo-pay.com',
     qopayAutoApprove: true,
     qopayAutoPayoutEnabled: true,
@@ -1408,6 +1408,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updates.appVersion = '2.8.0';
             updates.apkDownloadUrl = '/ZoroTask-Official.apk';
             updates.updateChangelog = '📶 Full-Screen Offline Guard Popup • 👑 All 8 VIP Membership Plans Synced • ⚡ In-place APK updater';
+          }
+          if (!current.qopayUserToken || current.qopayUserToken.trim() === '') {
+            updates.qopayUserToken = '1ff0e5b2dd0096245789f08a9df5cc1c';
+            updates.qopayEnabled = true;
+            updates.drampayEnabled = false;
+            updates.paymentGatewayProvider = 'qopay';
           }
           if (Object.keys(updates).length > 0) {
             await setDoc(settingsDocRef, updates, { merge: true });
@@ -6143,6 +6149,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return {
         success: false,
         message: 'QO Pay payment gateway is currently turned OFF by admin.',
+      };
+    }
+    if (amount < 100) {
+      return {
+        success: false,
+        message: 'QO Pay Gateway requires a minimum amount of ₹100. Please select ₹100 or higher, or use Manual QR mode.',
       };
     }
     try {

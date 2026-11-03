@@ -138,7 +138,9 @@ export interface DramPayBalanceDetailResponse {
   };
 }
 
-export const BACKEND_FALLBACK_URL = 'https://ais-pre-xipa6y7nx3k5izqgf4gc3s-300326017780.asia-east1.run.app';
+export const BACKEND_FALLBACK_URL =
+  (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
+  'https://ais-dev-fbucjofws7v7hurybdrc5y-300326017780.asia-east1.run.app';
 
 export function getApiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;

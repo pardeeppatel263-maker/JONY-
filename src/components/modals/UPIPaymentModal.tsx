@@ -273,7 +273,18 @@ export const UPIPaymentModal: React.FC = () => {
 
       const rawTargetUri = targetDeeplink || qopayOrder?.upiIntent || qopayOrder?.deeplink || qopayOrder?.paymentUrl || upiIntentUri;
       const targetUri = sanitizeUpiPayeeName(rawTargetUri, adminMerchantName || 'ZoroTask');
-      window.location.href = targetUri;
+      if (
+        targetUri.startsWith('upi://') ||
+        targetUri.startsWith('phonepe://') ||
+        targetUri.startsWith('paytmmp://') ||
+        targetUri.startsWith('tez://')
+      ) {
+        window.location.href = targetUri;
+      } else if (targetUri.startsWith('http://') || targetUri.startsWith('https://')) {
+        window.open(targetUri, '_blank');
+      } else {
+        window.location.href = targetUri;
+      }
     } catch {
       if (qopayOrder?.paymentUrl) {
         window.open(qopayOrder.paymentUrl, '_blank');

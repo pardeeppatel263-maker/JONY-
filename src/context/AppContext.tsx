@@ -48,6 +48,11 @@ import {
 } from '../data/initialData';
 import { getFormattedDayInfo } from '../utils/dateUtils';
 import { getApiUrl, callDirectDramPayPayin } from '../utils/drampay';
+import {
+  callDirectQoPayCreateOrder,
+  callDirectQoPayStatusCheck,
+  callDirectQoPayPayout,
+} from '../utils/qopay';
 
 // Cutoff timestamp for 2-day free trial eligibility:
 // All accounts registered prior to this timestamp have their trial expired (removed from screen).
@@ -6193,28 +6198,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn('Failed saving qopay deposit to Firestore:', e);
       }
 
-      const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let data: any = {};
+      try {
+        const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userToken: activeUserToken,
+            baseUrl: activeBaseUrl,
+            amount,
+            orderId,
+            customerMobile: user.mobile || '9876543210',
+            customerName: user.name || 'Member',
+            customerEmail: user.email || 'member@zorotask.com',
+            remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
+            remark2: depositId,
+          }),
+        });
+
+        const rawText = await res.text();
+        const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+        if (!isHtml) {
+          try {
+            data = rawText ? JSON.parse(rawText) : {};
+          } catch {}
+        }
+      } catch (networkErr) {
+        console.warn('Backend QO Pay fetch failed, activating direct gateway fallback:', networkErr);
+      }
+
+      // If backend failed, was unreachable, or returned HTML (e.g. inside Android APK):
+      if (!data?.success || (!data?.paymentUrl && !data?.orderId)) {
+        console.log('[QO-Pay] Activating direct gateway client fallback...');
+        const directRes = await callDirectQoPayCreateOrder({
           userToken: activeUserToken,
-          baseUrl: activeBaseUrl,
           amount,
           orderId,
           customerMobile: user.mobile || '9876543210',
           customerName: user.name || 'Member',
           customerEmail: user.email || 'member@zorotask.com',
+          redirectUrl: typeof window !== 'undefined' ? window.location.href : 'https://qo-pay.com',
           remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
           remark2: depositId,
-        }),
-      });
+          baseUrl: activeBaseUrl,
+        });
 
-      const rawText = await res.text();
-      let data: any = {};
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { success: false, message: rawText };
+        if (directRes.success && (directRes.paymentUrl || directRes.orderId)) {
+          data = directRes;
+        } else if (!data?.message && directRes.message) {
+          data = { success: false, message: directRes.message };
+        }
       }
 
       if (data.success && (data.paymentUrl || data.deeplinks || data.orderId)) {
@@ -6263,22 +6296,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const activeUserToken = (adminSettings.qopayUserToken || '').trim();
       const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
-      const res = await fetch(getApiUrl('/api/qopay/payin/status'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userToken: activeUserToken,
-          baseUrl: activeBaseUrl,
-          orderId,
-        }),
-      });
-
-      const rawText = await res.text();
       let data: any = {};
       try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { success: false, message: rawText };
+        const res = await fetch(getApiUrl('/api/qopay/payin/status'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userToken: activeUserToken,
+            baseUrl: activeBaseUrl,
+            orderId,
+          }),
+        });
+
+        const rawText = await res.text();
+        const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+        if (!isHtml) {
+          try {
+            data = rawText ? JSON.parse(rawText) : {};
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('[QO-Pay] Server status check failed, falling back to direct check:', err);
+      }
+
+      // If server returned error or is unhelpful or in WebView:
+      if (!data?.success || data.isPaid === undefined) {
+        const directStatus = await callDirectQoPayStatusCheck(activeUserToken, orderId, activeBaseUrl);
+        if (directStatus.success || directStatus.isPaid) {
+          data = directStatus;
+        }
       }
 
       if (data.isPaid === true || data.status === 'SUCCESS' || data.status === 'COMPLETED' || data.status === 'PAID') {
@@ -6320,27 +6366,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const activeUserToken = (adminSettings.qopayUserToken || '').trim();
       const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
-      const res = await fetch('/api/qopay/payout/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userToken: activeUserToken,
-          baseUrl: activeBaseUrl,
-          amount,
-          orderId: payoutOrderId,
-          accountNumber: payoutMethod === 'bank' ? details.account : (details.upiId || details.account),
-          ifsc: payoutMethod === 'bank' ? (details.ifsc || 'BANK') : 'UPI',
-          beneficiaryName: details.name || user.name || 'Member',
-          remark: `ZoroTask Withdrawal Payout ${txId}`,
-        }),
-      });
-
-      const rawText = await res.text();
       let data: any = {};
       try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = { success: false, message: rawText };
+        const res = await fetch(getApiUrl('/api/qopay/payout/create'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userToken: activeUserToken,
+            baseUrl: activeBaseUrl,
+            amount,
+            orderId: payoutOrderId,
+            accountNumber: payoutMethod === 'bank' ? details.account : (details.upiId || details.account),
+            ifsc: payoutMethod === 'bank' ? (details.ifsc || 'BANK') : 'UPI',
+            beneficiaryName: details.name || user.name || 'Member',
+            remark: `ZoroTask Withdrawal Payout ${txId}`,
+          }),
+        });
+
+        const rawText = await res.text();
+        const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+        if (!isHtml) {
+          try {
+            data = rawText ? JSON.parse(rawText) : {};
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('[QO-Pay] Server payout failed, falling back to direct payout:', err);
+      }
+
+      // If backend failed or in Android APK:
+      if (!data?.success) {
+        const directPayout = await callDirectQoPayPayout(
+          activeUserToken,
+          amount,
+          payoutOrderId,
+          payoutMethod === 'bank' ? (details.account || '') : (details.upiId || details.account || ''),
+          payoutMethod === 'bank' ? (details.ifsc || 'BANK') : 'UPI',
+          details.name || user.name || 'Member',
+          `ZoroTask Withdrawal Payout ${txId}`,
+          activeBaseUrl
+        );
+        if (directPayout.success) {
+          data = directPayout;
+        } else if (!data?.message && directPayout.message) {
+          data = { success: false, message: directPayout.message };
+        }
       }
 
       if (data.success) {

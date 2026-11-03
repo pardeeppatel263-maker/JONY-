@@ -1298,16 +1298,25 @@ async function startServer() {
       );
 
       const resultObj = data?.result || data?.data || data || {};
-      const rawStatus = String(resultObj.status || data?.status || '').toUpperCase();
+      const rawStatus = String(
+        resultObj.payment_status ||
+        data?.payment_status ||
+        resultObj.status ||
+        data?.status ||
+        ''
+      ).toUpperCase();
+
+      const utr =
+        resultObj.utr && resultObj.utr !== 'null'
+          ? String(resultObj.utr)
+          : resultObj.bank_ref_no || resultObj.bank_txn_id || resultObj.rrn || '';
+
       const isPaid =
         rawStatus === 'SUCCESS' ||
         rawStatus === 'COMPLETED' ||
         rawStatus === 'PAID' ||
         rawStatus === '1' ||
-        resultObj.status === 1 ||
-        resultObj.status === true;
-
-      const utr = resultObj.utr || resultObj.bank_ref_no || resultObj.bank_txn_id || resultObj.rrn || '';
+        (Boolean(utr && utr.length >= 8) && rawStatus !== 'FAILED' && rawStatus !== 'PENDING');
 
       if (isPaid) {
         const existing = qopayOrders.get(orderId) || {};

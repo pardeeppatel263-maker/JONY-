@@ -64,7 +64,7 @@ export interface AdminSettings {
   announcementDate?: string;
   // Payment Gateway API Settings
   paymentGatewayEnabled?: boolean;
-  paymentGatewayProvider?: 'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual';
+  paymentGatewayProvider?: 'qopay' | 'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual';
   paymentGatewayMerchantId?: string;
   paymentGatewayApiKey?: string;
   paymentGatewayApiSecret?: string;
@@ -72,6 +72,12 @@ export interface AdminSettings {
   paymentGatewayCallbackUrl?: string;
   paymentGatewayAutoApprove?: boolean;
   paymentGatewayTestMode?: boolean;
+  // QO Pay API Gateway Configuration (https://qo-pay.com/api)
+  qopayEnabled?: boolean;
+  qopayUserToken?: string;
+  qopayBaseUrl?: string;
+  qopayAutoApprove?: boolean;
+  qopayAutoPayoutEnabled?: boolean;
   // DramPay API Gateway Configuration
   drampayEnabled?: boolean;
   drampayMerchantId?: string;
@@ -253,10 +259,12 @@ export interface PaymentDeposit {
   timestamp?: number;
   status: 'in_process' | 'approved' | 'rejected';
   rejectionReason?: string;
-  gateway?: 'drampay' | 'manual';
+  gateway?: 'qopay' | 'drampay' | 'manual';
   gatewayOrderId?: string;
   gatewayPayUrl?: string;
   gatewayDeeplink?: string;
+  qopayOrderId?: string;
+  qopayPaymentUrl?: string;
 }
 
 export interface TransactionItem {

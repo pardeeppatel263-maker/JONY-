@@ -157,6 +157,7 @@ export const AdminPanelScreen: React.FC = () => {
     approveWithdrawal,
     rejectWithdrawal,
     disburseDramPayPayout,
+    disburseQoPayout,
     adjustUserBalance,
     approveTaskSubmission,
     rejectTaskSubmission,
@@ -342,8 +343,8 @@ export const AdminPanelScreen: React.FC = () => {
 
   // Payment Gateway API State
   const [gatewayEnabled, setGatewayEnabled] = useState(adminSettings.paymentGatewayEnabled ?? true);
-  const [gatewayProvider, setGatewayProvider] = useState<'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual'>(
-    (adminSettings.paymentGatewayProvider as any) || 'drampay'
+  const [gatewayProvider, setGatewayProvider] = useState<'qopay' | 'drampay' | 'phonepe' | 'razorpay' | 'cashfree' | 'paytm' | 'upi_gateway' | 'manual'>(
+    (adminSettings.paymentGatewayProvider as any) || 'qopay'
   );
   const [gatewayMerchantId, setGatewayMerchantId] = useState(adminSettings.paymentGatewayMerchantId || '');
   const [gatewayApiKey, setGatewayApiKey] = useState(adminSettings.paymentGatewayApiKey || '');
@@ -358,6 +359,19 @@ export const AdminPanelScreen: React.FC = () => {
   const [showGatewaySecret, setShowGatewaySecret] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+
+  // QO Pay API Specific State (https://qo-pay.com/api)
+  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? true);
+  const [qopayUserToken, setQopayUserToken] = useState(adminSettings.qopayUserToken || '');
+  const [qopayBaseUrl, setQopayBaseUrl] = useState(adminSettings.qopayBaseUrl || 'https://qo-pay.com');
+  const [qopayAutoApprove, setQopayAutoApprove] = useState(adminSettings.qopayAutoApprove ?? true);
+  const [qopayAutoPayoutEnabled, setQopayAutoPayoutEnabled] = useState(adminSettings.qopayAutoPayoutEnabled ?? true);
+  const [showQopayToken, setShowQopayToken] = useState(false);
+  const [qopayTestStatus, setQopayTestStatus] = useState<string | null>(null);
+  const [isTestingQopay, setIsTestingQopay] = useState(false);
+  const [qopayStatusOrderId, setQopayStatusOrderId] = useState('');
+  const [qopayStatusResult, setQopayStatusResult] = useState<any>(null);
+  const [isCheckingQopayStatus, setIsCheckingQopayStatus] = useState(false);
 
   // DramPay API Specific State
   const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? true);
@@ -387,6 +401,11 @@ export const AdminPanelScreen: React.FC = () => {
       if (adminSettings.paymentGatewayCallbackUrl !== undefined) setGatewayCallbackUrl(adminSettings.paymentGatewayCallbackUrl);
       if (adminSettings.paymentGatewayAutoApprove !== undefined) setGatewayAutoApprove(adminSettings.paymentGatewayAutoApprove);
       if (adminSettings.paymentGatewayTestMode !== undefined) setGatewayTestMode(adminSettings.paymentGatewayTestMode);
+      if (adminSettings.qopayEnabled !== undefined) setQopayEnabled(adminSettings.qopayEnabled);
+      if (adminSettings.qopayUserToken !== undefined) setQopayUserToken(adminSettings.qopayUserToken);
+      if (adminSettings.qopayBaseUrl !== undefined) setQopayBaseUrl(adminSettings.qopayBaseUrl);
+      if (adminSettings.qopayAutoApprove !== undefined) setQopayAutoApprove(adminSettings.qopayAutoApprove);
+      if (adminSettings.qopayAutoPayoutEnabled !== undefined) setQopayAutoPayoutEnabled(adminSettings.qopayAutoPayoutEnabled);
       if (adminSettings.drampayEnabled !== undefined) setDrampayEnabled(adminSettings.drampayEnabled);
       if (adminSettings.drampayMerchantId !== undefined) setDrampayMerchantId(adminSettings.drampayMerchantId);
       if (adminSettings.drampaySecretKey !== undefined) setDrampaySecretKey(adminSettings.drampaySecretKey);
@@ -411,6 +430,11 @@ export const AdminPanelScreen: React.FC = () => {
         paymentGatewayCallbackUrl: gatewayCallbackUrl.trim(),
         paymentGatewayAutoApprove: gatewayAutoApprove,
         paymentGatewayTestMode: gatewayTestMode,
+        qopayEnabled,
+        qopayUserToken: qopayUserToken.trim(),
+        qopayBaseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+        qopayAutoApprove,
+        qopayAutoPayoutEnabled,
         drampayEnabled,
         drampayMerchantId: (drampayMerchantId || gatewayMerchantId).trim(),
         drampaySecretKey: (drampaySecretKey || gatewayApiKey).trim(),
@@ -421,6 +445,15 @@ export const AdminPanelScreen: React.FC = () => {
       });
 
       // Synchronize with backend proxy config
+      fetch('/api/qopay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: qopayUserToken.trim(),
+          baseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+        }),
+      }).catch(console.warn);
+
       fetch('/api/drampay/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -431,12 +464,76 @@ export const AdminPanelScreen: React.FC = () => {
         }),
       }).catch(console.warn);
 
-      showToast('✓ DramPay & Payment Gateway settings saved to Cloud Firestore!');
+      showToast('✓ Payment Gateway & QO Pay settings saved to Cloud Firestore!');
     } catch (err) {
       console.error(err);
       showToast('❌ Failed to save Gateway settings');
     } finally {
       setIsSavingGateway(false);
+    }
+  };
+
+  const handleTestQoPayConnection = async () => {
+    const activeToken = qopayUserToken.trim();
+    if (!activeToken) {
+      showToast('❌ Please enter your QO Pay User Token first');
+      return;
+    }
+    setIsTestingQopay(true);
+    setQopayTestStatus('Connecting to QO Pay API (https://qo-pay.com)...');
+    try {
+      const res = await fetch('/api/qopay/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: activeToken,
+          baseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+        }),
+      });
+      const data = await res.json();
+      if (data.tokenValid || data.success) {
+        setQopayTestStatus(`✓ Connected to QO Pay! User Token authenticated. Status: ${data.message || 'OK'}`);
+        showToast('✓ QO Pay API connection verified!');
+      } else {
+        setQopayTestStatus(`⚠️ QO Pay Response: ${data.message || 'Invalid API token. Check dashboard at https://qo-pay.com/login'}`);
+        showToast(`QO Pay: ${data.message || 'Check User Token'}`);
+      }
+    } catch (err: any) {
+      setQopayTestStatus(`❌ Network Error: ${err.message}`);
+      showToast(`❌ Network Error: ${err.message}`);
+    } finally {
+      setIsTestingQopay(false);
+    }
+  };
+
+  const handleCheckQoPayOrderStatus = async () => {
+    const cleanOrderId = qopayStatusOrderId.trim();
+    if (!cleanOrderId) {
+      showToast('❌ Please enter an Order ID to check status');
+      return;
+    }
+    setIsCheckingQopayStatus(true);
+    try {
+      const res = await fetch('/api/qopay/payin/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: qopayUserToken.trim(),
+          baseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+          orderId: cleanOrderId,
+        }),
+      });
+      const data = await res.json();
+      setQopayStatusResult(data);
+      if (data.isPaid) {
+        showToast(`🎉 Order ${cleanOrderId} is PAID! UTR: ${data.utr || 'N/A'}`);
+      } else {
+        showToast(`Order Status: ${data.status || 'PENDING'} (${data.message || ''})`);
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`);
+    } finally {
+      setIsCheckingQopayStatus(false);
     }
   };
 
@@ -3545,6 +3642,62 @@ export const AdminPanelScreen: React.FC = () => {
 
                     {tx.status === 'pending' && (
                       <div className="space-y-2 pt-2 border-t border-slate-800">
+                        {/* 1-Click QO Pay Automated Payout Button */}
+                        {(gatewayProvider === 'qopay' || qopayEnabled || qopayUserToken) && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
+                              setProcessingPayoutId(tx.id);
+
+                              let upiId = '';
+                              let account = '';
+                              let ifsc = '';
+                              let holderName = u?.name || 'Member';
+
+                              if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
+                                const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
+                                const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
+                                const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
+                                account = accMatch ? accMatch[1].trim() : '';
+                                ifsc = ifscMatch ? ifscMatch[1].trim() : '';
+                                if (holderMatch) holderName = holderMatch[1].trim();
+                              } else {
+                                const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
+                                upiId = upiMatch ? upiMatch[1].trim() : (tx.note?.replace('UPI:', '').trim() || u?.upiId || '');
+                              }
+
+                              await disburseQoPayout(
+                                tx.id,
+                                tx.amount,
+                                tx.payoutMethod || (account ? 'bank' : 'upi'),
+                                {
+                                  upiId,
+                                  account,
+                                  ifsc,
+                                  name: holderName,
+                                  mobile: u?.mobile,
+                                }
+                              );
+                              setProcessingPayoutId(null);
+                            }}
+                            disabled={processingPayoutId === tx.id}
+                            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/30 active:scale-98 transition disabled:opacity-60 cursor-pointer"
+                          >
+                            {processingPayoutId === tx.id ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Disbursing via QO Pay API...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                                <span>⚡ Disburse via QO Pay ({tx.payoutMethod === 'bank' ? 'Bank Transfer' : 'Instant UPI'})</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
                         {/* 1-Click DramPay Automated Payout Button */}
                         <button
                           type="button"
@@ -6720,6 +6873,7 @@ export const AdminPanelScreen: React.FC = () => {
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
+                    { id: 'qopay', name: 'QO Pay (Official)', tag: 'https://qo-pay.com/api UPI Gateway & Payout', icon: '⚡' },
                     { id: 'drampay', name: 'DramPay (Official)', tag: 'UPI Deeplink, Cashier & Payout API', icon: '⚡' },
                     { id: 'phonepe', name: 'PhonePe PG', tag: 'Direct UPI & Cards', renderIcon: () => <PhonePeIcon size={20} className="rounded-xs" /> },
                     { id: 'razorpay', name: 'Razorpay', tag: 'Standard PG', icon: '🔵' },
@@ -6733,13 +6887,17 @@ export const AdminPanelScreen: React.FC = () => {
                         key={prov.id}
                         onClick={() => {
                           setGatewayProvider(prov.id as any);
-                          if (prov.id === 'drampay') {
+                          if (prov.id === 'qopay') {
+                            setGatewayCallbackUrl(typeof window !== 'undefined' ? `${window.location.origin}/api/qopay/notify` : '');
+                          } else if (prov.id === 'drampay') {
                             setGatewayCallbackUrl(typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : '');
                           }
                         }}
                         className={`p-3 rounded-2xl border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/50'
+                            ? prov.id === 'qopay'
+                              ? 'bg-indigo-950/40 border-indigo-500 ring-1 ring-indigo-500/50'
+                              : 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/50'
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                         }`}
                       >
@@ -6747,10 +6905,19 @@ export const AdminPanelScreen: React.FC = () => {
                           <span className="text-lg leading-none">
                             {prov.renderIcon ? prov.renderIcon() : prov.icon}
                           </span>
-                          {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                          {isSelected && (
+                            <CheckCircle2
+                              className={`w-4 h-4 ${prov.id === 'qopay' ? 'text-indigo-400' : 'text-amber-400'}`}
+                            />
+                          )}
                         </div>
                         <div className="text-xs font-bold text-white flex items-center gap-1">
                           <span>{prov.name}</span>
+                          {prov.id === 'qopay' && (
+                            <span className="text-[9px] bg-indigo-500 text-white font-black px-1.5 py-0.2 rounded">
+                              OFFICIAL
+                            </span>
+                          )}
                           {prov.id === 'drampay' && (
                             <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded">
                               ACTIVE
@@ -6769,12 +6936,13 @@ export const AdminPanelScreen: React.FC = () => {
                 <div className="flex items-center justify-between p-2">
                   <div>
                     <span className="text-xs font-bold text-slate-200 block">Auto-Approve on Callback</span>
-                    <span className="text-[10px] text-slate-400">Automatically credit wallet balance when DramPay confirms payment (status=1)</span>
+                    <span className="text-[10px] text-slate-400">Automatically credit wallet balance when gateway confirms payment</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setGatewayAutoApprove(!gatewayAutoApprove);
+                      setQopayAutoApprove(!qopayAutoApprove);
                       setDrampayAutoApprove(!drampayAutoApprove);
                     }}
                     className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
@@ -6787,20 +6955,206 @@ export const AdminPanelScreen: React.FC = () => {
 
                 <div className="flex items-center justify-between p-2">
                   <div>
-                    <span className="text-xs font-bold text-slate-200 block">DramPay 1-Click Payouts</span>
-                    <span className="text-[10px] text-slate-400">Enable automated disbursement to member UPI / Bank via Payout API</span>
+                    <span className="text-xs font-bold text-slate-200 block">Automated Payouts API</span>
+                    <span className="text-[10px] text-slate-400">Enable 1-click disbursement to member UPI / Bank via Payout API</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setDrampayAutoPayoutEnabled(!drampayAutoPayoutEnabled)}
+                    onClick={() => {
+                      setQopayAutoPayoutEnabled(!qopayAutoPayoutEnabled);
+                      setDrampayAutoPayoutEnabled(!drampayAutoPayoutEnabled);
+                    }}
                     className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                      drampayAutoPayoutEnabled ? 'bg-amber-500 justify-end' : 'bg-slate-700 justify-start'
+                      qopayAutoPayoutEnabled || drampayAutoPayoutEnabled ? 'bg-indigo-500 justify-end' : 'bg-slate-700 justify-start'
                     }`}
                   >
                     <span className="bg-white w-4 h-4 rounded-full shadow-md" />
                   </button>
                 </div>
               </div>
+
+              {/* QO PAY SPECIFIC CONFIGURATION */}
+              {gatewayProvider === 'qopay' && (
+                <div className="space-y-4 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-indigo-500/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+                    <div className="text-xs font-bold text-indigo-400 flex items-center gap-2">
+                      <Zap className="w-4 h-4 fill-indigo-400 text-indigo-400" />
+                      <span>QO Pay Payment Gateway Configuration (https://qo-pay.com/api)</span>
+                    </div>
+                    <a
+                      href="https://qo-pay.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-indigo-300 hover:text-white flex items-center gap-1 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20"
+                    >
+                      <span>QO Pay Merchant Portal</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* User Token */}
+                    <div className="space-y-1 sm:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-300">
+                          QO Pay User Token (user_token) <span className="text-red-400">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowQopayToken(!showQopayToken)}
+                          className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                        >
+                          {showQopayToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showQopayToken ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showQopayToken ? 'text' : 'password'}
+                        value={qopayUserToken}
+                        onChange={(e) => setQopayUserToken(e.target.value)}
+                        placeholder="Paste your unique QO Pay user_token from https://qo-pay.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-400 transition"
+                      />
+                      <p className="text-[10px] text-slate-400">
+                        This token is passed as &apos;user_token&apos; to https://qo-pay.com/api/create-order and /order-status.
+                      </p>
+                    </div>
+
+                    {/* API Host URL */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        QO Pay API Host Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={qopayBaseUrl}
+                        onChange={(e) => setQopayBaseUrl(e.target.value)}
+                        placeholder="https://qo-pay.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none focus:border-indigo-400 transition"
+                      />
+                    </div>
+
+                    {/* Webhook / Callback Notification URL */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-300 block">
+                        Webhook / Notify URL (Paste in QO Pay Console)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/qopay/notify` : ''}
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-indigo-300 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => copyText(`${window.location.origin}/api/qopay/notify`, 'QO Pay Notify URL')}
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl cursor-pointer"
+                          title="Copy"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Feature Toggles */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">QO Pay Auto-Credit</span>
+                        <span className="text-[10px] text-slate-400">Instantly credit wallet when QO Pay confirms payment</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQopayAutoApprove(!qopayAutoApprove)}
+                        className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
+                          qopayAutoApprove ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
+                        }`}
+                      >
+                        <span className="bg-white w-4 h-4 rounded-full shadow-md" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">QO Pay Auto-Payout</span>
+                        <span className="text-[10px] text-slate-400">Auto-disburse user withdrawals via /api/create-payout</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQopayAutoPayoutEnabled(!qopayAutoPayoutEnabled)}
+                        className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
+                          qopayAutoPayoutEnabled ? 'bg-indigo-500 justify-end' : 'bg-slate-700 justify-start'
+                        }`}
+                      >
+                        <span className="bg-white w-4 h-4 rounded-full shadow-md" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* LIVE API CONNECTION TEST & ORDER CHECKER */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-slate-800">
+                    {/* Test Connection Button */}
+                    <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                          <span>Test QO Pay API Token</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleTestQoPayConnection}
+                          disabled={isTestingQopay}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {isTestingQopay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                          <span>Test Token</span>
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Calls QO Pay /api/create-order to verify user_token authentication.
+                      </p>
+                      {qopayTestStatus && (
+                        <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-indigo-300">
+                          {qopayTestStatus}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live Order Status Checker */}
+                    <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Search className="w-4 h-4 text-emerald-400" />
+                        <span>Query QO Pay Order Status</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={qopayStatusOrderId}
+                          onChange={(e) => setQopayStatusOrderId(e.target.value)}
+                          placeholder="Enter QO Pay Order ID"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCheckQoPayOrderStatus}
+                          disabled={isCheckingQopayStatus}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          {isCheckingQopayStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                          <span>Check</span>
+                        </button>
+                      </div>
+                      {qopayStatusResult && (
+                        <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] font-mono text-emerald-300 break-all max-h-24 overflow-y-auto">
+                          {JSON.stringify(qopayStatusResult)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* DRAMPAY SPECIFIC CONFIGURATION */}
               {gatewayProvider === 'drampay' && (

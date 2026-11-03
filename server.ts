@@ -1011,6 +1011,494 @@ async function startServer() {
     }
   });
 
+  // ==========================================
+  // QO PAY UPI PAYMENT GATEWAY API PROXY ROUTES
+  // Official Docs / Portal: https://qo-pay.com/api
+  // ==========================================
+
+  const qopayConfig = {
+    userToken: process.env.QOPAY_USER_TOKEN || '',
+    baseUrl: process.env.QOPAY_BASE_URL || 'https://qo-pay.com',
+  };
+
+  const qopayOrders = new Map<string, any>();
+
+  // Safe HTTP caller for QO Pay API endpoints
+  async function callQoPayApi(
+    endpoint: string,
+    params: Record<string, any> = {},
+    method = 'POST',
+    timeoutMs = 15000
+  ): Promise<{ status: number; data: any; rawText?: string }> {
+    try {
+      const cleanBase = (qopayConfig.baseUrl || 'https://qo-pay.com').replace(/\/+$/, '');
+      const pathPart = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      let fetchUrl = endpoint.startsWith('http') ? endpoint : `${cleanBase}${pathPart}`;
+
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      };
+
+      let body: string | undefined = undefined;
+      if (method.toUpperCase() === 'GET') {
+        const urlObj = new URL(fetchUrl);
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') {
+            urlObj.searchParams.set(k, String(v));
+          }
+        });
+        fetchUrl = urlObj.toString();
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(params);
+      }
+
+      const res = await fetch(fetchUrl, {
+        method: method.toUpperCase(),
+        headers,
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const rawText = await res.text();
+      let parsedData: any = null;
+      if (rawText && rawText.trim().length > 0) {
+        try {
+          parsedData = JSON.parse(rawText);
+        } catch {
+          parsedData = {
+            status: false,
+            code: res.status,
+            message: rawText.length > 250 ? rawText.slice(0, 250) + '...' : rawText,
+          };
+        }
+      } else {
+        parsedData = {
+          status: false,
+          code: res.status,
+          message: `Gateway returned empty body (HTTP ${res.status})`,
+        };
+      }
+
+      return { status: res.status, data: parsedData, rawText };
+    } catch (err: any) {
+      return {
+        status: 500,
+        data: {
+          status: false,
+          code: 500,
+          message: err.name === 'TimeoutError'
+            ? 'Connection to QO Pay gateway timed out (15s)'
+            : (err.message || 'Error connecting to QO Pay Gateway'),
+        },
+      };
+    }
+  }
+
+  // 1. Get current QO Pay Config
+  app.get('/api/qopay/config', (_req, res) => {
+    return res.json({
+      success: true,
+      configured: Boolean(qopayConfig.userToken),
+      baseUrl: qopayConfig.baseUrl,
+      hasUserToken: Boolean(qopayConfig.userToken),
+    });
+  });
+
+  // 2. Set QO Pay Config dynamically from Admin Panel
+  app.post('/api/qopay/config', (req, res) => {
+    const { userToken, baseUrl } = req.body || {};
+    if (userToken !== undefined) qopayConfig.userToken = String(userToken).trim();
+    if (baseUrl !== undefined) qopayConfig.baseUrl = String(baseUrl).trim() || 'https://qo-pay.com';
+
+    return res.json({
+      success: true,
+      configured: Boolean(qopayConfig.userToken),
+      baseUrl: qopayConfig.baseUrl,
+      message: 'QO Pay runtime configuration updated successfully',
+    });
+  });
+
+  // 3. Test QO Pay Connection
+  app.post('/api/qopay/test', async (req, res) => {
+    try {
+      const { userToken, user_token, baseUrl, base_url } = req.body || {};
+      const activeToken = String(userToken || user_token || qopayConfig.userToken || '').trim();
+      const activeBase = String(baseUrl || base_url || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+
+      if (!activeToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'QO Pay User Token is required to test gateway connectivity',
+        });
+      }
+
+      // Check create-order with test order
+      const testOrderId = `TEST_${Date.now()}`;
+      const { status, data } = await callQoPayApi(
+        `${activeBase}/api/create-order`,
+        {
+          user_token: activeToken,
+          amount: '1.00',
+          order_id: testOrderId,
+          customer_mobile: '9876543210',
+          customer_name: 'Test Merchant',
+          customer_email: 'test@merchant.com',
+          redirect_url: `${req.protocol}://${req.get('host')}/api/qopay/callback`,
+          remark1: 'Connectivity Check',
+        },
+        'POST',
+        10000
+      );
+
+      const isValidToken = data && data.message !== 'Invalid API token' && data.message !== 'API token required';
+
+      return res.json({
+        success: Boolean(data?.status || isValidToken),
+        httpStatus: status,
+        tokenValid: isValidToken,
+        message: data?.message || (isValidToken ? 'Token authenticated with QO Pay' : 'Invalid API token'),
+        data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 4. Create Payin Order (Calls POST https://qo-pay.com/api/create-order)
+  app.post('/api/qopay/payin/create', async (req, res) => {
+    try {
+      const {
+        userToken = qopayConfig.userToken,
+        baseUrl = qopayConfig.baseUrl,
+        amount,
+        orderId,
+        customerMobile = '9876543210',
+        customerName = 'ZoroTask Member',
+        customerEmail = 'member@zorotask.com',
+        redirectUrl,
+        remark1 = 'ZoroTask Add Money',
+        remark2,
+      } = req.body || {};
+
+      const activeToken = String(userToken || qopayConfig.userToken || '').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+
+      if (!activeToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'QO Pay user_token is not configured. Please configure user_token in Admin Panel.',
+        });
+      }
+
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid payment amount' });
+      }
+
+      const activeOrderId = String(orderId || `ORD_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`);
+      const defaultHost = `${req.protocol}://${req.get('host')}`;
+      const effectiveRedirectUrl = redirectUrl || `${defaultHost}/api/qopay/callback?order_id=${activeOrderId}`;
+
+      const payload = {
+        user_token: activeToken,
+        amount: numAmount.toFixed(2),
+        order_id: activeOrderId,
+        customer_mobile: String(customerMobile).replace(/\D/g, '').slice(-10) || '9876543210',
+        customer_name: String(customerName || 'ZoroTask Member').trim(),
+        customer_email: String(customerEmail || 'member@zorotask.com').trim(),
+        redirect_url: effectiveRedirectUrl,
+        remark1: String(remark1 || 'ZoroTask Deposit'),
+        remark2: String(remark2 || activeOrderId),
+      };
+
+      const endpoint = `${activeBase}/api/create-order`;
+      const { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 15000);
+
+      const resultObj = data?.result || data?.data || data || {};
+      const paymentUrl = resultObj.payment_url || resultObj.url || resultObj.pay_url || data?.payment_url || null;
+      const deeplinks = resultObj.deeplinks || {};
+      const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
+
+      // Cache order in memory for status checks and webhook tracking
+      qopayOrders.set(activeOrderId, {
+        orderId: activeOrderId,
+        amount: numAmount,
+        status: data?.status ? 'PENDING' : 'FAILED',
+        createdAt: Date.now(),
+        paymentUrl,
+        deeplinks,
+        upiIntent,
+        customerMobile,
+        raw: data,
+      });
+
+      if (data?.status === true || Boolean(paymentUrl)) {
+        return res.json({
+          success: true,
+          orderId: activeOrderId,
+          paymentUrl,
+          deeplinks,
+          upiIntent,
+          message: data?.message || 'QO Pay order created successfully',
+          data,
+        });
+      }
+
+      return res.status(httpStatus >= 400 ? httpStatus : 400).json({
+        success: false,
+        message: data?.message || 'Failed to create QO Pay order',
+        data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 5. Check Payin Order Status (Calls GET https://qo-pay.com/api/order-status)
+  app.post('/api/qopay/payin/status', async (req, res) => {
+    try {
+      const {
+        userToken = qopayConfig.userToken,
+        baseUrl = qopayConfig.baseUrl,
+        orderId,
+      } = req.body || {};
+
+      const activeToken = String(userToken || qopayConfig.userToken || '').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+
+      if (!orderId) {
+        return res.status(400).json({ success: false, message: 'orderId is required' });
+      }
+
+      // 1. Check in-memory webhook cache
+      const cached = qopayOrders.get(orderId);
+      if (cached && (cached.status === 'SUCCESS' || cached.isPaid === true)) {
+        return res.json({
+          success: true,
+          isPaid: true,
+          status: 'SUCCESS',
+          utr: cached.utr || cached.bankRefNo,
+          message: 'Payment confirmed via webhook',
+          data: cached,
+        });
+      }
+
+      // 2. Query QO Pay live order-status GET endpoint
+      const endpoint = `${activeBase}/api/order-status`;
+      const { status: httpStatus, data } = await callQoPayApi(
+        endpoint,
+        {
+          user_token: activeToken,
+          order_id: orderId,
+        },
+        'GET',
+        12000
+      );
+
+      const resultObj = data?.result || data?.data || data || {};
+      const rawStatus = String(resultObj.status || data?.status || '').toUpperCase();
+      const isPaid =
+        rawStatus === 'SUCCESS' ||
+        rawStatus === 'COMPLETED' ||
+        rawStatus === 'PAID' ||
+        rawStatus === '1' ||
+        resultObj.status === 1 ||
+        resultObj.status === true;
+
+      const utr = resultObj.utr || resultObj.bank_ref_no || resultObj.bank_txn_id || resultObj.rrn || '';
+
+      if (isPaid) {
+        const existing = qopayOrders.get(orderId) || {};
+        qopayOrders.set(orderId, {
+          ...existing,
+          isPaid: true,
+          status: 'SUCCESS',
+          utr,
+          updatedAt: Date.now(),
+        });
+      }
+
+      return res.json({
+        success: data?.status !== false || isPaid,
+        isPaid,
+        status: rawStatus || (isPaid ? 'SUCCESS' : 'PENDING'),
+        utr,
+        message: data?.message || (isPaid ? 'Payment successful' : 'Payment pending'),
+        data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 6. QO Pay Webhook & Callback Notifications
+  app.post(['/api/qopay/notify', '/api/qopay/webhook', '/api/qopay/callback'], (req, res) => {
+    try {
+      const payload = req.body || {};
+      console.log('[QO-Pay-Webhook]', JSON.stringify(payload));
+
+      const orderId =
+        payload.order_id ||
+        payload.orderId ||
+        payload.client_txn_id ||
+        payload.merchant_order_id ||
+        (payload.result && (payload.result.order_id || payload.result.orderId));
+
+      const rawStatus = String(
+        payload.status ||
+        payload.order_status ||
+        (payload.result && payload.result.status) ||
+        ''
+      ).toUpperCase();
+
+      const utr =
+        payload.utr ||
+        payload.bank_ref_no ||
+        payload.bank_txn_id ||
+        (payload.result && (payload.result.utr || payload.result.bank_ref_no)) ||
+        '';
+
+      const isPaid =
+        rawStatus === 'SUCCESS' ||
+        rawStatus === 'PAID' ||
+        rawStatus === 'COMPLETED' ||
+        rawStatus === '1' ||
+        payload.status === true;
+
+      if (orderId) {
+        const existing = qopayOrders.get(orderId) || {};
+        qopayOrders.set(orderId, {
+          ...existing,
+          orderId,
+          isPaid: isPaid || existing.isPaid,
+          status: isPaid ? 'SUCCESS' : rawStatus,
+          utr: utr || existing.utr,
+          webhookReceivedAt: Date.now(),
+          payload,
+        });
+      }
+
+      return res.status(200).json({ status: true, message: 'Webhook received successfully' });
+    } catch (err: any) {
+      return res.status(200).json({ status: true, message: 'Webhook acknowledged' });
+    }
+  });
+
+  // 7. QO Pay Browser Callback Redirect Route
+  app.get('/api/qopay/callback', (req, res) => {
+    const orderId = req.query.order_id || req.query.orderId || '';
+    const status = req.query.status || 'check';
+    console.log('[QO-Pay-Browser-Callback]', { orderId, status });
+    // Redirect back to applet wallet/records with notification
+    return res.redirect(`/#/wallet?qopay_order=${encodeURIComponent(String(orderId))}&status=${encodeURIComponent(String(status))}`);
+  });
+
+  // 8. Create Payout / Withdrawal (Calls POST https://qo-pay.com/api/create-payout)
+  app.post('/api/qopay/payout/create', async (req, res) => {
+    try {
+      const {
+        userToken = qopayConfig.userToken,
+        baseUrl = qopayConfig.baseUrl,
+        amount,
+        orderId,
+        accountNumber,
+        ifsc = 'UPI',
+        beneficiaryName = 'Member',
+        remark = 'ZoroTask Withdrawal Payout',
+      } = req.body || {};
+
+      const activeToken = String(userToken || qopayConfig.userToken || '').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+
+      if (!activeToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'QO Pay user_token is not configured for Payouts.',
+        });
+      }
+
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid payout amount' });
+      }
+
+      if (!accountNumber) {
+        return res.status(400).json({ success: false, message: 'Account Number or UPI ID is required for payout' });
+      }
+
+      const activeOrderId = String(orderId || `PO_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`);
+
+      const payload = {
+        user_token: activeToken,
+        amount: numAmount.toFixed(2),
+        order_id: activeOrderId,
+        account_number: String(accountNumber).trim(),
+        ifsc: String(ifsc || 'UPI').trim(),
+        beneficiary_name: String(beneficiaryName || 'Customer').trim(),
+        remark: String(remark || 'Withdrawal Disbursed').trim(),
+      };
+
+      const endpoint = `${activeBase}/api/create-payout`;
+      const { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 18000);
+
+      const resultObj = data?.result || data?.data || data || {};
+      const payoutId = resultObj.payout_id || resultObj.order_id || activeOrderId;
+      const utr = resultObj.utr || resultObj.bank_ref_no || '';
+
+      return res.json({
+        success: data?.status === true,
+        payoutId,
+        utr,
+        message: data?.message || (data?.status ? 'Payout initiated successfully' : 'Payout request failed'),
+        data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 9. Check Payout Status (Calls GET https://qo-pay.com/api/payout-status)
+  app.post('/api/qopay/payout/status', async (req, res) => {
+    try {
+      const {
+        userToken = qopayConfig.userToken,
+        baseUrl = qopayConfig.baseUrl,
+        orderId,
+      } = req.body || {};
+
+      const activeToken = String(userToken || qopayConfig.userToken || '').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+
+      if (!orderId) {
+        return res.status(400).json({ success: false, message: 'orderId is required' });
+      }
+
+      const endpoint = `${activeBase}/api/payout-status`;
+      const { data } = await callQoPayApi(
+        endpoint,
+        {
+          user_token: activeToken,
+          order_id: orderId,
+        },
+        'GET',
+        12000
+      );
+
+      const resultObj = data?.result || data?.data || data || {};
+      return res.json({
+        success: data?.status !== false,
+        status: resultObj.status || 'PENDING',
+        utr: resultObj.utr || resultObj.bank_ref_no || '',
+        message: data?.message || 'Payout status retrieved',
+        data,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // Serve with Vite in development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

@@ -290,6 +290,32 @@ interface AppContextType {
     payoutMethod: 'upi' | 'bank',
     details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
   ) => Promise<{ success: boolean; message: string; data?: any }>;
+  // QO Pay Gateway (https://qo-pay.com/api)
+  initiateQoPayment: (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ) => Promise<{
+    success: boolean;
+    orderId?: string;
+    paymentUrl?: string;
+    deeplink?: string;
+    upiIntent?: string;
+    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string };
+    depositId?: string;
+    message?: string;
+  }>;
+  checkQoPayStatus: (
+    depositId: string,
+    orderId: string
+  ) => Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string }>;
+  disburseQoPayout: (
+    txId: string,
+    amount: number,
+    payoutMethod: 'upi' | 'bank',
+    details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
+  ) => Promise<{ success: boolean; message: string; utr?: string; data?: any }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -6081,6 +6107,241 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // QO Pay Payment Gateway (https://qo-pay.com/api)
+  const initiateQoPayment = async (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ): Promise<{
+    success: boolean;
+    orderId?: string;
+    paymentUrl?: string;
+    deeplink?: string;
+    upiIntent?: string;
+    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string };
+    depositId?: string;
+    message?: string;
+  }> => {
+    try {
+      const activeUserToken = (adminSettings.qopayUserToken || '').trim();
+      const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+
+      const orderId = `QO_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+      const depositId = `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Create deposit record in local state and Firestore
+      const newDeposit: PaymentDeposit = {
+        id: depositId,
+        userId: user.mobile,
+        userName: user.name || 'Member',
+        userMobile: user.mobile,
+        amount,
+        bonus,
+        planLevel: plan?.level,
+        planTitle: plan?.title,
+        depositType,
+        adminUpiId: adminSettings.adminUpiId || 'qopay@upi',
+        utrNumber: `PENDING_${orderId}`,
+        submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
+        status: 'in_process',
+        gateway: 'qopay',
+        gatewayOrderId: orderId,
+        qopayOrderId: orderId,
+      };
+
+      setPaymentDeposits((prev) => [newDeposit, ...prev]);
+
+      try {
+        await setDoc(doc(db, 'deposits', depositId), newDeposit);
+      } catch (e) {
+        console.warn('Failed saving qopay deposit to Firestore:', e);
+      }
+
+      const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: activeUserToken,
+          baseUrl: activeBaseUrl,
+          amount,
+          orderId,
+          customerMobile: user.mobile || '9876543210',
+          customerName: user.name || 'Member',
+          customerEmail: user.email || 'member@zorotask.com',
+          remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
+          remark2: depositId,
+        }),
+      });
+
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { success: false, message: rawText };
+      }
+
+      if (data.success && (data.paymentUrl || data.deeplinks || data.orderId)) {
+        // Update deposit with payment URL & intent
+        const updatedDeposit: PaymentDeposit = {
+          ...newDeposit,
+          gatewayPayUrl: data.paymentUrl,
+          gatewayDeeplink: data.upiIntent || data.deeplink,
+          qopayPaymentUrl: data.paymentUrl,
+        };
+        setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
+        try {
+          await setDoc(doc(db, 'deposits', depositId), updatedDeposit, { merge: true });
+        } catch {}
+
+        return {
+          success: true,
+          orderId: data.orderId || orderId,
+          paymentUrl: data.paymentUrl,
+          deeplink: data.deeplink,
+          upiIntent: data.upiIntent,
+          deeplinks: data.deeplinks,
+          depositId,
+          message: data.message || 'QO Pay order initialized successfully',
+        };
+      } else {
+        const cleanMsg =
+          typeof data.message === 'string' && !data.message.startsWith('<') && !data.message.includes('<html')
+            ? data.message
+            : 'Could not connect to QO Pay gateway. Please verify your QO Pay user_token or click "Use Manual QR Mode".';
+        return {
+          success: false,
+          message: cleanMsg,
+        };
+      }
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error creating QO Pay order' };
+    }
+  };
+
+  const checkQoPayStatus = async (
+    depositId: string,
+    orderId: string
+  ): Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string }> => {
+    try {
+      const activeUserToken = (adminSettings.qopayUserToken || '').trim();
+      const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+
+      const res = await fetch(getApiUrl('/api/qopay/payin/status'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: activeUserToken,
+          baseUrl: activeBaseUrl,
+          orderId,
+        }),
+      });
+
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { success: false, message: rawText };
+      }
+
+      if (data.isPaid === true || data.status === 'SUCCESS' || data.status === 'COMPLETED' || data.status === 'PAID') {
+        const utr = data.utr || `QO_${orderId}`;
+        await approvePaymentDeposit(depositId);
+        return {
+          success: true,
+          isPaid: true,
+          status: 'SUCCESS',
+          utr,
+          message: 'Payment confirmed via QO Pay and credited!',
+        };
+      }
+
+      return {
+        success: Boolean(data.success),
+        isPaid: false,
+        status: String(data.status || 'PENDING'),
+        utr: data.utr,
+        message: data.message || 'Payment is pending confirmation',
+      };
+    } catch (err: any) {
+      return { success: false, isPaid: false, message: err.message };
+    }
+  };
+
+  const disburseQoPayout = async (
+    txId: string,
+    amount: number,
+    payoutMethod: 'upi' | 'bank',
+    details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
+  ): Promise<{ success: boolean; message: string; utr?: string; data?: any }> => {
+    try {
+      const payoutOrderId = `PO_QO_${Date.now()}`;
+      const activeUserToken = (adminSettings.qopayUserToken || '').trim();
+      const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+
+      const res = await fetch('/api/qopay/payout/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: activeUserToken,
+          baseUrl: activeBaseUrl,
+          amount,
+          orderId: payoutOrderId,
+          accountNumber: payoutMethod === 'bank' ? details.account : (details.upiId || details.account),
+          ifsc: payoutMethod === 'bank' ? (details.ifsc || 'BANK') : 'UPI',
+          beneficiaryName: details.name || user.name || 'Member',
+          remark: `ZoroTask Withdrawal Payout ${txId}`,
+        }),
+      });
+
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { success: false, message: rawText };
+      }
+
+      if (data.success) {
+        const utr = data.utr || data.data?.utr || `QO_PO_${Date.now()}`;
+        const approvedNote = `Disbursed via QO Pay Payout API (UTR: ${utr}, PayoutID: ${data.payoutId || payoutOrderId})`;
+
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.id === txId
+              ? { ...t, status: 'verified', note: approvedNote, utrNumber: utr, gatewayPayoutId: data.payoutId || payoutOrderId }
+              : t
+          )
+        );
+
+        const cleanMob = normalizeMobile(user.mobile);
+        if (cleanMob) {
+          try {
+            await setDoc(
+              doc(db, 'users', cleanMob),
+              {
+                withdrawn: (user.withdrawn || 0) + amount,
+              },
+              { merge: true }
+            );
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+
+        showToast(`⚡ ₹${amount} withdrawal successfully disbursed via QO Pay! UTR: ${utr}`);
+        return { success: true, message: 'Payout disbursed successfully', utr, data };
+      } else {
+        return { success: false, message: data.message || 'QO Pay payout request failed' };
+      }
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Network error executing QO Pay payout' };
+    }
+  };
+
   const dismissAdminAlert = async (): Promise<void> => {
     setUser((prev) => ({
       ...prev,
@@ -6257,6 +6518,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkDramPayStatus,
         verifyDramPayUtr,
         disburseDramPayPayout,
+        initiateQoPayment,
+        checkQoPayStatus,
+        disburseQoPayout,
       }}
     >
       {children}

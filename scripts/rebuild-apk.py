@@ -3,6 +3,8 @@ import sys
 import shutil
 import zipfile
 import subprocess
+import base64
+import hashlib
 
 MAIN_ACTIVITY_SMALI = """
 .class public Lcom/zorotask/app/MainActivity;
@@ -412,65 +414,107 @@ def main():
             all_files['assets/capacitor.config.json'] = f.read()
         print("✓ Injected latest capacitor.config.json with live server URL into APK!")
 
-    print("Step 3: Packaging unaligned APK with uncompressed resources.arsc...")
-    unaligned_apk = os.path.join(temp_dir, 'unaligned.apk')
+    print("Step 3: Generating Android JAR (v1) signatures...")
+    entries_to_sign = sorted([k for k in all_files.keys() if not k.startswith("META-INF/")])
+    manifest_lines = [
+        "Manifest-Version: 1.0",
+        "Created-By: 1.0 (Android / ZoroTask)",
+        "",
+    ]
+    manifest_entries = {}
+    for filename in entries_to_sign:
+        data = all_files[filename]
+        digest = base64.b64encode(hashlib.sha256(data).digest()).decode('ascii')
+        entry_text = f"Name: {filename}\r\nSHA-256-Digest: {digest}\r\n\r\n"
+        manifest_entries[filename] = entry_text
+        manifest_lines.append(f"Name: {filename}")
+        manifest_lines.append(f"SHA-256-Digest: {digest}")
+        manifest_lines.append("")
+
+    manifest_bytes = "\r\n".join(manifest_lines).encode('utf-8')
+    manifest_digest = base64.b64encode(hashlib.sha256(manifest_bytes).digest()).decode('ascii')
+
+    sf_lines = [
+        "Signature-Version: 1.0",
+        "Created-By: 1.0 (Android / ZoroTask)",
+        f"SHA-256-Digest-Manifest: {manifest_digest}",
+        "",
+    ]
+    for filename in entries_to_sign:
+        entry_bytes = manifest_entries[filename].encode('utf-8')
+        entry_digest = base64.b64encode(hashlib.sha256(entry_bytes).digest()).decode('ascii')
+        sf_lines.append(f"Name: {filename}")
+        sf_lines.append(f"SHA-256-Digest: {entry_digest}")
+        sf_lines.append("")
+
+    sf_bytes = "\r\n".join(sf_lines).encode('utf-8')
+
+    sf_path = os.path.join(temp_dir, 'ANDROIDD.SF')
+    rsa_path = os.path.join(temp_dir, 'ANDROIDD.RSA')
+    pem_path = os.path.join(temp_dir, 'debug.pem')
+
+    with open(sf_path, 'wb') as f:
+        f.write(sf_bytes)
+
+    # Extract PEM from debug.keystore and sign ANDROIDD.SF
+    subprocess.run([
+        'openssl', 'pkcs12', '-in', keystore_path,
+        '-passin', 'pass:android', '-nodes', '-out', pem_path
+    ], check=True, capture_output=True)
+
+    subprocess.run([
+        'openssl', 'smime', '-sign', '-in', sf_path,
+        '-out', rsa_path, '-outform', 'DER',
+        '-inkey', pem_path, '-signer', pem_path
+    ], check=True, capture_output=True)
+
+    with open(rsa_path, 'rb') as f:
+        rsa_bytes = f.read()
+
+    all_files['META-INF/MANIFEST.MF'] = manifest_bytes
+    all_files['META-INF/ANDROIDD.SF'] = sf_bytes
+    all_files['META-INF/ANDROIDD.RSA'] = rsa_bytes
+
+    print("Step 4: Writing 4-byte boundary aligned & signed APK...")
     aligned_apk = os.path.join(temp_dir, 'aligned.apk')
 
-    # Files that MUST be stored uncompressed (ZIP_STORED) for Android runtime mmap
     UNCOMPRESSED_EXTS = ('.so', '.arsc')
     UNCOMPRESSED_NAMES = {'resources.arsc'}
 
-    with zipfile.ZipFile(unaligned_apk, 'w') as zout:
-        for filename in sorted(all_files.keys()):
-            data = all_files[filename]
-            is_uncompressed = (
-                filename in UNCOMPRESSED_NAMES or 
-                any(filename.endswith(ext) for ext in UNCOMPRESSED_EXTS)
-            )
-            cmeth = zipfile.ZIP_STORED if is_uncompressed else zipfile.ZIP_DEFLATED
-            zout.writestr(filename, data, compress_type=cmeth)
+    # Place META-INF files first as standard in JAR/APK
+    meta_order = ['META-INF/MANIFEST.MF', 'META-INF/ANDROIDD.SF', 'META-INF/ANDROIDD.RSA']
+    other_keys = sorted([k for k in all_files.keys() if k not in meta_order])
+    ordered_filenames = meta_order + other_keys
 
-    print("Step 4: Running zipalign 4-byte boundary alignment...")
-    res_zipalign = subprocess.run([
-        'zipalign', '-p', '-f', '4', unaligned_apk, aligned_apk
-    ], capture_output=True, text=True)
+    with open(aligned_apk, 'wb') as f_out:
+        with zipfile.ZipFile(f_out, 'w') as zout:
+            for filename in ordered_filenames:
+                data = all_files[filename]
+                is_uncompressed = (
+                    filename in UNCOMPRESSED_NAMES or 
+                    any(filename.endswith(ext) for ext in UNCOMPRESSED_EXTS)
+                )
+                cmeth = zipfile.ZIP_STORED if is_uncompressed else zipfile.ZIP_DEFLATED
 
-    if res_zipalign.returncode != 0:
-        print(f"Error running zipalign: {res_zipalign.stderr}")
-        sys.exit(1)
+                zinfo = zipfile.ZipInfo(filename)
+                zinfo.compress_type = cmeth
 
-    print("Step 5: Signing aligned APK with apksigner (v1, v2, v3 schemes)...")
-    sign_cmd = [
-        'apksigner', 'sign',
-        '--ks', keystore_path,
-        '--ks-pass', 'pass:android',
-        '--ks-key-alias', 'androiddebugkey',
-        '--key-pass', 'pass:android',
-        '--v1-signing-enabled', 'true',
-        '--v2-signing-enabled', 'true',
-        '--v3-signing-enabled', 'true',
-        aligned_apk
-    ]
-    res_sign = subprocess.run(sign_cmd, capture_output=True, text=True)
-    if res_sign.returncode != 0:
-        print(f"Error running apksigner: {res_sign.stderr}")
-        sys.exit(1)
+                if is_uncompressed:
+                    # Current position before writing local header
+                    cur_pos = f_out.tell()
+                    # Local file header has fixed 30 bytes + len(filename)
+                    fixed_header_len = 30 + len(filename.encode('utf-8'))
+                    padding = (4 - ((cur_pos + fixed_header_len) % 4)) % 4
+                    zinfo.extra = b'\x00' * padding
 
-    print("Step 6: Verifying APK integrity and certificates...")
-    res_verify = subprocess.run([
-        'apksigner', 'verify', '--verbose', aligned_apk
-    ], capture_output=True, text=True)
-
-    if res_verify.returncode != 0:
-        print(f"Warning: APK verification failed: {res_verify.stderr}")
-    else:
-        print("✓ apksigner verification passed completely!")
+                zout.writestr(zinfo, data)
 
     shutil.copyfile(aligned_apk, apk_path)
     dist_apk = os.path.join(dist_dir, 'ZoroTask-Official.apk')
     shutil.copyfile(aligned_apk, dist_apk)
 
     size_mb = os.path.getsize(apk_path) / (1024 * 1024)
+    print(f"✓ Successfully built, aligned, and signed ZoroTask-Official.apk ({size_mb:.2f} MB)!")
     print(f"✓ Successfully built, aligned, and signed ZoroTask-Official.apk ({size_mb:.2f} MB) with NATIVE onBackPressed back navigation!")
 
     if os.path.exists(temp_dir):

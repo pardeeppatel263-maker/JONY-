@@ -93,6 +93,7 @@ import {
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 import { sendWhatsAppOtp } from '../utils/whatsappOtp';
 import { defaultLevel0Plan, initialPlans } from '../data/initialData';
+import { PaymentGatewaysManager } from '../components/PaymentGatewaysManager';
 
 export interface AggregatedWithdrawal {
   id: string;
@@ -223,6 +224,8 @@ export const AdminPanelScreen: React.FC = () => {
     | 'notice'
     | 'megabonus'
     | 'gateway'
+    | 'drampay'
+    | 'qopay'
     | 'whatsapp'
     | 'settings'
     | 'backup'
@@ -246,6 +249,8 @@ export const AdminPanelScreen: React.FC = () => {
           'notice',
           'megabonus',
           'gateway',
+          'drampay',
+          'qopay',
           'whatsapp',
           'settings',
           'backup',
@@ -358,10 +363,13 @@ export const AdminPanelScreen: React.FC = () => {
   const [gatewayTestMode, setGatewayTestMode] = useState(adminSettings.paymentGatewayTestMode ?? false);
   const [showGatewaySecret, setShowGatewaySecret] = useState(false);
   const [isSavingGateway, setIsSavingGateway] = useState(false);
+  const [isSavingDrampay, setIsSavingDrampay] = useState(false);
+  const [isSavingQopay, setIsSavingQopay] = useState(false);
+  const [gatewaySubTab, setGatewaySubTab] = useState<'drampay' | 'qopay'>('drampay');
   const [testResult, setTestResult] = useState<string | null>(null);
 
   // QO Pay API Specific State (https://qo-pay.com/api)
-  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? true);
+  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? false);
   const [qopayUserToken, setQopayUserToken] = useState(adminSettings.qopayUserToken || '');
   const [qopayBaseUrl, setQopayBaseUrl] = useState(adminSettings.qopayBaseUrl || 'https://qo-pay.com');
   const [qopayAutoApprove, setQopayAutoApprove] = useState(adminSettings.qopayAutoApprove ?? true);
@@ -416,6 +424,77 @@ export const AdminPanelScreen: React.FC = () => {
     }
   }, [adminSettings]);
 
+  const handleSaveDrampaySettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSavingDrampay(true);
+    try {
+      const isDrampayOn = Boolean(drampayEnabled);
+      const chosenProvider = isDrampayOn ? 'drampay' : (qopayEnabled ? 'qopay' : 'manual');
+      await updateAdminSettings({
+        drampayEnabled: isDrampayOn,
+        drampayMerchantId: (drampayMerchantId || gatewayMerchantId).trim(),
+        drampaySecretKey: (drampaySecretKey || gatewayApiKey).trim(),
+        drampayBaseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
+        drampayAutoApprove,
+        drampayAutoPayoutEnabled,
+        drampayUpiMode,
+        paymentGatewayProvider: chosenProvider,
+        paymentGatewayEnabled: isDrampayOn || qopayEnabled,
+      });
+
+      fetch('/api/drampay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: (drampayMerchantId || gatewayMerchantId).trim(),
+          secretKey: (drampaySecretKey || gatewayApiKey).trim(),
+          baseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
+        }),
+      }).catch(console.warn);
+
+      showToast(isDrampayOn ? '✓ DramPay Gateway is now ACTIVE & Synced!' : '✓ DramPay Gateway is turned COMPLETELY OFF & Synced!');
+    } catch (err: any) {
+      console.error(err);
+      showToast('❌ Failed to save DramPay settings');
+    } finally {
+      setIsSavingDrampay(false);
+    }
+  };
+
+  const handleSaveQopaySettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSavingQopay(true);
+    try {
+      const isQopayOn = Boolean(qopayEnabled);
+      const chosenProvider = isQopayOn ? 'qopay' : (drampayEnabled ? 'drampay' : 'manual');
+      await updateAdminSettings({
+        qopayEnabled: isQopayOn,
+        qopayUserToken: qopayUserToken.trim(),
+        qopayBaseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+        qopayAutoApprove,
+        qopayAutoPayoutEnabled,
+        paymentGatewayProvider: chosenProvider,
+        paymentGatewayEnabled: isQopayOn || drampayEnabled,
+      });
+
+      fetch('/api/qopay/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: qopayUserToken.trim(),
+          baseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+        }),
+      }).catch(console.warn);
+
+      showToast(isQopayOn ? '✓ QO Pay Gateway is now ACTIVE & Synced!' : '✓ QO Pay Gateway is turned COMPLETELY OFF & Synced!');
+    } catch (err: any) {
+      console.error(err);
+      showToast('❌ Failed to save QO Pay settings');
+    } finally {
+      setIsSavingQopay(false);
+    }
+  };
+
   const handleSaveGatewaySettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSavingGateway(true);
@@ -444,7 +523,6 @@ export const AdminPanelScreen: React.FC = () => {
         drampayUpiMode,
       });
 
-      // Synchronize with backend proxy config
       fetch('/api/qopay/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -464,7 +542,7 @@ export const AdminPanelScreen: React.FC = () => {
         }),
       }).catch(console.warn);
 
-      showToast('✓ Payment Gateway & QO Pay settings saved to Cloud Firestore!');
+      showToast('✓ Gateway settings saved to Cloud Firestore!');
     } catch (err) {
       console.error(err);
       showToast('❌ Failed to save Gateway settings');
@@ -2263,19 +2341,48 @@ export const AdminPanelScreen: React.FC = () => {
             )}
           </button>
 
+          {/* SEPARATE TAB 1: DRAMPAY GATEWAY */}
           <button
-            onClick={() => setActiveTab('gateway')}
+            onClick={() => { setActiveTab('drampay'); setGatewaySubTab('drampay'); }}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
-              activeTab === 'gateway'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+              activeTab === 'drampay' || (activeTab === 'gateway' && gatewaySubTab === 'drampay')
+                ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <CreditCard className="w-4 h-4" />
-            <span>Gateway API Setup</span>
-            {gatewayEnabled && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            )}
+            <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+            <span>⚡ DramPay API</span>
+            <span
+              className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                drampayEnabled
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+              }`}
+            >
+              {drampayEnabled ? 'ACTIVE' : 'OFF'}
+            </span>
+          </button>
+
+          {/* SEPARATE TAB 2: QO PAY GATEWAY */}
+          <button
+            onClick={() => { setActiveTab('qopay'); setGatewaySubTab('qopay'); }}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 whitespace-nowrap transition-all ${
+              activeTab === 'qopay' || (activeTab === 'gateway' && gatewaySubTab === 'qopay')
+                ? 'bg-gradient-to-r from-indigo-500 to-blue-500 text-white font-black shadow-md shadow-indigo-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400" />
+            <span>⚡ QO Pay API</span>
+            <span
+              className={`text-[9px] px-1.5 py-0.2 rounded font-black ${
+                qopayEnabled
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+              }`}
+            >
+              {qopayEnabled ? 'ACTIVE' : 'OFF'}
+            </span>
           </button>
 
           <button
@@ -3642,8 +3749,8 @@ export const AdminPanelScreen: React.FC = () => {
 
                     {tx.status === 'pending' && (
                       <div className="space-y-2 pt-2 border-t border-slate-800">
-                        {/* 1-Click QO Pay Automated Payout Button */}
-                        {(gatewayProvider === 'qopay' || qopayEnabled || qopayUserToken) && (
+                        {/* 1-Click QO Pay Automated Payout Button (Visible ONLY if QO Pay is Active) */}
+                        {Boolean(adminSettings.qopayEnabled && (adminSettings.qopayAutoPayoutEnabled ?? true)) && (
                           <button
                             type="button"
                             onClick={async () => {
@@ -3698,60 +3805,62 @@ export const AdminPanelScreen: React.FC = () => {
                           </button>
                         )}
 
-                        {/* 1-Click DramPay Automated Payout Button */}
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
-                            setProcessingPayoutId(tx.id);
-                            
-                            // Extract payout credentials from transaction note
-                            let upiId = '';
-                            let account = '';
-                            let ifsc = '';
-                            let holderName = u?.name || 'Member';
-                            
-                            if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
-                              const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
-                              const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
-                              const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
-                              account = accMatch ? accMatch[1].trim() : '';
-                              ifsc = ifscMatch ? ifscMatch[1].trim() : '';
-                              if (holderMatch) holderName = holderMatch[1].trim();
-                            } else {
-                              const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
-                              upiId = upiMatch ? upiMatch[1].trim() : (tx.note?.replace('UPI:', '').trim() || u?.upiId || '');
-                            }
-
-                            await disburseDramPayPayout(
-                              tx.id,
-                              tx.amount,
-                              tx.payoutMethod || (account ? 'bank' : 'upi'),
-                              {
-                                upiId,
-                                account,
-                                ifsc,
-                                name: holderName,
-                                mobile: u?.mobile,
+                        {/* 1-Click DramPay Automated Payout Button (Visible ONLY if DramPay is Active) */}
+                        {Boolean(adminSettings.drampayEnabled && (adminSettings.drampayAutoPayoutEnabled ?? true)) && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
+                              setProcessingPayoutId(tx.id);
+                              
+                              // Extract payout credentials from transaction note
+                              let upiId = '';
+                              let account = '';
+                              let ifsc = '';
+                              let holderName = u?.name || 'Member';
+                              
+                              if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
+                                const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
+                                const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
+                                const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
+                                account = accMatch ? accMatch[1].trim() : '';
+                                ifsc = ifscMatch ? ifscMatch[1].trim() : '';
+                                if (holderMatch) holderName = holderMatch[1].trim();
+                              } else {
+                                const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
+                                upiId = upiMatch ? upiMatch[1].trim() : (tx.note?.replace('UPI:', '').trim() || u?.upiId || '');
                               }
-                            );
-                            setProcessingPayoutId(null);
-                          }}
-                          disabled={processingPayoutId === tx.id}
-                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-98 transition disabled:opacity-60 cursor-pointer"
-                        >
-                          {processingPayoutId === tx.id ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Disbursing via DramPay API...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Zap className="w-3.5 h-3.5 fill-slate-950" />
-                              <span>⚡ Disburse via DramPay API ({tx.payoutMethod === 'bank' ? 'Bank Transfer' : 'Instant UPI'})</span>
-                            </>
-                          )}
-                        </button>
+
+                              await disburseDramPayPayout(
+                                tx.id,
+                                tx.amount,
+                                tx.payoutMethod || (account ? 'bank' : 'upi'),
+                                {
+                                  upiId,
+                                  account,
+                                  ifsc,
+                                  name: holderName,
+                                  mobile: u?.mobile,
+                                }
+                              );
+                              setProcessingPayoutId(null);
+                            }}
+                            disabled={processingPayoutId === tx.id}
+                            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-98 transition disabled:opacity-60 cursor-pointer"
+                          >
+                            {processingPayoutId === tx.id ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Disbursing via DramPay API...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                                <span>⚡ Disburse via DramPay API ({tx.payoutMethod === 'bank' ? 'Bank Transfer' : 'Instant UPI'})</span>
+                              </>
+                            )}
+                          </button>
+                        )}
 
                         <div className="grid grid-cols-2 gap-2">
                           <button
@@ -6792,712 +6901,10 @@ export const AdminPanelScreen: React.FC = () => {
         )}
 
         {/* ========================================================= */}
-        {/* TAB: PAYMENT GATEWAY API SETUP */}
+        {/* TAB: PAYMENT GATEWAYS (DRAMPAY & QO PAY SEPARATE SECTIONS) */}
         {/* ========================================================= */}
-        {activeTab === 'gateway' && (
-          <div className="max-w-3xl mx-auto bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-800 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <CreditCard className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-white flex items-center gap-2">
-                      <span>Payment Gateway API Integration</span>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        PG ENGINE
-                      </span>
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Configure automated payment gateway APIs (PhonePe PG, Razorpay, Cashfree, Paytm PG, or Custom UPI QR API).
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Master Toggle */}
-              <div className="flex items-center gap-2.5 bg-slate-950 px-3.5 py-2 rounded-2xl border border-slate-800 shrink-0">
-                <span className="text-xs font-bold text-slate-300">Gateway Active:</span>
-                <button
-                  type="button"
-                  onClick={() => setGatewayEnabled(!gatewayEnabled)}
-                  className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
-                    gatewayEnabled ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
-                  }`}
-                >
-                  <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition-transform" />
-                </button>
-              </div>
-            </div>
-
-            {/* Status Banner */}
-            <div
-              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
-                gatewayEnabled
-                  ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Cpu className={`w-5 h-5 shrink-0 ${gatewayEnabled ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
-                <div>
-                  <div className="font-bold text-sm">
-                    {gatewayEnabled
-                      ? `Gateway API is LIVE (${gatewayProvider.toUpperCase()})`
-                      : 'Gateway API is Offline (Manual UPI Mode Active)'}
-                  </div>
-                  <p className="text-[11px] opacity-80">
-                    {gatewayEnabled
-                      ? `Automated callbacks enabled. Environment: ${gatewayTestMode ? 'Sandbox / Test Mode' : 'Live Production Mode'}.`
-                      : 'Users pay using Admin UPI ID / QR code with manual UTR & Screenshot verification.'}
-                  </p>
-                </div>
-              </div>
-
-              {gatewayEnabled && (
-                <span className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase ${
-                  gatewayTestMode ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                }`}>
-                  {gatewayTestMode ? 'TEST MODE' : 'PRODUCTION'}
-                </span>
-              )}
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleSaveGatewaySettings} className="space-y-5">
-              {/* Provider Selection Cards */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 block">
-                  Select Payment Gateway Provider
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  {[
-                    { id: 'qopay', name: 'QO Pay (Official)', tag: 'https://qo-pay.com/api UPI Gateway & Payout', icon: '⚡' },
-                    { id: 'drampay', name: 'DramPay (Official)', tag: 'UPI Deeplink, Cashier & Payout API', icon: '⚡' },
-                    { id: 'phonepe', name: 'PhonePe PG', tag: 'Direct UPI & Cards', renderIcon: () => <PhonePeIcon size={20} className="rounded-xs" /> },
-                    { id: 'razorpay', name: 'Razorpay', tag: 'Standard PG', icon: '🔵' },
-                    { id: 'cashfree', name: 'Cashfree', tag: 'Auto Settlements', icon: '🟢' },
-                    { id: 'paytm', name: 'Paytm PG', tag: 'All UPI & NetBanking', renderIcon: () => <PaytmIcon size={20} className="rounded-xs" /> },
-                    { id: 'manual', name: 'Manual UPI QR', tag: 'Screenshot + UTR Review', icon: '📱' },
-                  ].map((prov) => {
-                    const isSelected = gatewayProvider === prov.id;
-                    return (
-                      <div
-                        key={prov.id}
-                        onClick={() => {
-                          setGatewayProvider(prov.id as any);
-                          if (prov.id === 'qopay') {
-                            setGatewayCallbackUrl(typeof window !== 'undefined' ? `${window.location.origin}/api/qopay/notify` : '');
-                          } else if (prov.id === 'drampay') {
-                            setGatewayCallbackUrl(typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : '');
-                          }
-                        }}
-                        className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                          isSelected
-                            ? prov.id === 'qopay'
-                              ? 'bg-indigo-950/40 border-indigo-500 ring-1 ring-indigo-500/50'
-                              : 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500/50'
-                            : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-lg leading-none">
-                            {prov.renderIcon ? prov.renderIcon() : prov.icon}
-                          </span>
-                          {isSelected && (
-                            <CheckCircle2
-                              className={`w-4 h-4 ${prov.id === 'qopay' ? 'text-indigo-400' : 'text-amber-400'}`}
-                            />
-                          )}
-                        </div>
-                        <div className="text-xs font-bold text-white flex items-center gap-1">
-                          <span>{prov.name}</span>
-                          {prov.id === 'qopay' && (
-                            <span className="text-[9px] bg-indigo-500 text-white font-black px-1.5 py-0.2 rounded">
-                              OFFICIAL
-                            </span>
-                          )}
-                          {prov.id === 'drampay' && (
-                            <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded">
-                              ACTIVE
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-400">{prov.tag}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Mode Toggles */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="flex items-center justify-between p-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Auto-Approve on Callback</span>
-                    <span className="text-[10px] text-slate-400">Automatically credit wallet balance when gateway confirms payment</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGatewayAutoApprove(!gatewayAutoApprove);
-                      setQopayAutoApprove(!qopayAutoApprove);
-                      setDrampayAutoApprove(!drampayAutoApprove);
-                    }}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                      gatewayAutoApprove ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
-                    }`}
-                  >
-                    <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between p-2">
-                  <div>
-                    <span className="text-xs font-bold text-slate-200 block">Automated Payouts API</span>
-                    <span className="text-[10px] text-slate-400">Enable 1-click disbursement to member UPI / Bank via Payout API</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQopayAutoPayoutEnabled(!qopayAutoPayoutEnabled);
-                      setDrampayAutoPayoutEnabled(!drampayAutoPayoutEnabled);
-                    }}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                      qopayAutoPayoutEnabled || drampayAutoPayoutEnabled ? 'bg-indigo-500 justify-end' : 'bg-slate-700 justify-start'
-                    }`}
-                  >
-                    <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                  </button>
-                </div>
-              </div>
-
-              {/* QO PAY SPECIFIC CONFIGURATION */}
-              {gatewayProvider === 'qopay' && (
-                <div className="space-y-4 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-indigo-500/30">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
-                    <div className="text-xs font-bold text-indigo-400 flex items-center gap-2">
-                      <Zap className="w-4 h-4 fill-indigo-400 text-indigo-400" />
-                      <span>QO Pay Payment Gateway Configuration (https://qo-pay.com/api)</span>
-                    </div>
-                    <a
-                      href="https://qo-pay.com"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-indigo-300 hover:text-white flex items-center gap-1 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20"
-                    >
-                      <span>QO Pay Merchant Portal</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {/* User Token */}
-                    <div className="space-y-1 sm:col-span-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-300">
-                          QO Pay User Token (user_token) <span className="text-red-400">*</span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowQopayToken(!showQopayToken)}
-                          className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                        >
-                          {showQopayToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                          <span>{showQopayToken ? 'Hide' : 'Show'}</span>
-                        </button>
-                      </div>
-                      <input
-                        type={showQopayToken ? 'text' : 'password'}
-                        value={qopayUserToken}
-                        onChange={(e) => setQopayUserToken(e.target.value)}
-                        placeholder="Paste your unique QO Pay user_token from https://qo-pay.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-400 transition"
-                      />
-                      <p className="text-[10px] text-slate-400">
-                        This token is passed as &apos;user_token&apos; to https://qo-pay.com/api/create-order and /order-status.
-                      </p>
-                    </div>
-
-                    {/* API Host URL */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        QO Pay API Host Base URL
-                      </label>
-                      <input
-                        type="text"
-                        value={qopayBaseUrl}
-                        onChange={(e) => setQopayBaseUrl(e.target.value)}
-                        placeholder="https://qo-pay.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none focus:border-indigo-400 transition"
-                      />
-                    </div>
-
-                    {/* Webhook / Callback Notification URL */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        Webhook / Notify URL (Paste in QO Pay Console)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/qopay/notify` : ''}
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-indigo-300 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => copyText(`${window.location.origin}/api/qopay/notify`, 'QO Pay Notify URL')}
-                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl cursor-pointer"
-                          title="Copy"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Feature Toggles */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">QO Pay Auto-Credit</span>
-                        <span className="text-[10px] text-slate-400">Instantly credit wallet when QO Pay confirms payment</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setQopayAutoApprove(!qopayAutoApprove)}
-                        className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                          qopayAutoApprove ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
-                        }`}
-                      >
-                        <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">QO Pay Auto-Payout</span>
-                        <span className="text-[10px] text-slate-400">Auto-disburse user withdrawals via /api/create-payout</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setQopayAutoPayoutEnabled(!qopayAutoPayoutEnabled)}
-                        className={`w-10 h-5.5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${
-                          qopayAutoPayoutEnabled ? 'bg-indigo-500 justify-end' : 'bg-slate-700 justify-start'
-                        }`}
-                      >
-                        <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* LIVE API CONNECTION TEST & ORDER CHECKER */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-slate-800">
-                    {/* Test Connection Button */}
-                    <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                          <span>Test QO Pay API Token</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleTestQoPayConnection}
-                          disabled={isTestingQopay}
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          {isTestingQopay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                          <span>Test Token</span>
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-slate-400">
-                        Calls QO Pay /api/create-order to verify user_token authentication.
-                      </p>
-                      {qopayTestStatus && (
-                        <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-indigo-300">
-                          {qopayTestStatus}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Live Order Status Checker */}
-                    <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Search className="w-4 h-4 text-emerald-400" />
-                        <span>Query QO Pay Order Status</span>
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={qopayStatusOrderId}
-                          onChange={(e) => setQopayStatusOrderId(e.target.value)}
-                          placeholder="Enter QO Pay Order ID"
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-400"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCheckQoPayOrderStatus}
-                          disabled={isCheckingQopayStatus}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                        >
-                          {isCheckingQopayStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                          <span>Check</span>
-                        </button>
-                      </div>
-                      {qopayStatusResult && (
-                        <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] font-mono text-emerald-300 break-all max-h-24 overflow-y-auto">
-                          {JSON.stringify(qopayStatusResult)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* DRAMPAY SPECIFIC CONFIGURATION */}
-              {gatewayProvider === 'drampay' && (
-                <div className="space-y-4 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-amber-500/30">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
-                    <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
-                      <Zap className="w-4 h-4 fill-amber-400 text-amber-400" />
-                      <span>DramPay Payment Gateway Configuration (drampay.net)</span>
-                    </div>
-                    <a
-                      href="https://drampay.net/doc/doc.html"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-amber-300 hover:text-white flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20"
-                    >
-                      <span>Official API Docs</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {/* Merchant ID */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        DramPay Merchant ID (merchantId) <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={drampayMerchantId || gatewayMerchantId}
-                        onChange={(e) => {
-                          setDrampayMerchantId(e.target.value);
-                          setGatewayMerchantId(e.target.value);
-                        }}
-                        placeholder="e.g. 100826"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400 transition"
-                      />
-                      <p className="text-[10px] text-slate-500">Your assigned numeric merchant ID from drampay.net dashboard (e.g. 100826)</p>
-                      {(drampayMerchantId || gatewayMerchantId).trim().toLowerCase() === 'int32' && (
-                        <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] leading-relaxed">
-                          <strong className="block text-rose-200 font-bold mb-0.5">⚠️ Yahan &apos;int32&apos; Mat Likhein!</strong>
-                          &apos;int32&apos; documentation ka data type hai, Merchant ID nahi. Kripya apna numeric Merchant ID (jaise: 100826) dalein jo aapko DramPay support / merchant panel se mila hai.
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Secret Key */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-300">
-                          DramPay Secret Key (MD5 Key) <span className="text-red-400">*</span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowDrampaySecret(!showDrampaySecret)}
-                          className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
-                        >
-                          {showDrampaySecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                          <span>{showDrampaySecret ? 'Hide' : 'Show'}</span>
-                        </button>
-                      </div>
-                      <input
-                        type={showDrampaySecret ? 'text' : 'password'}
-                        value={drampaySecretKey || gatewayApiKey}
-                        onChange={(e) => {
-                          setDrampaySecretKey(e.target.value);
-                          setGatewayApiKey(e.target.value);
-                        }}
-                        placeholder="e.g. 9a8b7c6d5e4f3a2b1c0d"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400 transition"
-                      />
-                      <p className="text-[10px] text-slate-500">Used for ASCII-sorted MD5 request &amp; webhook signatures</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {/* Base API URL */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        DramPay API Host URL
-                      </label>
-                      <input
-                        type="text"
-                        value={drampayBaseUrl}
-                        onChange={(e) => setDrampayBaseUrl(e.target.value)}
-                        placeholder="https://drampay.net"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none focus:border-amber-400 transition"
-                      />
-                    </div>
-
-                    {/* Preferred Mode */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        Payment Launch Mode
-                      </label>
-                      <select
-                        value={drampayUpiMode}
-                        onChange={(e) => setDrampayUpiMode(e.target.value as any)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none focus:border-amber-400 transition"
-                      >
-                        <option value="both">Both UPI Deeplink + Web Cashier (Recommended)</option>
-                        <option value="deeplink">Instant UPI Deeplink (PhonePe, GPay, Paytm)</option>
-                        <option value="payurl">DramPay Cashier Page (payUrl)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Webhook URLs */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        Payin Notify URL (Paste in DramPay Merchant Console)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payin/notify` : ''}
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-amber-300 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => copyText(`${window.location.origin}/api/drampay/payin/notify`, 'Payin Notify URL')}
-                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
-                          title="Copy"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
-                        Payout Notify URL (Paste in DramPay Merchant Console)
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={typeof window !== 'undefined' ? `${window.location.origin}/api/drampay/payout/notify` : ''}
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-amber-300 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => copyText(`${window.location.origin}/api/drampay/payout/notify`, 'Payout Notify URL')}
-                          className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl"
-                          title="Copy"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* REAL-TIME BALANCE CARD */}
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-bold text-white">Live DramPay Merchant Balance</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleFetchDrampayBalance}
-                        disabled={isFetchingDrampayBalance}
-                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {isFetchingDrampayBalance ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                        <span>Check Balance</span>
-                      </button>
-                    </div>
-
-                    {drampayBalanceData && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center animate-in fade-in">
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Available Balance</span>
-                          <span className="text-sm font-black text-emerald-400">₹{drampayBalanceData.balance || 0}</span>
-                        </div>
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Settleable Amount</span>
-                          <span className="text-sm font-black text-amber-400">₹{drampayBalanceData.settleableAmount || 0}</span>
-                        </div>
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Total Collected</span>
-                          <span className="text-sm font-black text-white">₹{drampayBalanceData.totalPayAmount || 0}</span>
-                        </div>
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
-                          <span className="text-[10px] text-slate-400 block">Platform Fees</span>
-                          <span className="text-sm font-black text-rose-400">₹{drampayBalanceData.totalFeeAmount || 0}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* UTR DIAGNOSTIC & FIX TOOL */}
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                    <span className="text-xs font-bold text-slate-200 block">
-                      Live DramPay UTR Search &amp; Claim Tool (/api/payin/utr/check)
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={drampayUtrInput}
-                        onChange={(e) => setDrampayUtrInput(e.target.value)}
-                        placeholder="Enter 12-digit UTR to check directly on DramPay..."
-                        className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs font-mono text-white outline-none focus:border-amber-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleCheckDrampayUtr}
-                        disabled={isCheckingDrampayUtr}
-                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {isCheckingDrampayUtr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                        <span>Check UTR</span>
-                      </button>
-                    </div>
-                    {drampayUtrResult && (
-                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300">
-                        <span className="text-emerald-400 font-bold">API Result:</span> {JSON.stringify(drampayUtrResult)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* TEST CONNECTION BUTTON & STATUS */}
-                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleTestDrampayConnection}
-                      className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition"
-                    >
-                      <Server className="w-4 h-4 text-amber-400" />
-                      <span>Test DramPay Connection &amp; MD5 Sign</span>
-                    </button>
-                    {drampayTestStatus && (
-                      <span className="text-xs font-mono text-slate-300 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
-                        {drampayTestStatus}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* OTHER GATEWAY CREDENTIALS (IF NOT DRAMPAY) */}
-              {gatewayProvider !== 'drampay' && gatewayProvider !== 'manual' && (
-                <div className="space-y-3.5 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                    <div className="text-xs font-bold text-amber-400 flex items-center gap-2">
-                      <Key className="w-4 h-4" />
-                      <span>API Credentials ({gatewayProvider.toUpperCase()})</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500">256-Bit Encrypted Storage</span>
-                  </div>
-
-                  {/* Merchant ID */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
-                      Merchant ID (MID) / Client ID
-                    </label>
-                    <input
-                      type="text"
-                      value={gatewayMerchantId}
-                      onChange={(e) => setGatewayMerchantId(e.target.value)}
-                      placeholder="Enter Merchant ID"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                    />
-                  </div>
-
-                  {/* API Key */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
-                      API Key / Salt Key / App ID
-                    </label>
-                    <input
-                      type="text"
-                      value={gatewayApiKey}
-                      onChange={(e) => setGatewayApiKey(e.target.value)}
-                      placeholder="Enter API Key / Salt Key"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                    />
-                  </div>
-
-                  {/* API Secret */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-300">
-                        API Secret / Key Secret / Salt Index
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowGatewaySecret(!showGatewaySecret)}
-                        className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
-                      >
-                        {showGatewaySecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                        <span>{showGatewaySecret ? 'Hide' : 'Show'}</span>
-                      </button>
-                    </div>
-                    <input
-                      type={showGatewaySecret ? 'text' : 'password'}
-                      value={gatewayApiSecret}
-                      onChange={(e) => setGatewayApiSecret(e.target.value)}
-                      placeholder="Enter API Secret"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-emerald-400 transition"
-                    />
-                  </div>
-
-                  {/* Callback URL */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
-                      Webhook / Server Callback URL
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={gatewayCallbackUrl}
-                        onChange={(e) => setGatewayCallbackUrl(e.target.value)}
-                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-slate-300 outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => copyText(gatewayCallbackUrl, 'Callback URL')}
-                        className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shrink-0"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-                <button
-                  type="submit"
-                  disabled={isSavingGateway}
-                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <CheckCheck className="w-4 h-4" />
-                  <span>{isSavingGateway ? 'Saving Settings...' : 'Save & Deploy DramPay API Gateway'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
+        {(activeTab === "gateway" || activeTab === "drampay" || activeTab === "qopay") && (
+          <PaymentGatewaysManager activeTab={activeTab} setActiveTab={setActiveTab} />
         )}
 
         {/* ========================================================= */}

@@ -780,7 +780,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentGatewayWebhookSecret: '',
     paymentGatewayCallbackUrl: '',
     paymentGatewayAutoApprove: true,
-    paymentGatewayTestMode: false,
+    // DramPay API Gateway Configuration
     drampayEnabled: true,
     drampayMerchantId: '58',
     drampaySecretKey: 'VY5omctrIPAscv4oPHvcvt9oc6RNgnRo',
@@ -788,6 +788,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drampayAutoApprove: true,
     drampayAutoPayoutEnabled: true,
     drampayUpiMode: 'both',
+    // QO Pay API Gateway Configuration (https://qo-pay.com)
+    qopayEnabled: false,
+    qopayUserToken: '',
+    qopayBaseUrl: 'https://qo-pay.com',
+    qopayAutoApprove: true,
+    qopayAutoPayoutEnabled: true,
     withdrawalStartTime: '10:00',
     withdrawalEndTime: '18:00',
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
@@ -5847,6 +5853,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     depositId?: string;
     message?: string;
   }> => {
+    if (adminSettings.drampayEnabled === false) {
+      return {
+        success: false,
+        message: 'DramPay payment gateway is currently turned OFF by admin.',
+      };
+    }
     try {
       const merchantOrderId = `ZT${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
       const depositId = `dep_${Date.now()}`;
@@ -6063,6 +6075,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     payoutMethod: 'upi' | 'bank',
     details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
   ): Promise<{ success: boolean; message: string; data?: any }> => {
+    if (adminSettings.drampayEnabled === false || adminSettings.drampayAutoPayoutEnabled === false) {
+      showToast('❌ DramPay Automated Payout is currently turned OFF by admin');
+      return { success: false, message: 'DramPay automated payout is turned OFF by admin' };
+    }
     try {
       const payoutId = `PO${Date.now()}`;
       const res = await fetch('/api/drampay/payout/create', {
@@ -6123,6 +6139,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     depositId?: string;
     message?: string;
   }> => {
+    if (adminSettings.qopayEnabled === false) {
+      return {
+        success: false,
+        message: 'QO Pay payment gateway is currently turned OFF by admin.',
+      };
+    }
     try {
       const activeUserToken = (adminSettings.qopayUserToken || '').trim();
       const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
@@ -6277,6 +6299,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     payoutMethod: 'upi' | 'bank',
     details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
   ): Promise<{ success: boolean; message: string; utr?: string; data?: any }> => {
+    if (adminSettings.qopayEnabled === false || adminSettings.qopayAutoPayoutEnabled === false) {
+      showToast('❌ QO Pay Automated Payout is currently turned OFF by admin');
+      return { success: false, message: 'QO Pay automated payout is turned OFF by admin' };
+    }
     try {
       const payoutOrderId = `PO_QO_${Date.now()}`;
       const activeUserToken = (adminSettings.qopayUserToken || '').trim();

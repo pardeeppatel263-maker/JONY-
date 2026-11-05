@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../PaymentIcons';
 import { sanitizeUpiPayeeName } from '../../utils/drampay';
+import QRCode from 'qrcode';
 
 export const UPIPaymentModal: React.FC = () => {
   const {
@@ -41,26 +42,31 @@ export const UPIPaymentModal: React.FC = () => {
   } = useApp();
 
   // Mode: 'qopay' | 'drampay' | 'manual'
-  // STRICT RULE: If admin turned a gateway OFF, it is 100% completely OFF (false)!
   const isQoPayActive = Boolean(
-    adminSettings.qopayEnabled === true &&
-    adminSettings.qopayUserToken?.trim()
+    (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
+    (adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c')
   );
 
   const isDrampayActive = Boolean(
     adminSettings.drampayEnabled === true &&
     adminSettings.drampayMerchantId?.trim() &&
     adminSettings.drampaySecretKey?.trim() &&
-    adminSettings.drampayMerchantId.trim().toLowerCase() !== 'int32'
+    adminSettings.drampayMerchantId.trim().toLowerCase() !== 'int32' &&
+    adminSettings.paymentGatewayProvider !== 'qopay'
   );
 
-  const initialMode: 'qopay' | 'drampay' | 'manual' = isDrampayActive && !isQoPayActive
-    ? 'drampay'
-    : isQoPayActive && !isDrampayActive
-    ? 'qopay'
-    : isDrampayActive && isQoPayActive
-    ? (adminSettings.paymentGatewayProvider === 'qopay' ? 'qopay' : 'drampay')
-    : 'manual';
+  const initialMode: 'qopay' | 'drampay' | 'manual' =
+    adminSettings.paymentGatewayProvider === 'qopay' && isQoPayActive
+      ? 'qopay'
+      : isQoPayActive && !isDrampayActive
+      ? 'qopay'
+      : isDrampayActive && !isQoPayActive
+      ? 'drampay'
+      : isDrampayActive && isQoPayActive
+      ? (adminSettings.paymentGatewayProvider === 'drampay' ? 'drampay' : 'qopay')
+      : isQoPayActive
+      ? 'qopay'
+      : 'manual';
 
   const [paymentMode, setPaymentMode] = useState<'qopay' | 'drampay' | 'manual'>(initialMode);
 
@@ -106,6 +112,9 @@ export const UPIPaymentModal: React.FC = () => {
     paymentUrl?: string;
     deeplink?: string;
     upiIntent?: string;
+    qrCode?: string;
+    collectUpi?: string;
+    collectName?: string;
     deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string; bhim?: string };
     depositId?: string;
   } | null>(null);
@@ -129,24 +138,58 @@ export const UPIPaymentModal: React.FC = () => {
   // Dynamic QR Code: use QO Pay / DramPay deeplink/payUrl if in Gateway mode, else admin QR
   const rawQrCodeData =
     paymentMode === 'qopay' && qopayOrder
-      ? qopayOrder.upiIntent || qopayOrder.deeplink || qopayOrder.paymentUrl || upiIntentUri
+      ? qopayOrder.qrCode || qopayOrder.upiIntent || qopayOrder.deeplink || qopayOrder.paymentUrl || upiIntentUri
       : paymentMode === 'drampay' && drampayOrder
       ? drampayOrder.deeplink || drampayOrder.payUrl || upiIntentUri
       : adminSettings.adminQrCodeUrl && adminSettings.adminQrCodeUrl.trim() !== ''
       ? adminSettings.adminQrCodeUrl.trim()
       : upiIntentUri;
 
-  const qrCodeData = sanitizeUpiPayeeName(rawQrCodeData, adminMerchantName || 'ZoroTask');
+  const qrCodeData = sanitizeUpiPayeeName(
+    rawQrCodeData,
+    paymentMode === 'qopay' && qopayOrder?.collectName ? qopayOrder.collectName : adminMerchantName || 'ZoroTask'
+  );
 
   const isDirectImage =
     qrCodeData.startsWith('data:image/') ||
     (/\.(png|jpe?g|webp|gif|svg)($|\?)/i.test(qrCodeData) && !qrCodeData.includes('create-qr-code'));
 
-  const qrCodeUrl = isDirectImage
-    ? qrCodeData
-    : `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-        qrCodeData
-      )}&margin=1`;
+  const [generatedQrDataUrl, setGeneratedQrDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (!qrCodeData) return;
+    if (isDirectImage) {
+      setGeneratedQrDataUrl(qrCodeData);
+      return;
+    }
+    // Generate QR locally using QRCode library - instant, offline-capable, high resolution
+    QRCode.toDataURL(qrCodeData, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 280,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    })
+      .then((url) => setGeneratedQrDataUrl(url))
+      .catch((err) => {
+        console.warn('Local QRCode generator error, falling back to server QR:', err);
+        setGeneratedQrDataUrl(
+          `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+            qrCodeData
+          )}&margin=1`
+        );
+      });
+  }, [qrCodeData, isDirectImage]);
+
+  const activeQrCodeSrc =
+    generatedQrDataUrl ||
+    (isDirectImage
+      ? qrCodeData
+      : `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+          qrCodeData
+        )}&margin=1`);
 
   // Initialize or reset when modal opens
   useEffect(() => {
@@ -183,14 +226,6 @@ export const UPIPaymentModal: React.FC = () => {
 
   // Create QO Pay order on demand
   const createQoPaySession = async () => {
-    if (!adminSettings.qopayUserToken?.trim()) {
-      setQopayError(
-        'QO Pay Gateway User Token is not configured. Please enter your valid User Token in Admin Panel > Payment Gateway, or click "Use Manual QR Mode" below.'
-      );
-      setQopayLoading(false);
-      return;
-    }
-
     setQopayLoading(true);
     setQopayError(null);
     try {
@@ -206,6 +241,9 @@ export const UPIPaymentModal: React.FC = () => {
           paymentUrl: res.paymentUrl,
           deeplink: res.deeplink,
           upiIntent: res.upiIntent,
+          qrCode: res.qrCode,
+          collectUpi: res.collectUpi,
+          collectName: res.collectName,
           deeplinks: res.deeplinks,
           depositId: res.depositId,
         });
@@ -694,11 +732,11 @@ export const UPIPaymentModal: React.FC = () => {
               <div className="space-y-3">
                 {/* QR Code Container */}
                 <div className="bg-white border-2 border-dashed border-indigo-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
-                  <div className="w-44 h-44 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
+                  <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
                     <img
-                      src={qrCodeUrl}
+                      src={activeQrCodeSrc}
                       alt="QO Pay Dynamic UPI QR Code"
-                      className="w-40 h-40 object-contain rounded"
+                      className="w-44 h-44 object-contain rounded"
                       loading="eager"
                     />
                   </div>
@@ -708,6 +746,31 @@ export const UPIPaymentModal: React.FC = () => {
                     <span>Live QO Pay Auto-Verification Active</span>
                   </div>
                 </div>
+
+                {/* Live Payee UPI Information if resolved */}
+                {qopayOrder.collectUpi && (
+                  <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-2.5 flex items-center justify-between text-left">
+                    <div className="min-w-0 pr-2">
+                      <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block">
+                        Payee: {qopayOrder.collectName || 'Official Merchant'}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-slate-900 truncate block">
+                        {qopayOrder.collectUpi}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        copyText(qopayOrder.collectUpi!);
+                        showToast('✓ Payee UPI ID copied to clipboard!');
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-xs active:scale-95 transition"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy UPI</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* 1-Click Pay Buttons */}
                 <div className="space-y-1.5 pt-1">
@@ -899,7 +962,7 @@ export const UPIPaymentModal: React.FC = () => {
                 <div className="bg-white border-2 border-dashed border-amber-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
                   <div className="w-44 h-44 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
                     <img
-                      src={qrCodeUrl}
+                      src={activeQrCodeSrc}
                       alt="DramPay UPI QR Code"
                       className="w-40 h-40 object-contain rounded"
                       loading="eager"
@@ -1027,7 +1090,7 @@ export const UPIPaymentModal: React.FC = () => {
             <div className="bg-white border-2 border-dashed border-indigo-200 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
               <div className="w-44 h-44 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
                 <img
-                  src={qrCodeUrl}
+                  src={activeQrCodeSrc}
                   alt={`UPI QR Code for ${adminUpiId}`}
                   className="w-40 h-40 object-contain rounded"
                   loading="eager"

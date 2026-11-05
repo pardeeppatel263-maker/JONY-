@@ -1218,8 +1218,54 @@ async function startServer() {
 
       const resultObj = data?.result || data?.data || data || {};
       const paymentUrl = resultObj.payment_url || resultObj.url || resultObj.pay_url || data?.payment_url || null;
-      const deeplinks = resultObj.deeplinks || {};
-      const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
+      let deeplinks = resultObj.deeplinks || {};
+      let upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
+      let qrCodeString = upiIntent || paymentUrl;
+      let collectUpi = '';
+      let collectName = 'ZoroTask Member';
+
+      // Automatically resolve rich cashier details (UPI intent, collect UPI ID, native PhonePe/GPay deeplinks)
+      if (paymentUrl && typeof paymentUrl === 'string' && paymentUrl.startsWith('http')) {
+        try {
+          const cashRes = await fetch(paymentUrl, {
+            signal: AbortSignal.timeout(6000),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            }
+          });
+          const html = await cashRes.text();
+          const match = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/i) || html.match(/https?:\/\/[^\s"']+\/gateway\/cashier[^\s"']*/i);
+          if (match) {
+            const cashierUrl = match[1] || match[0];
+            const parsed = new URL(cashierUrl);
+            const orderNo = parsed.searchParams.get('orderNo');
+            if (orderNo) {
+              const queryUrl = `${parsed.origin}/gateway/cashier/query?orderNo=${encodeURIComponent(orderNo)}`;
+              const qRes = await fetch(queryUrl, { signal: AbortSignal.timeout(4000) });
+              const qJson = await qRes.json();
+              if (qJson?.code === 200 && qJson.data) {
+                const cData = qJson.data;
+                collectUpi = cData.collectUpi || '';
+                collectName = cData.collectName || collectName;
+                if (cData.qrCode) {
+                  qrCodeString = cData.qrCode;
+                  upiIntent = cData.qrCode;
+                }
+                deeplinks = {
+                  upi: cData.otherUpiDeepLink || cData.qrCode || upiIntent,
+                  phonepe: cData.phonePeDeepLink || deeplinks.phonepe,
+                  gpay: cData.gpayDeepLink || deeplinks.gpay,
+                  paytm: cData.paytmDeepLink || deeplinks.paytm,
+                  bhim: cData.qrCode || deeplinks.bhim,
+                };
+              }
+            }
+          }
+        } catch (resolveErr) {
+          console.warn('[QO-Pay] Cashier query resolution warning (using direct URL):', resolveErr);
+        }
+      }
 
       // Cache order in memory for status checks and webhook tracking
       qopayOrders.set(activeOrderId, {
@@ -1230,6 +1276,9 @@ async function startServer() {
         paymentUrl,
         deeplinks,
         upiIntent,
+        qrCode: qrCodeString,
+        collectUpi,
+        collectName,
         customerMobile,
         raw: data,
       });
@@ -1241,6 +1290,9 @@ async function startServer() {
           paymentUrl,
           deeplinks,
           upiIntent,
+          qrCode: qrCodeString,
+          collectUpi,
+          collectName,
           message: data?.message || 'QO Pay order created successfully',
           data,
         });

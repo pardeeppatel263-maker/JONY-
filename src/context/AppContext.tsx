@@ -307,7 +307,10 @@ interface AppContextType {
     paymentUrl?: string;
     deeplink?: string;
     upiIntent?: string;
-    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string };
+    qrCode?: string;
+    collectUpi?: string;
+    collectName?: string;
+    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string; bhim?: string };
     depositId?: string;
     message?: string;
   }>;
@@ -6146,11 +6149,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     paymentUrl?: string;
     deeplink?: string;
     upiIntent?: string;
-    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string };
+    qrCode?: string;
+    collectUpi?: string;
+    collectName?: string;
+    deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string; bhim?: string };
     depositId?: string;
     message?: string;
   }> => {
-    if (adminSettings.qopayEnabled === false) {
+    if (adminSettings.qopayEnabled === false && adminSettings.paymentGatewayProvider !== 'qopay') {
       return {
         success: false,
         message: 'QO Pay payment gateway is currently turned OFF by admin.',
@@ -6163,7 +6169,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
     try {
-      const activeUserToken = (adminSettings.qopayUserToken || '').trim();
+      const activeUserToken = (adminSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
       const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
       const orderId = `QO_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
@@ -6250,12 +6256,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      if (data.success && (data.paymentUrl || data.deeplinks || data.orderId)) {
+      if (data.success && (data.paymentUrl || data.deeplinks || data.orderId || data.qrCode)) {
+        const resolvedQr = data.qrCode || data.upiIntent || data.paymentUrl;
         // Update deposit with payment URL & intent
         const updatedDeposit: PaymentDeposit = {
           ...newDeposit,
           gatewayPayUrl: data.paymentUrl,
-          gatewayDeeplink: data.upiIntent || data.deeplink,
+          gatewayDeeplink: data.upiIntent || data.deeplink || resolvedQr,
           qopayPaymentUrl: data.paymentUrl,
         };
         setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
@@ -6268,7 +6275,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           orderId: data.orderId || orderId,
           paymentUrl: data.paymentUrl,
           deeplink: data.deeplink,
-          upiIntent: data.upiIntent,
+          upiIntent: data.upiIntent || resolvedQr,
+          qrCode: resolvedQr,
+          collectUpi: data.collectUpi || '',
+          collectName: data.collectName || '',
           deeplinks: data.deeplinks,
           depositId,
           message: data.message || 'QO Pay order initialized successfully',

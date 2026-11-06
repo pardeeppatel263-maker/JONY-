@@ -14,6 +14,7 @@ import {
   Smartphone,
   AlertCircle,
   Clock,
+  Loader2,
 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 
@@ -25,6 +26,8 @@ export const PlanDetailScreen: React.FC = () => {
     paymentDeposits,
     buyPlanWithWallet,
     buyPlanWithUPI,
+    startDirectQoPayPayment,
+    adminSettings,
     showToast,
     navigate,
     isFreeTrialActive,
@@ -32,6 +35,7 @@ export const PlanDetailScreen: React.FC = () => {
   const plan = selectedPlan || plans[1] || plans[0] || defaultLevel0Plan;
   const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'upi'>('wallet');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRedirectingToUPI, setIsRedirectingToUPI] = useState(false);
 
   const isAlreadyPurchased = (user.purchasedPlanIds || []).includes(plan?.id) && (plan?.level ?? 0) > 0;
   const pendingDeposit = paymentDeposits.find(
@@ -65,7 +69,7 @@ export const PlanDetailScreen: React.FC = () => {
     }, 600);
   };
 
-  const handleUPIPay = () => {
+  const handleUPIPay = async () => {
     if (isAlreadyPurchased) {
       showToast(`❌ You have already purchased ${plan.title}! Each member can buy each plan once.`);
       return;
@@ -75,7 +79,23 @@ export const PlanDetailScreen: React.FC = () => {
       navigate('mission');
       return;
     }
-    buyPlanWithUPI(plan);
+
+    // If manual payment is explicitly enabled by Admin, show manual modal
+    if (adminSettings.manualPaymentEnabled === true) {
+      buyPlanWithUPI(plan);
+      return;
+    }
+
+    // Direct QO Pay checkout without popup modal!
+    setIsRedirectingToUPI(true);
+    try {
+      const res = await startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
+      if (!res.success) {
+        setIsRedirectingToUPI(false);
+      }
+    } catch {
+      setIsRedirectingToUPI(false);
+    }
   };
 
   const benefitsToDisplay = plan.benefits || [
@@ -448,16 +468,39 @@ export const PlanDetailScreen: React.FC = () => {
               </span>
             </button>
           ) : (
-            <button
-              onClick={handleUPIPay}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 hover:from-purple-800 text-white font-black text-sm rounded-xl shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all"
-            >
-              <QrCode className="w-4 h-4" />
-              <span>
-                Pay ₹{plan.price.toLocaleString('en-IN')} via UPI / QR Code
-              </span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={handleUPIPay}
+                disabled={isRedirectingToUPI}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 hover:from-purple-800 text-white font-black text-sm rounded-xl shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-80"
+              >
+                {isRedirectingToUPI ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Opening QO Pay Cashier...</span>
+                  </>
+                ) : (
+                  <>
+                    <QrCode className="w-4 h-4" />
+                    <span>
+                      Pay ₹{plan.price.toLocaleString('en-IN')} via UPI Gateway
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              {/* ONLY visible if Admin explicitly enables Manual Payment in Admin Panel */}
+              {adminSettings.manualPaymentEnabled === true && (
+                <button
+                  type="button"
+                  onClick={() => buyPlanWithUPI(plan)}
+                  className="w-full py-1 text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                >
+                  Or Pay with Manual QR & UTR
+                </button>
+              )}
+            </div>
           )}
 
           {/* Verification Note */}

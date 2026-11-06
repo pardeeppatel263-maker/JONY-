@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
-import { ShieldCheck, ArrowRight, Check, Zap, Clock } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Check, Zap, Clock, Loader2 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon } from '../components/PaymentIcons';
 
 interface AmountOption {
@@ -11,7 +11,7 @@ interface AmountOption {
 }
 
 export const AddMoneyScreen: React.FC = () => {
-  const { addMoneyInitiate, paymentDeposits, navigate, adminSettings } = useApp();
+  const { addMoneyInitiate, startDirectQoPayPayment, paymentDeposits, navigate, adminSettings } = useApp();
   const pendingDeposit = paymentDeposits.find(
     (d) => d.status === 'in_process' && d.depositType === 'add_money'
   );
@@ -37,6 +37,7 @@ export const AddMoneyScreen: React.FC = () => {
   const defaultSelected = options.find((o) => o.popular) || options[0] || defaultOptions[3];
   const [selectedOption, setSelectedOption] = useState<AmountOption>(defaultSelected);
   const [selectedUPIApp, setSelectedUPIApp] = useState<'phonepe' | 'gpay' | 'paytm' | 'bhim'>('phonepe');
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const upiApps = [
     { id: 'phonepe', name: 'PhonePe', renderIcon: () => <PhonePeIcon size={36} className="rounded-xl shadow-xs" /> },
@@ -45,8 +46,23 @@ export const AddMoneyScreen: React.FC = () => {
     { id: 'bhim', name: 'BHIM UPI', renderIcon: () => <BhimIcon size={36} className="rounded-xl shadow-xs" /> },
   ];
 
-  const handleProceed = () => {
-    addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
+  const handleProceed = async () => {
+    // If manual payment is explicitly turned ON by Admin, allow manual modal
+    if (adminSettings.manualPaymentEnabled === true) {
+      addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
+      return;
+    }
+
+    // Direct QO Pay cashier checkout - NO popup modal!
+    setIsRedirecting(true);
+    try {
+      const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
+      if (!res.success) {
+        setIsRedirecting(false);
+      }
+    } catch {
+      setIsRedirecting(false);
+    }
   };
 
   return (
@@ -205,14 +221,35 @@ export const AddMoneyScreen: React.FC = () => {
       </div>
 
       {/* Sticky Bottom Proceed Button */}
-      <div className="p-4 bg-white border-t border-slate-200 max-w-md mx-auto w-full">
+      <div className="p-4 bg-white border-t border-slate-200 max-w-md mx-auto w-full space-y-2">
         <button
           onClick={handleProceed}
-          className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all"
+          disabled={isRedirecting}
+          className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-80"
         >
-          <span>Proceed to Pay</span>
-          <ArrowRight className="w-4 h-4" />
+          {isRedirecting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Opening QO Pay Cashier...</span>
+            </>
+          ) : (
+            <>
+              <span>Proceed to Pay ₹{selectedOption.amount.toLocaleString('en-IN')}</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
+          )}
         </button>
+
+        {/* ONLY visible if Admin explicitly enables Manual Payment in Admin Panel */}
+        {adminSettings.manualPaymentEnabled === true && (
+          <button
+            type="button"
+            onClick={() => addMoneyInitiate(selectedOption.amount, selectedOption.bonus)}
+            className="w-full py-1 text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+          >
+            Or Pay with Manual QR & UTR
+          </button>
+        )}
       </div>
     </div>
   );

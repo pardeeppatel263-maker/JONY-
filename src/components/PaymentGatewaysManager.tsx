@@ -67,6 +67,10 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
   const [showQopayToken, setShowQopayToken] = useState(false);
   const [isSavingQopay, setIsSavingQopay] = useState(false);
 
+  // Manual UPI QR & UTR Payment Mode (Controlled by Admin; default false)
+  const [manualPaymentEnabled, setManualPaymentEnabled] = useState(adminSettings.manualPaymentEnabled ?? false);
+  const [isTogglingManual, setIsTogglingManual] = useState(false);
+
   // QO Pay live diagnostics
   const [qopayTestStatus, setQopayTestStatus] = useState<string | null>(null);
   const [isTestingQopay, setIsTestingQopay] = useState(false);
@@ -90,8 +94,31 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
       if (adminSettings.qopayBaseUrl !== undefined) setQopayBaseUrl(adminSettings.qopayBaseUrl);
       if (adminSettings.qopayAutoApprove !== undefined) setQopayAutoApprove(adminSettings.qopayAutoApprove);
       if (adminSettings.qopayAutoPayoutEnabled !== undefined) setQopayAutoPayoutEnabled(adminSettings.qopayAutoPayoutEnabled);
+
+      if (adminSettings.manualPaymentEnabled !== undefined) setManualPaymentEnabled(adminSettings.manualPaymentEnabled);
     }
   }, [adminSettings]);
+
+  // TOGGLE MANUAL PAYMENT MODE (Instant 1-Click Cloud Sync)
+  const handleToggleManualPayment = async () => {
+    setIsTogglingManual(true);
+    const nextVal = !manualPaymentEnabled;
+    setManualPaymentEnabled(nextVal);
+    try {
+      await updateAdminSettings({
+        manualPaymentEnabled: nextVal,
+      });
+      showToast(
+        nextVal
+          ? '✓ Manual UPI QR & UTR Mode ACTIVATED for members!'
+          : '✓ Manual UPI QR & UTR Mode DISABLED! Members will pay directly via QO Pay.'
+      );
+    } catch (err: any) {
+      showToast(`Error updating manual payment mode: ${err.message}`);
+    } finally {
+      setIsTogglingManual(false);
+    }
+  };
 
   // SAVE DRAMPAY SETTINGS (Independent)
   const handleSaveDrampay = async (e?: React.FormEvent) => {
@@ -448,6 +475,70 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
                 }`}
               >
                 {qopayEnabled ? 'ACTIVE (ON)' : 'COMPLETELY OFF'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3 CARD: MANUAL UPI QR & UTR MODE (CONTROLLED STRICTLY BY ADMIN) */}
+        <div
+          className={`p-5 rounded-3xl border transition-all relative overflow-hidden sm:col-span-2 ${
+            manualPaymentEnabled
+              ? 'bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/60 shadow-xl ring-1 ring-emerald-500/30'
+              : 'bg-slate-900/90 border-slate-800'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-3 rounded-2xl border ${
+                  manualPaymentEnabled
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}
+              >
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="text-base font-black text-white flex items-center gap-2">
+                  <span>📱 Manual UPI QR &amp; UTR Mode</span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                      manualPaymentEnabled
+                        ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
+                        : 'text-slate-400 bg-slate-800 border-slate-700'
+                    }`}
+                  >
+                    {manualPaymentEnabled ? 'ACTIVE (ON)' : 'COMPLETELY OFF (DEFAULT)'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                  {manualPaymentEnabled
+                    ? '⚠️ Manual Mode is currently ON: Users will see the manual QR transfer option and can submit 12-digit UTR.'
+                    : '🔒 Manual Mode is OFF (Recommended): Users bypass all manual popups and are redirected directly to the official QO Pay checkout page.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={handleToggleManualPayment}
+                disabled={isTogglingManual}
+                className={`w-14 h-7 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
+                  manualPaymentEnabled ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <span className="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform" />
+              </button>
+              <span
+                className={`text-[10px] font-black px-2.5 py-1 rounded uppercase tracking-wider ${
+                  manualPaymentEnabled
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}
+              >
+                {manualPaymentEnabled ? 'MANUAL ACTIVE' : 'MANUAL OFF'}
               </span>
             </div>
           </div>

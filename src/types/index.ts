@@ -86,6 +86,8 @@ export interface AdminSettings {
   drampayAutoApprove?: boolean;
   drampayAutoPayoutEnabled?: boolean;
   drampayUpiMode?: 'deeplink' | 'payurl' | 'both';
+  // Manual UPI QR & UTR Payment Mode (Controlled strictly from Admin Panel; default false)
+  manualPaymentEnabled?: boolean;
   // Withdrawal window & timings
   withdrawalStartTime?: string;
   withdrawalEndTime?: string;

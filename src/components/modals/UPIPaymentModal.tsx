@@ -55,29 +55,31 @@ export const UPIPaymentModal: React.FC = () => {
     adminSettings.paymentGatewayProvider !== 'qopay'
   );
 
+  const canUseManual = adminSettings.manualPaymentEnabled === true;
+
   const initialMode: 'qopay' | 'drampay' | 'manual' =
     adminSettings.paymentGatewayProvider === 'qopay' && isQoPayActive
       ? 'qopay'
-      : isQoPayActive && !isDrampayActive
-      ? 'qopay'
-      : isDrampayActive && !isQoPayActive
-      ? 'drampay'
-      : isDrampayActive && isQoPayActive
-      ? (adminSettings.paymentGatewayProvider === 'drampay' ? 'drampay' : 'qopay')
       : isQoPayActive
       ? 'qopay'
-      : 'manual';
+      : isDrampayActive
+      ? 'drampay'
+      : canUseManual
+      ? 'manual'
+      : 'qopay';
 
   const [paymentMode, setPaymentMode] = useState<'qopay' | 'drampay' | 'manual'>(initialMode);
 
   // Auto fallback when admin switches a gateway OFF
   useEffect(() => {
     if (paymentMode === 'drampay' && !isDrampayActive) {
-      setPaymentMode(isQoPayActive ? 'qopay' : 'manual');
+      setPaymentMode(isQoPayActive ? 'qopay' : (canUseManual ? 'manual' : 'qopay'));
     } else if (paymentMode === 'qopay' && !isQoPayActive) {
-      setPaymentMode(isDrampayActive ? 'drampay' : 'manual');
+      setPaymentMode(isDrampayActive ? 'drampay' : (canUseManual ? 'manual' : 'qopay'));
+    } else if (paymentMode === 'manual' && !canUseManual) {
+      setPaymentMode(isQoPayActive ? 'qopay' : (isDrampayActive ? 'drampay' : 'qopay'));
     }
-  }, [isDrampayActive, isQoPayActive, paymentMode]);
+  }, [isDrampayActive, isQoPayActive, canUseManual, paymentMode]);
 
   // Manual payment state
   const [step, setStep] = useState<'pay' | 'proof'>('pay');
@@ -587,56 +589,60 @@ export const UPIPaymentModal: React.FC = () => {
           </button>
         </div>
 
-        {/* PAYMENT METHOD SELECTOR TABS */}
-        <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold p-1 gap-1">
-          {/* DramPay Tab - ONLY visible if DramPay is strictly active */}
-          {isDrampayActive && (
-            <button
-              type="button"
-              onClick={() => setPaymentMode('drampay')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                paymentMode === 'drampay'
-                  ? 'bg-white text-amber-950 shadow-xs border border-amber-300 ring-1 ring-amber-400 font-extrabold'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>⚡ DramPay</span>
-              <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.2 rounded">LIVE</span>
-            </button>
-          )}
+        {/* PAYMENT METHOD SELECTOR TABS - ONLY visible if multiple choices or manual mode is enabled */}
+        {((isDrampayActive && isQoPayActive) || (canUseManual && (isDrampayActive || isQoPayActive))) && (
+          <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold p-1 gap-1">
+            {/* DramPay Tab */}
+            {isDrampayActive && (
+              <button
+                type="button"
+                onClick={() => setPaymentMode('drampay')}
+                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  paymentMode === 'drampay'
+                    ? 'bg-white text-amber-950 shadow-xs border border-amber-300 ring-1 ring-amber-400 font-extrabold'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                <span>⚡ DramPay</span>
+                <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.2 rounded">LIVE</span>
+              </button>
+            )}
 
-          {/* QO Pay Tab - ONLY visible if QO Pay is strictly active */}
-          {isQoPayActive && (
-            <button
-              type="button"
-              onClick={() => setPaymentMode('qopay')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                paymentMode === 'qopay'
-                  ? 'bg-white text-indigo-950 shadow-xs border border-indigo-300 ring-1 ring-indigo-400 font-extrabold'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
-              <span>⚡ QO Pay</span>
-              <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.2 rounded">LIVE</span>
-            </button>
-          )}
+            {/* QO Pay Tab */}
+            {isQoPayActive && (
+              <button
+                type="button"
+                onClick={() => setPaymentMode('qopay')}
+                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  paymentMode === 'qopay'
+                    ? 'bg-white text-indigo-950 shadow-xs border border-indigo-300 ring-1 ring-indigo-400 font-extrabold'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
+                <span>⚡ QO Pay</span>
+                <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.2 rounded">LIVE</span>
+              </button>
+            )}
 
-          {/* Manual UPI Tab */}
-          <button
-            type="button"
-            onClick={() => setPaymentMode('manual')}
-            className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
-              paymentMode === 'manual'
-                ? 'bg-white text-slate-900 shadow-xs border border-slate-200 font-extrabold'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <UpiIcon size={16} />
-            <span>📱 Manual QR &amp; UTR</span>
-          </button>
-        </div>
+            {/* Manual UPI Tab - STRICTLY shown ONLY if Admin has enabled it in Admin Panel */}
+            {canUseManual && (
+              <button
+                type="button"
+                onClick={() => setPaymentMode('manual')}
+                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  paymentMode === 'manual'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200 font-extrabold'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <UpiIcon size={16} />
+                <span>📱 Manual QR &amp; UTR</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Offline Gateways Notice when both DramPay and QO Pay are OFF */}
         {!isDrampayActive && !isQoPayActive && (
@@ -716,13 +722,15 @@ export const UPIPaymentModal: React.FC = () => {
                   >
                     <RefreshCw className="w-3 h-3" /> Retry
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('manual')}
-                    className="px-3 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
-                  >
-                    Use Manual QR Mode
-                  </button>
+                  {canUseManual && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('manual')}
+                      className="px-3 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
+                    >
+                      Use Manual QR Mode
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -774,6 +782,19 @@ export const UPIPaymentModal: React.FC = () => {
 
                 {/* 1-Click Pay Buttons */}
                 <div className="space-y-1.5 pt-1">
+                  {qopayOrder.paymentUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.location.href = qopayOrder.paymentUrl!;
+                      }}
+                      className="w-full py-3 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300 font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
+                    >
+                      <ExternalLink className="w-4 h-4 text-indigo-600" />
+                      <span>Open Official QO Pay Cashier Page</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => handleLaunchQoPayUPI()}
@@ -944,13 +965,15 @@ export const UPIPaymentModal: React.FC = () => {
                   >
                     <RefreshCw className="w-3 h-3" /> Retry
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('manual')}
-                    className="px-3 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold"
-                  >
-                    Use Manual QR Mode
-                  </button>
+                  {canUseManual && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('manual')}
+                      className="px-3 py-1 bg-slate-800 text-white rounded-lg text-xs font-bold"
+                    >
+                      Use Manual QR Mode
+                    </button>
+                  )}
                 </div>
               </div>
             )}

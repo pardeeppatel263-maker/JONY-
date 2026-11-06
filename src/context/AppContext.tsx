@@ -324,6 +324,12 @@ interface AppContextType {
     payoutMethod: 'upi' | 'bank',
     details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
   ) => Promise<{ success: boolean; message: string; utr?: string; data?: any }>;
+  startDirectQoPayPayment: (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ) => Promise<{ success: boolean; paymentUrl?: string; message?: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -802,6 +808,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     qopayBaseUrl: 'https://qo-pay.com',
     qopayAutoApprove: true,
     qopayAutoPayoutEnabled: true,
+    manualPaymentEnabled: false,
     withdrawalStartTime: '10:00',
     withdrawalEndTime: '18:00',
     withdrawalDaysNotice: 'Mon - Sat (10:00 AM - 06:00 PM)',
@@ -1370,6 +1377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               drampaySecretKey: (cloudSettings.drampaySecretKey && cloudSettings.drampaySecretKey.trim())
                 ? cloudSettings.drampaySecretKey.trim()
                 : defaultAdminSettings.drampaySecretKey,
+              manualPaymentEnabled: cloudSettings.manualPaymentEnabled === true,
             };
             if (Array.isArray(cloudSettings.plans) && cloudSettings.plans.length > 0) {
               const sorted = [...cloudSettings.plans].sort((a, b) => (a.level || 0) - (b.level || 0));
@@ -2547,6 +2555,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPendingUPIBonus(bonus);
     setPendingDepositType('add_money');
     setPendingPlanForUPI(null);
+
+    // If manual payment is NOT enabled by Admin (default: false), directly open QO Pay cashier without modal popup!
+    if (adminSettings.manualPaymentEnabled !== true) {
+      startDirectQoPayPayment(amount, bonus, 'add_money');
+      return;
+    }
+
     setIsUPIModalOpen(true);
   };
 
@@ -3016,6 +3031,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPendingUPIBonus(plan.bonus || 0);
     setPendingDepositType('plan_purchase');
     setPendingPlanForUPI(plan);
+
+    // If manual payment is NOT enabled by Admin (default: false), directly open QO Pay cashier without modal popup!
+    if (adminSettings.manualPaymentEnabled !== true) {
+      startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
+      return;
+    }
+
     setIsUPIModalOpen(true);
   };
 
@@ -6460,6 +6482,140 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const startDirectQoPayPayment = async (
+    amount: number,
+    bonus: number,
+    depositType: 'add_money' | 'plan_purchase',
+    plan?: PlanItem
+  ): Promise<{ success: boolean; paymentUrl?: string; message?: string }> => {
+    try {
+      showToast('🚀 Opening QO Pay Payment Cashier...');
+      const res = await initiateQoPayment(amount, bonus, depositType, plan);
+      if (res.success && res.paymentUrl) {
+        try {
+          localStorage.setItem(
+            'taskvibe_pending_qopay_order',
+            JSON.stringify({
+              orderId: res.orderId,
+              depositId: res.depositId,
+              amount,
+              bonus,
+              depositType,
+              planId: plan?.id,
+              planLevel: plan?.level,
+              planTitle: plan?.title,
+              timestamp: Date.now(),
+            })
+          );
+          if (plan) {
+            localStorage.setItem('taskvibe_pending_plan', JSON.stringify(plan));
+          }
+        } catch {}
+
+        // Immediate direct browser redirect to the official QO Pay checkout cashier page
+        window.location.href = res.paymentUrl;
+        return { success: true, paymentUrl: res.paymentUrl };
+      } else {
+        const msg = res.message || 'Unable to open QO Pay payment cashier';
+        showToast(`❌ ${msg}`);
+        return { success: false, message: msg };
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Payment redirection error';
+      showToast(`❌ ${msg}`);
+      return { success: false, message: msg };
+    }
+  };
+
+  // Real-time automatic listener: verifies QO Pay orders upon return or callback
+  useEffect(() => {
+    let isVerifying = false;
+    const checkActiveReturnOrder = async () => {
+      if (typeof window === 'undefined' || isVerifying) return;
+
+      let orderIdFromUrl: string | null = null;
+      let statusFromUrl: string | null = null;
+
+      try {
+        const fullHref = window.location.href;
+        const urlObj = new URL(fullHref);
+        orderIdFromUrl = urlObj.searchParams.get('qopay_order') || urlObj.searchParams.get('order_id');
+        statusFromUrl = urlObj.searchParams.get('status');
+
+        if (!orderIdFromUrl && window.location.hash.includes('qopay_order')) {
+          const hashParts = window.location.hash.split('?');
+          if (hashParts[1]) {
+            const hp = new URLSearchParams(hashParts[1]);
+            orderIdFromUrl = hp.get('qopay_order') || hp.get('order_id');
+            statusFromUrl = hp.get('status');
+          }
+        }
+      } catch (e) {
+        console.warn('URL parsing error:', e);
+      }
+
+      let pendingOrder: any = null;
+      try {
+        const saved = localStorage.getItem('taskvibe_pending_qopay_order');
+        if (saved) pendingOrder = JSON.parse(saved);
+      } catch {}
+
+      const activeOrderId = orderIdFromUrl || pendingOrder?.orderId;
+      if (!activeOrderId) return;
+
+      const matchingDep = paymentDeposits.find(
+        (d) =>
+          d.gatewayOrderId === activeOrderId ||
+          d.qopayOrderId === activeOrderId ||
+          (d.utrNumber && d.utrNumber.includes(activeOrderId))
+      );
+      const depositId = matchingDep?.id || pendingOrder?.depositId;
+      if (!depositId) return;
+
+      // Clean URL query parameters so user is not re-prompted on every refresh
+      if (orderIdFromUrl) {
+        try {
+          const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
+          window.history.replaceState({}, '', window.location.pathname + cleanHash);
+        } catch {}
+      }
+
+      isVerifying = true;
+      showToast('🔄 Verifying your QO Pay payment with gateway...');
+
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          const verifyRes = await checkQoPayStatus(depositId, activeOrderId);
+          if (verifyRes.isPaid || verifyRes.status === 'SUCCESS' || verifyRes.status === 'PAID') {
+            try {
+              localStorage.removeItem('taskvibe_pending_qopay_order');
+              localStorage.removeItem('taskvibe_pending_plan');
+            } catch {}
+            triggerConfetti();
+            showToast('🎉 Payment Successful! ₹' + (matchingDep?.amount || pendingOrder?.amount || '') + ' verified & credited!');
+            navigate('record');
+            break;
+          }
+        } catch (vErr) {
+          console.warn(`[QO-Pay] Verification attempt ${attempt} notice:`, vErr);
+        }
+
+        if (attempt < 4) {
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+      isVerifying = false;
+    };
+
+    checkActiveReturnOrder();
+    window.addEventListener('hashchange', checkActiveReturnOrder);
+    window.addEventListener('popstate', checkActiveReturnOrder);
+    return () => {
+      window.removeEventListener('hashchange', checkActiveReturnOrder);
+      window.removeEventListener('popstate', checkActiveReturnOrder);
+    };
+  }, [paymentDeposits]);
+
   const dismissAdminAlert = async (): Promise<void> => {
     setUser((prev) => ({
       ...prev,
@@ -6639,6 +6795,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         initiateQoPayment,
         checkQoPayStatus,
         disburseQoPayout,
+        startDirectQoPayPayment,
       }}
     >
       {children}

@@ -21,19 +21,7 @@
     <meta name="twitter:description" content="ZoroTask is a daily tasks, surveys, VIP membership plans, UPI wallet, and referral reward platform." />
   </head>
   <body>
-    <script>
-      // Instant Android WebView & browser history guard so canGoBack() is NEVER false on launch
-      (function() {
-        try {
-          var hash = window.location.hash || '';
-          var initialScreen = hash.replace(/^#\/?/, '').split('?')[0].trim() || 'home';
-          if (!window.history.state || !window.history.state.zorotask_guard) {
-            window.history.replaceState({ zorotask_guard: true, isRoot: true }, '', '#guard');
-            window.history.pushState({ zorotask_app: true, screen: initialScreen }, '', hash || ('#' + initialScreen));
-          }
-        } catch (e) {}
-      })();
-    </script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

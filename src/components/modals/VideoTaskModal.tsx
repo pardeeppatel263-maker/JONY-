@@ -429,6 +429,17 @@ export const VideoTaskModal: React.FC = () => {
     }
     setHasStarted(true);
     setPlayerStateDesc('buffering');
+
+    // Safety fallback: if YouTube postMessage is blocked or slow in WebView/sandbox, unfreeze timer after 2.5s
+    setTimeout(() => {
+      setIsVideoPlaying((prev) => {
+        if (!prev) {
+          setPlayerStateDesc('playing');
+          return true;
+        }
+        return prev;
+      });
+    }, 2500);
   };
 
   const handlePauseCommand = () => {
@@ -596,18 +607,32 @@ export const VideoTaskModal: React.FC = () => {
               </span>
             </div>
           ) : (
-            <div className="p-2 rounded-xl border border-amber-500/40 bg-amber-950/40 text-amber-300 flex items-center justify-between text-[11px]">
-              <div className="flex items-center gap-1.5">
+            <div className="p-2 rounded-xl border border-amber-500/40 bg-amber-950/40 text-amber-300 flex items-center justify-between text-[11px] gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <Pause className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="font-bold">
+                <span className="font-bold truncate">
                   {hasStarted
-                    ? '⏸ Video Paused (Timer Stopped) • Press Play on video to continue'
-                    : '⏸ Video Not Started • Press Play above to begin 30s timer'}
+                    ? '⏸ Video Paused / Timer Stopped'
+                    : '⏸ Press Play to start 30s timer'}
                 </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-amber-300">
-                {countdown}s left
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {hasStarted && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsVideoPlaying(true);
+                      setPlayerStateDesc('playing');
+                    }}
+                    className="text-[10px] font-black bg-amber-400 text-slate-950 px-2 py-0.5 rounded-md hover:bg-amber-300 transition cursor-pointer"
+                  >
+                    Unfreeze
+                  </button>
+                )}
+                <span className="text-[10px] font-mono font-bold text-amber-300">
+                  {countdown}s left
+                </span>
+              </div>
             </div>
           )}
 

@@ -129,37 +129,45 @@ export const UPIPaymentModal: React.FC = () => {
   const adminUpiId = adminSettings.adminUpiId || 'zorotask.pay@icici';
   const adminMerchantName = adminSettings.adminMerchantName || 'ZoroTask Pay';
 
-  // Standard UPI URI format with neutral note
-  const safeTransactionNote = `Ref${Math.floor(100000 + Math.random() * 900000)}`;
-  const upiIntentUri = `upi://pay?pa=${encodeURIComponent(adminUpiId)}&pn=${encodeURIComponent(
-    adminMerchantName
-  )}&am=${encodeURIComponent(pendingUPIAmount)}&cu=INR&tn=${encodeURIComponent(
-    safeTransactionNote
-  )}`;
+  // Standard UPI URI format with stable note per modal open
+  const safeTransactionNote = React.useMemo(() => `Ref${Date.now().toString().slice(-6)}`, [isUPIModalOpen]);
+  const upiIntentUri = React.useMemo(() => {
+    return `upi://pay?pa=${encodeURIComponent(adminUpiId)}&pn=${encodeURIComponent(
+      adminMerchantName
+    )}&am=${encodeURIComponent(pendingUPIAmount)}&cu=INR&tn=${encodeURIComponent(
+      safeTransactionNote
+    )}`;
+  }, [adminUpiId, adminMerchantName, pendingUPIAmount, safeTransactionNote]);
 
   // Dynamic QR Code: use QO Pay / DramPay deeplink/payUrl if in Gateway mode, else admin QR
-  const rawQrCodeData =
-    paymentMode === 'qopay' && qopayOrder
+  const rawQrCodeData = React.useMemo(() => {
+    return paymentMode === 'qopay' && qopayOrder
       ? qopayOrder.qrCode || qopayOrder.upiIntent || qopayOrder.deeplink || qopayOrder.paymentUrl || upiIntentUri
       : paymentMode === 'drampay' && drampayOrder
       ? drampayOrder.deeplink || drampayOrder.payUrl || upiIntentUri
       : adminSettings.adminQrCodeUrl && adminSettings.adminQrCodeUrl.trim() !== ''
       ? adminSettings.adminQrCodeUrl.trim()
       : upiIntentUri;
+  }, [paymentMode, qopayOrder, drampayOrder, adminSettings.adminQrCodeUrl, upiIntentUri]);
 
-  const qrCodeData = sanitizeUpiPayeeName(
-    rawQrCodeData,
-    paymentMode === 'qopay' && qopayOrder?.collectName ? qopayOrder.collectName : adminMerchantName || 'ZoroTask'
-  );
+  const qrCodeData = React.useMemo(() => {
+    return sanitizeUpiPayeeName(
+      rawQrCodeData,
+      paymentMode === 'qopay' && qopayOrder?.collectName ? qopayOrder.collectName : adminMerchantName || 'ZoroTask'
+    );
+  }, [rawQrCodeData, paymentMode, qopayOrder?.collectName, adminMerchantName]);
 
-  const isDirectImage =
-    qrCodeData.startsWith('data:image/') ||
-    (/\.(png|jpe?g|webp|gif|svg)($|\?)/i.test(qrCodeData) && !qrCodeData.includes('create-qr-code'));
+  const isDirectImage = React.useMemo(() => {
+    return (
+      qrCodeData.startsWith('data:image/') ||
+      (/\.(png|jpe?g|webp|gif|svg)($|\?)/i.test(qrCodeData) && !qrCodeData.includes('create-qr-code'))
+    );
+  }, [qrCodeData]);
 
   const [generatedQrDataUrl, setGeneratedQrDataUrl] = useState<string>('');
 
   useEffect(() => {
-    if (!qrCodeData) return;
+    if (!qrCodeData || !isUPIModalOpen) return;
     if (isDirectImage) {
       setGeneratedQrDataUrl(qrCodeData);
       return;
@@ -183,7 +191,7 @@ export const UPIPaymentModal: React.FC = () => {
           )}&margin=1`
         );
       });
-  }, [qrCodeData, isDirectImage]);
+  }, [qrCodeData, isDirectImage, isUPIModalOpen]);
 
   const activeQrCodeSrc =
     generatedQrDataUrl ||

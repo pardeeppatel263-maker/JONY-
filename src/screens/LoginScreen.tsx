@@ -37,7 +37,7 @@ export const LoginScreen: React.FC = () => {
     if (isLoggedIn) {
       navigate('home');
     }
-  }, [isLoggedIn, navigate]);
+  }, [isLoggedIn]);
 
   const [mobile, setMobile] = useState(() => {
     try {

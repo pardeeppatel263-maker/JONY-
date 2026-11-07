@@ -39,6 +39,9 @@ export const EdgeSwipeBackGesture: React.FC<EdgeSwipeBackGestureProps> = ({ chil
     hasVibrated: false,
   });
 
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
   useEffect(() => {
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
@@ -173,7 +176,7 @@ export const EdgeSwipeBackGesture: React.FC<EdgeSwipeBackGestureProps> = ({ chil
             } catch {}
 
             // Trigger safe navigation
-            goBack();
+            goBackRef.current();
           }
           return {
             isActive: false,
@@ -224,7 +227,7 @@ export const EdgeSwipeBackGesture: React.FC<EdgeSwipeBackGestureProps> = ({ chil
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleTouchCancel);
     };
-  }, [goBack]);
+  }, []);
 
   const clampedTouchY = Math.min(
     Math.max(gestureState.touchY, 100),

@@ -86,18 +86,15 @@ export const PlanDetailScreen: React.FC = () => {
       return;
     }
 
-    // Attempt direct QO Pay checkout
+    // Direct QO Pay checkout redirect
     setIsRedirectingToUPI(true);
     try {
       const res = await startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
       if (!res.success) {
         setIsRedirectingToUPI(false);
-        // Fallback to Instant Dynamic UPI QR Code Modal
-        buyPlanWithUPI(plan);
       }
     } catch {
       setIsRedirectingToUPI(false);
-      buyPlanWithUPI(plan);
     }
   };
 

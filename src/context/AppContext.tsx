@@ -347,8 +347,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Exclude any stale dummy/demo user
-          return parsed.filter((u) => normalizeMobile(u.mobile) !== '9876543210' && u.name !== 'Pardeep Patel');
+          return parsed;
         }
       }
       return [];
@@ -364,15 +363,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedAuth === 'true' && savedUserRaw) {
         const parsed = JSON.parse(savedUserRaw);
         if (parsed && (parsed.mobile || parsed.name)) {
-          // Stale demo user check: clean up if found
-          if (normalizeMobile(parsed.mobile) === '9876543210' || parsed.name === 'Pardeep Patel') {
-            try {
-              localStorage.removeItem('taskvibe_auth');
-              localStorage.removeItem('taskvibe_user');
-              localStorage.removeItem('taskvibe_active_mobile');
-            } catch {}
-            return false;
-          }
           return true;
         }
       }
@@ -511,36 +501,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLoggedIn, currentScreen]);
 
-  // One-time cleanup to purge legacy demo user and mock data from localStorage
+  // One-time cleanup of obsolete mock keys from localStorage
   useEffect(() => {
     try {
       localStorage.removeItem('taskvibe_plans');
       localStorage.removeItem('taskvibe_surveys');
       localStorage.removeItem('taskvibe_tasks');
       localStorage.removeItem('taskvibe_selected_plan');
-
-      const activeMob = localStorage.getItem('taskvibe_active_mobile');
-      const userRaw = localStorage.getItem('taskvibe_user');
-      if (activeMob && normalizeMobile(activeMob) === '9876543210') {
-        localStorage.removeItem('taskvibe_active_mobile');
-        localStorage.removeItem('taskvibe_auth');
-        localStorage.removeItem('taskvibe_user');
-        localStorage.removeItem('taskvibe_txs');
-      }
-      if (userRaw && userRaw.includes('Pardeep Patel')) {
-        localStorage.removeItem('taskvibe_user');
-        localStorage.removeItem('taskvibe_auth');
-      }
-      const regRaw = localStorage.getItem('taskvibe_registered_users');
-      if (regRaw && regRaw.includes('9876543210')) {
-        const parsed = JSON.parse(regRaw);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed.filter((u: any) => normalizeMobile(u.mobile) !== '9876543210' && u.name !== 'Pardeep Patel');
-          localStorage.setItem('taskvibe_registered_users', JSON.stringify(filtered));
-        }
-      }
     } catch (e) {
-      console.warn('LocalStorage cleanup error:', e);
+      console.warn('LocalStorage cleanup notice:', e);
     }
   }, []);
 
@@ -551,9 +520,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedUserRaw) {
         const parsed = JSON.parse(savedUserRaw);
         if (parsed && (parsed.mobile || parsed.name)) {
-          if (normalizeMobile(parsed.mobile) === '9876543210' || parsed.name === 'Pardeep Patel') {
-            return emptyUser;
-          }
           return parsed;
         }
       }
@@ -562,10 +528,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const parsedUsers: RegisteredUserAccount[] = savedUsersRaw ? JSON.parse(savedUsersRaw) : [];
       if (activeMobile) {
         const cleanActive = normalizeMobile(activeMobile);
-        if (cleanActive !== '9876543210') {
-          const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive && u.name !== 'Pardeep Patel');
-          if (matched) return matched;
-        }
+        const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
+        if (matched) return matched;
       }
       return emptyUser;
     } catch {
@@ -582,10 +546,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (savedAuth === 'true' && activeMobile) {
         const cleanActive = normalizeMobile(activeMobile);
-        if (cleanActive !== '9876543210') {
-          const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive && u.name !== 'Pardeep Patel');
-          if (matched && matched.transactions) return matched.transactions;
-        }
+        const matched = parsedUsers.find((u) => normalizeMobile(u.mobile) === cleanActive);
+        if (matched && matched.transactions) return matched.transactions;
       }
       return [];
     } catch {
@@ -1112,6 +1074,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 hasInitialUserCloudSyncRef.current = true;
                 skipNextFirestorePushRef.current = true;
                 setUser((curr) => {
+                  if (
+                    curr.balance === cloudSelf.balance &&
+                    curr.vipLevel === cloudSelf.vipLevel &&
+                    curr.totalEarned === cloudSelf.totalEarned &&
+                    curr.todayVideosWatched === cloudSelf.todayVideosWatched &&
+                    curr.isBlocked === cloudSelf.isBlocked &&
+                    curr.name === cloudSelf.name &&
+                    curr.password === cloudSelf.password &&
+                    curr.withdrawn === cloudSelf.withdrawn &&
+                    JSON.stringify(curr.purchasedPlanIds || []) === JSON.stringify(cloudSelf.purchasedPlanIds || [])
+                  ) {
+                    return curr;
+                  }
                   const mergedSelf = {
                     ...curr,
                     ...cloudSelf,
@@ -1122,10 +1097,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   return mergedSelf;
                 });
                 if (cloudSelf.transactions && Array.isArray(cloudSelf.transactions)) {
-                  setTransactions(cloudSelf.transactions);
-                  try {
-                    localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
-                  } catch {}
+                  setTransactions((prev) => {
+                    if (prev.length === cloudSelf.transactions!.length && JSON.stringify(prev) === JSON.stringify(cloudSelf.transactions)) {
+                      return prev;
+                    }
+                    try {
+                      localStorage.setItem('taskvibe_txs', JSON.stringify(cloudSelf.transactions));
+                    } catch {}
+                    return cloudSelf.transactions!;
+                  });
                 }
               } else if (!snapshot.metadata.fromCache) {
                 // If user was deleted from Cloud Firestore: log them out completely and clear local data
@@ -1599,7 +1579,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const cloudData = docSnap.data() as RegisteredUserAccount;
             skipNextFirestorePushRef.current = true;
             setUser((curr) => {
-              // Always sync full cloud state including VIP plans, todayVideosWatched, lastVideoWatchDate, balance, etc.
+              if (
+                curr.balance === cloudData.balance &&
+                curr.vipLevel === cloudData.vipLevel &&
+                curr.totalEarned === cloudData.totalEarned &&
+                curr.todayVideosWatched === cloudData.todayVideosWatched &&
+                curr.isBlocked === cloudData.isBlocked &&
+                curr.name === cloudData.name &&
+                curr.password === cloudData.password &&
+                curr.withdrawn === cloudData.withdrawn &&
+                JSON.stringify(curr.purchasedPlanIds || []) === JSON.stringify(cloudData.purchasedPlanIds || [])
+              ) {
+                return curr;
+              }
               const merged = { ...curr, ...cloudData };
               try {
                 localStorage.setItem('taskvibe_user', JSON.stringify(merged));
@@ -1607,7 +1599,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               return merged;
             });
             if (cloudData.transactions && Array.isArray(cloudData.transactions)) {
-              setTransactions(cloudData.transactions);
+              setTransactions((prev) => {
+                if (prev.length === cloudData.transactions!.length && JSON.stringify(prev) === JSON.stringify(cloudData.transactions)) {
+                  return prev;
+                }
+                try {
+                  localStorage.setItem('taskvibe_txs', JSON.stringify(cloudData.transactions));
+                } catch {}
+                return cloudData.transactions!;
+              });
             }
           }
         },
@@ -1621,19 +1621,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLoggedIn, user.mobile]);
 
-  // Keep registered users database synchronized with current user balance and transactions
+  // Keep registered users list synchronized with current user in local cache without recursive network calls
   useEffect(() => {
     if (isLoggedIn && user && user.mobile) {
       const cleanMobile = user.mobile.replace(/\D/g, '');
       if (cleanMobile.length >= 10) {
-        if (skipNextFirestorePushRef.current) {
-          skipNextFirestorePushRef.current = false;
-        } else if (hasInitialUserCloudSyncRef.current) {
-          syncUserToFirestore(user, transactions);
-        }
         setRegisteredUsers((prev) => {
           const idx = prev.findIndex((u) => u.mobile.replace(/\D/g, '') === cleanMobile);
           if (idx >= 0) {
+            const current = prev[idx];
+            if (
+              current.balance === user.balance &&
+              current.vipLevel === user.vipLevel &&
+              current.name === user.name &&
+              current.totalEarned === user.totalEarned &&
+              current.todayVideosWatched === user.todayVideosWatched
+            ) {
+              return prev;
+            }
             const nextList = [...prev];
             nextList[idx] = {
               ...nextList[idx],
@@ -1651,7 +1656,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     }
-  }, [user, transactions, isLoggedIn]);
+  }, [user.balance, user.vipLevel, user.totalEarned, user.name, user.todayVideosWatched, user.mobile, isLoggedIn]);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1910,9 +1915,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (window as any).handleAndroidBack = triggerBack;
   }, []);
 
-  const goBack = () => {
+  const goBack = React.useCallback(() => {
     handleBackActionRef.current('hardware');
-  };
+  }, []);
 
   // Attach Hardware, WebView, Android Keycode, and Browser listeners
   useEffect(() => {
@@ -2188,14 +2193,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
 
-    // Account not in local cache: connect to cloud database patiently
+    // Account not in local cache: connect to cloud database with timeout guard
     let cloudSnap: any = null;
     try {
       const userRef = doc(db, 'users', cleanMobile);
-      cloudSnap = await getDoc(userRef);
-    } catch (err) {
+      const getDocPromise = getDoc(userRef);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timeout')), 7000)
+      );
+      cloudSnap = (await Promise.race([getDocPromise, timeoutPromise])) as any;
+    } catch (err: any) {
       console.warn('Network slow/offline during login fetch:', err);
-      // No intrusive error popup on slow network; app simply waits for network to recover
+      showToast(
+        err?.message?.includes('timeout')
+          ? '⚠️ Server connection timed out. Please check your internet connection and retry.'
+          : '⚠️ Network connection issue. Please try again.'
+      );
       return false;
     }
 
@@ -6512,17 +6525,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } catch {}
 
-        // Immediate direct browser redirect to the official QO Pay checkout cashier page
         window.location.href = res.paymentUrl;
         return { success: true, paymentUrl: res.paymentUrl };
       } else {
         const msg = res.message || 'Payment gateway channel inactive';
-        showToast('ℹ️ QO Pay channel standby. Opening Dynamic UPI QR Code...');
+        showToast(`⚠️ ${msg}`);
         return { success: false, message: msg };
       }
     } catch (err: any) {
       const msg = err.message || 'Payment redirection error';
-      showToast('ℹ️ Opening Dynamic UPI QR Code...');
+      showToast(`⚠️ ${msg}`);
       return { success: false, message: msg };
     }
   };

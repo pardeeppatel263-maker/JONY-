@@ -166,6 +166,12 @@ const MainApp: React.FC = () => {
     isUpdateModalOpen,
     setIsUpdateModalOpen,
     exitApp,
+    isUPIModalOpen,
+    isWatchingVideo,
+    isTeamModalOpen,
+    isNotificationsOpen,
+    isEditProfileOpen,
+    isSurveyModalOpen,
   } = useApp();
   const [dismissUpdateModal, setDismissUpdateModal] = React.useState(false);
 
@@ -209,29 +215,35 @@ const MainApp: React.FC = () => {
       <MobileFrame>
         <ScreenRouter />
         <Toast />
-        <SurveyModal />
-        <UPIPaymentModal />
-        <VideoTaskModal />
-        <TeamModal />
-        <NotificationsModal />
-        <EditProfileModal />
-        <PromoCodeModal
-          isOpen={isPromoModalOpen}
-          onClose={() => setIsPromoModalOpen(false)}
-        />
-        <ExitConfirmationModal
-          isOpen={isExitModalOpen}
-          onClose={() => setIsExitModalOpen(false)}
-          onConfirmExit={exitApp}
-        />
+        {isSurveyModalOpen && <SurveyModal />}
+        {isUPIModalOpen && <UPIPaymentModal />}
+        {isWatchingVideo && <VideoTaskModal />}
+        {isTeamModalOpen && <TeamModal />}
+        {isNotificationsOpen && <NotificationsModal />}
+        {isEditProfileOpen && <EditProfileModal />}
+        {isPromoModalOpen && (
+          <PromoCodeModal
+            isOpen={isPromoModalOpen}
+            onClose={() => setIsPromoModalOpen(false)}
+          />
+        )}
+        {isExitModalOpen && (
+          <ExitConfirmationModal
+            isOpen={isExitModalOpen}
+            onClose={() => setIsExitModalOpen(false)}
+            onConfirmExit={exitApp}
+          />
+        )}
 
         {/* In-App 1-Click Update Modal */}
-        <AppUpdateModal
-          isOpen={isUpdateModalOpen}
-          onClose={() => {
-            setIsUpdateModalOpen(false);
-          }}
-        />
+        {isUpdateModalOpen && (
+          <AppUpdateModal
+            isOpen={isUpdateModalOpen}
+            onClose={() => {
+              setIsUpdateModalOpen(false);
+            }}
+          />
+        )}
       </MobileFrame>
     </EdgeSwipeBackGesture>
   );

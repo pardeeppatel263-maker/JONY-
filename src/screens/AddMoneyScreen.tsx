@@ -53,18 +53,15 @@ export const AddMoneyScreen: React.FC = () => {
       return;
     }
 
-    // Attempt direct QO Pay cashier checkout if enabled
+    // Direct QO Pay cashier checkout
     setIsRedirecting(true);
     try {
       const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
       if (!res.success) {
         setIsRedirecting(false);
-        // Fallback to Instant Dynamic UPI QR Code Modal
-        addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
       }
     } catch {
       setIsRedirecting(false);
-      addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
     }
   };
 

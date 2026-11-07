@@ -6516,13 +6516,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         window.location.href = res.paymentUrl;
         return { success: true, paymentUrl: res.paymentUrl };
       } else {
-        const msg = res.message || 'Unable to open QO Pay payment cashier';
-        showToast(`❌ ${msg}`);
+        const msg = res.message || 'Payment gateway channel inactive';
+        showToast('ℹ️ QO Pay channel standby. Opening Dynamic UPI QR Code...');
         return { success: false, message: msg };
       }
     } catch (err: any) {
       const msg = err.message || 'Payment redirection error';
-      showToast(`❌ ${msg}`);
+      showToast('ℹ️ Opening Dynamic UPI QR Code...');
       return { success: false, message: msg };
     }
   };
@@ -6560,8 +6560,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (saved) pendingOrder = JSON.parse(saved);
       } catch {}
 
-      const activeOrderId = orderIdFromUrl || pendingOrder?.orderId;
-      if (!activeOrderId) return;
+      // ONLY trigger return verification if user has actually returned with order query params in URL
+      if (!orderIdFromUrl) {
+        return;
+      }
+
+      const activeOrderId = orderIdFromUrl;
 
       const matchingDep = paymentDeposits.find(
         (d) =>
@@ -6569,21 +6573,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           d.qopayOrderId === activeOrderId ||
           (d.utrNumber && d.utrNumber.includes(activeOrderId))
       );
-      const depositId = matchingDep?.id || pendingOrder?.depositId;
-      if (!depositId) return;
+      const depositId = matchingDep?.id || pendingOrder?.depositId || activeOrderId;
 
       // Clean URL query parameters so user is not re-prompted on every refresh
-      if (orderIdFromUrl) {
-        try {
-          const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
-          window.history.replaceState({}, '', window.location.pathname + cleanHash);
-        } catch {}
-      }
+      try {
+        const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
+        window.history.replaceState({}, '', window.location.pathname + cleanHash);
+      } catch {}
 
       isVerifying = true;
       showToast('🔄 Verifying your QO Pay payment with gateway...');
 
-      for (let attempt = 1; attempt <= 4; attempt++) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           const verifyRes = await checkQoPayStatus(depositId, activeOrderId);
           if (verifyRes.isPaid || verifyRes.status === 'SUCCESS' || verifyRes.status === 'PAID') {
@@ -6600,8 +6601,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.warn(`[QO-Pay] Verification attempt ${attempt} notice:`, vErr);
         }
 
-        if (attempt < 4) {
-          await new Promise((r) => setTimeout(r, 3000));
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2000));
         }
       }
       isVerifying = false;
@@ -6614,7 +6615,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.removeEventListener('hashchange', checkActiveReturnOrder);
       window.removeEventListener('popstate', checkActiveReturnOrder);
     };
-  }, [paymentDeposits]);
+  }, []);
 
   const dismissAdminAlert = async (): Promise<void> => {
     setUser((prev) => ({

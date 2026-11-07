@@ -114,7 +114,7 @@ export async function callDirectQoPayCreateOrder(
         'Accept': 'application/json',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(16000),
+      signal: AbortSignal.timeout(6000),
     });
 
     const rawText = await res.text();
@@ -138,47 +138,9 @@ export async function callDirectQoPayCreateOrder(
       data?.payment_url ||
       null;
 
-    let deeplinks = resultObj.deeplinks || {};
-    let upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
-    let qrCode = upiIntent;
-    let collectUpi = '';
-    let collectName = 'ZoroTask Member';
-
-    if (paymentUrl && typeof paymentUrl === 'string' && paymentUrl.startsWith('http')) {
-      try {
-        const cashRes = await fetch(paymentUrl, { signal: AbortSignal.timeout(5000) });
-        const html = await cashRes.text();
-        const match = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/i) || html.match(/https?:\/\/[^\s"']+\/gateway\/cashier[^\s"']*/i);
-        if (match) {
-          const cashierUrl = match[1] || match[0];
-          const parsed = new URL(cashierUrl);
-          const orderNo = parsed.searchParams.get('orderNo');
-          if (orderNo) {
-            const queryUrl = `${parsed.origin}/gateway/cashier/query?orderNo=${encodeURIComponent(orderNo)}`;
-            const qRes = await fetch(queryUrl, { signal: AbortSignal.timeout(4000) });
-            const qJson = await qRes.json();
-            if (qJson?.code === 200 && qJson.data) {
-              const cData = qJson.data;
-              collectUpi = cData.collectUpi || '';
-              collectName = cData.collectName || collectName;
-              if (cData.qrCode) {
-                qrCode = cData.qrCode;
-                upiIntent = cData.qrCode;
-              }
-              deeplinks = {
-                upi: cData.otherUpiDeepLink || cData.qrCode || upiIntent,
-                phonepe: cData.phonePeDeepLink || deeplinks.phonepe,
-                gpay: cData.gpayDeepLink || deeplinks.gpay,
-                paytm: cData.paytmDeepLink || deeplinks.paytm,
-                bhim: cData.qrCode || deeplinks.bhim,
-              };
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[QO-Pay Direct] Cashier query resolution bypassed:', e);
-      }
-    }
+    const deeplinks = resultObj.deeplinks || {};
+    const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
+    const qrCode = upiIntent;
 
     if (data?.status === true || Boolean(paymentUrl)) {
       return {
@@ -187,8 +149,8 @@ export async function callDirectQoPayCreateOrder(
         paymentUrl,
         upiIntent,
         qrCode,
-        collectUpi,
-        collectName,
+        collectUpi: resultObj.collect_upi || '',
+        collectName: resultObj.collect_name || 'ZoroTask Member',
         deeplink: upiIntent,
         deeplinks,
         message: data?.message || 'QO Pay order initialized successfully',

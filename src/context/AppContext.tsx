@@ -1119,6 +1119,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     curr.name === cloudSelf.name &&
                     curr.password === cloudSelf.password &&
                     curr.withdrawn === cloudSelf.withdrawn &&
+                    curr.dailySpinsUsed === cloudSelf.dailySpinsUsed &&
+                    curr.lastSpinDate === cloudSelf.lastSpinDate &&
+                    curr.claimedMegaBonusAt === cloudSelf.claimedMegaBonusAt &&
+                    JSON.stringify(curr.scratchCards || []) === JSON.stringify(cloudSelf.scratchCards || []) &&
+                    JSON.stringify(curr.completedCustomTasks || []) === JSON.stringify(cloudSelf.completedCustomTasks || []) &&
                     JSON.stringify(curr.purchasedPlanIds || []) === JSON.stringify(cloudSelf.purchasedPlanIds || [])
                   ) {
                     return curr;
@@ -1668,6 +1673,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 curr.name === cloudData.name &&
                 curr.password === cloudData.password &&
                 curr.withdrawn === cloudData.withdrawn &&
+                curr.dailySpinsUsed === cloudData.dailySpinsUsed &&
+                curr.lastSpinDate === cloudData.lastSpinDate &&
+                curr.claimedMegaBonusAt === cloudData.claimedMegaBonusAt &&
+                JSON.stringify(curr.scratchCards || []) === JSON.stringify(cloudData.scratchCards || []) &&
+                JSON.stringify(curr.completedCustomTasks || []) === JSON.stringify(cloudData.completedCustomTasks || []) &&
                 JSON.stringify(curr.purchasedPlanIds || []) === JSON.stringify(cloudData.purchasedPlanIds || [])
               ) {
                 return curr;
@@ -3932,6 +3942,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTaskSubmissions((prev) => [newSub, ...prev]);
+    setDoc(doc(db, 'task_submissions', newSub.id), cleanFirestoreData(newSub)).catch(() => {});
 
     // Update tasks state: mark category survey as in_progress
     setTasks((prev) =>
@@ -4267,6 +4278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTaskSubmissions((prev) => [newSub, ...prev]);
+    setDoc(doc(db, 'task_submissions', newSub.id), cleanFirestoreData(newSub)).catch(() => {});
 
     // Immediately credit wallet balance & increment todayVideosWatched
     setUser((prev) => {
@@ -5355,14 +5367,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'reward',
     };
 
+    const newTotalEarned = (user.totalEarned || 0) + reward;
+    const updatedTxs = [newTx, ...transactions];
     const updatedUser: UserProfile = {
       ...user,
       balance: newBal,
       todayEarnings: newToday,
       totalEarnings: newTotal,
+      totalEarned: newTotalEarned,
     };
     setUser(updatedUser);
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions(updatedTxs);
     setNotifications((prev) => [newNotif, ...prev]);
 
     const updatedPromo: PromoCode = {
@@ -5375,14 +5390,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
-      localStorage.setItem('taskvibe_txs', JSON.stringify([newTx, ...transactions]));
+      localStorage.setItem('taskvibe_txs', JSON.stringify(updatedTxs));
       localStorage.setItem('zorotask_promo_codes', JSON.stringify(updatedPromos));
     } catch {}
 
     try {
       await setDoc(
         doc(db, 'users', userPhoneClean),
-        { balance: newBal, todayEarnings: newToday, totalEarnings: newTotal },
+        { balance: newBal, todayEarnings: newToday, totalEarnings: newTotal, totalEarned: newTotalEarned, transactions: cleanFirestoreData(updatedTxs) },
         { merge: true }
       );
       await setDoc(
@@ -5735,17 +5750,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast(`🎉 ₹${won.amount} Cash credited to your wallet!`);
     }
 
+    const updatedTotalEarned = (user.totalEarned || 0) + (won.isScratchCard ? 0 : won.amount);
     const updatedUser: UserProfile = {
       ...user,
       balance: updatedBalance,
       todayEarnings: updatedTodayEarnings,
       totalEarnings: updatedTotalEarnings,
+      totalEarned: updatedTotalEarned,
       dailySpinsUsed: spinsUsedToday,
       lastSpinDate: todayStr,
       scratchCards: updatedCards,
     };
 
     setUser(updatedUser);
+    try {
+      localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
+      localStorage.setItem('taskvibe_txs', JSON.stringify(newTxList));
+    } catch {}
 
     const cleanMob = normalizeMobile(user.mobile);
     if (cleanMob) {
@@ -5754,9 +5775,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           balance: updatedBalance,
           todayEarnings: updatedTodayEarnings,
           totalEarnings: updatedTotalEarnings,
+          totalEarned: updatedTotalEarned,
           dailySpinsUsed: spinsUsedToday,
           lastSpinDate: todayStr,
           scratchCards: updatedCards,
+          transactions: cleanFirestoreData(newTxList),
         }, { merge: true });
       } catch (err) {
         console.warn('Error saving spin result to Firestore:', err);
@@ -5812,16 +5835,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: `Revealed ₹${amt} from scratch card`,
     };
 
+    const newTotalEarned = (user.totalEarned || 0) + amt;
+    const updatedTxs = [newTx, ...transactions];
     const updatedUser: UserProfile = {
       ...user,
       balance: newBal,
       todayEarnings: newToday,
       totalEarnings: newTotal,
+      totalEarned: newTotalEarned,
       scratchCards: updatedCards,
     };
 
     setUser(updatedUser);
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions(updatedTxs);
+    try {
+      localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
+      localStorage.setItem('taskvibe_txs', JSON.stringify(updatedTxs));
+    } catch {}
 
     const cleanMob = normalizeMobile(user.mobile);
     if (cleanMob) {
@@ -5830,7 +5860,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           balance: newBal,
           todayEarnings: newToday,
           totalEarnings: newTotal,
+          totalEarned: newTotalEarned,
           scratchCards: updatedCards,
+          transactions: cleanFirestoreData(updatedTxs),
         }, { merge: true });
       } catch (err) {
         console.warn('Error saving scratch card claim to Firestore:', err);
@@ -5969,8 +6001,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAdminSettings(updatedSettings);
 
     try {
+      const updatedTxs = [bonusTx, ...transactions];
       localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
-      localStorage.setItem('taskvibe_transactions', JSON.stringify([bonusTx, ...transactions]));
+      localStorage.setItem('taskvibe_txs', JSON.stringify(updatedTxs));
       localStorage.setItem('taskvibe_admin_settings', JSON.stringify(updatedSettings));
 
       if (cleanMob) {
@@ -5983,6 +6016,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             totalEarned: newTotal,
             claimedMegaBonusAt: nowIso,
             claimedMegaBonusAmount: bonusAmount,
+            transactions: cleanFirestoreData(updatedTxs),
           },
           { merge: true }
         );

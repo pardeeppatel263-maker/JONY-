@@ -1,0 +1,11 @@
+{
+  "drampay": {
+    "merchantId": "58",
+    "secretKey": "VY5omctrIPAscv4oPHvcvt9oc6RNgnRo",
+    "baseUrl": "https://drampay.net"
+  },
+  "qopay": {
+    "userToken": "1ff0e5b2dd0096245789f08a9df5cc1c",
+    "baseUrl": "https://qo-pay.com"
+  }
+}

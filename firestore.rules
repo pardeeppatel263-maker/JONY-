@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default deny for any unlisted collection
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Users collection (doc ID is normalized mobile number)
+    match /users/{userId} {
+      allow list: if true;
+      allow get: if isValidId(userId);
+      allow create, update: if isValidId(userId)
+        && incoming() is map
+        && incoming().keys().size() <= 60;
+      allow delete: if isValidId(userId);
+    }
+
+    // Deleted account tombstones (prevent deletion of tombstone)
+    match /deleted_accounts/{accountId} {
+      allow get: if isValidId(accountId);
+      allow list: if true;
+      allow create, update: if isValidId(accountId) && incoming() is map;
+      allow delete: if false;
+    }
+
+    // Payment deposits
+    match /deposits/{depositId} {
+      allow list: if true;
+      allow get: if isValidId(depositId);
+      allow create, update: if isValidId(depositId)
+        && incoming() is map
+        && incoming().userMobile is string
+        && incoming().userMobile.size() <= 32
+        && incoming().amount is number
+        && incoming().amount >= 0;
+      allow delete: if isValidId(depositId);
+    }
+
+    // Support tickets
+    match /support_tickets/{ticketId} {
+      allow list: if true;
+      allow get: if isValidId(ticketId);
+      allow create, update: if isValidId(ticketId)
+        && incoming() is map
+        && incoming().userMobile is string
+        && incoming().userMobile.size() <= 32;
+      allow delete: if isValidId(ticketId);
+    }
+
+    // Promo codes
+    match /promo_codes/{promoId} {
+      allow list: if true;
+      allow get: if isValidId(promoId);
+      allow create, update: if isValidId(promoId)
+        && incoming() is map
+        && incoming().code is string
+        && incoming().code.size() <= 64;
+      allow delete: if isValidId(promoId);
+    }
+
+    // Master settings (protect from deletion)
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if true;
+      allow create, update: if isValidId(settingId) && incoming() is map;
+      allow delete: if false;
+    }
+
+    // Task submissions
+    match /task_submissions/{subId} {
+      allow list: if true;
+      allow get: if isValidId(subId);
+      allow create, update: if isValidId(subId)
+        && incoming() is map
+        && incoming().userMobile is string
+        && incoming().userMobile.size() <= 32;
+      allow delete: if isValidId(subId);
+    }
+
+    // VIP membership plans
+    match /vip_plans/{planId} {
+      allow list: if true;
+      allow get: if isValidId(planId);
+      allow create, update: if isValidId(planId) && incoming() is map;
+      allow delete: if isValidId(planId);
+    }
+
+    // Surveys
+    match /surveys/{surveyId} {
+      allow list: if true;
+      allow get: if isValidId(surveyId);
+      allow create, update: if isValidId(surveyId) && incoming() is map;
+      allow delete: if isValidId(surveyId);
+    }
+
+    // Custom tasks
+    match /custom_tasks/{taskId} {
+      allow list: if true;
+      allow get: if isValidId(taskId);
+      allow create, update: if isValidId(taskId) && incoming() is map;
+      allow delete: if isValidId(taskId);
+    }
+
+    // Admin audit logs (append-only: cannot be modified or deleted)
+    match /admin_audit_logs/{logId} {
+      allow list: if true;
+      allow get: if isValidId(logId);
+      allow create: if isValidId(logId) && incoming() is map;
+      allow update, delete: if false;
+    }
+  }
+}

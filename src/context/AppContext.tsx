@@ -4280,12 +4280,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTaskSubmissions((prev) => [newSub, ...prev]);
     setDoc(doc(db, 'task_submissions', newSub.id), cleanFirestoreData(newSub)).catch(() => {});
 
+    const currentUser = userRef.current?.mobile ? userRef.current : user;
+    const newBalance = (Number(currentUser.balance) || 0) + Number(reward);
+    const newTotalEarned = (Number(currentUser.totalEarned) || 0) + Number(reward);
+
     // Immediately credit wallet balance & increment todayVideosWatched
     setUser((prev) => {
       const updated = {
         ...prev,
-        balance: prev.balance + reward,
-        totalEarned: prev.totalEarned + reward,
+        balance: (Number(prev.balance) || 0) + Number(reward),
+        totalEarned: (Number(prev.totalEarned) || 0) + Number(reward),
         todayVideosWatched: nextCount,
         lastVideoWatchDate: todayDateStr,
       };
@@ -4300,11 +4304,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Update in registered accounts
     setRegisteredUsers((prev) =>
       prev.map((u) =>
-        normalizeMobile(u.mobile) === normalizeMobile(user.mobile)
+        normalizeMobile(u.mobile) === normalizeMobile(currentUser.mobile)
           ? {
               ...u,
-              balance: u.balance + reward,
-              totalEarned: u.totalEarned + reward,
+              balance: (Number(u.balance) || 0) + Number(reward),
+              totalEarned: (Number(u.totalEarned) || 0) + Number(reward),
               todayVideosWatched: nextCount,
               lastVideoWatchDate: todayDateStr,
             }
@@ -4327,23 +4331,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'verified',
       note: `30-second YouTube Video task completed (${nextCount}/${maxDailyVideos}). ₹${reward} credited to wallet!`,
     };
-    setTransactions((prev) => [newTx, ...prev]);
+    const updatedTxs = [newTx, ...transactions];
+    setTransactions(updatedTxs);
+    try {
+      localStorage.setItem('taskvibe_txs', JSON.stringify(updatedTxs));
+    } catch {}
 
     // IMMEDIATELY sync directly to Firestore across all devices!
-    const cleanMobile = normalizeMobile(user.mobile);
+    const cleanMobile = normalizeMobile(currentUser.mobile);
     if (cleanMobile && cleanMobile.length >= 10) {
       try {
-        setDoc(
+        await setDoc(
           doc(db, 'users', cleanMobile),
-          {
-            balance: user.balance + reward,
-            totalEarned: user.totalEarned + reward,
+          cleanFirestoreData({
+            balance: newBalance,
+            totalEarned: newTotalEarned,
             todayVideosWatched: nextCount,
             lastVideoWatchDate: todayDateStr,
-            transactions: [newTx, ...transactions],
-          },
+            transactions: updatedTxs,
+          }),
           { merge: true }
-        ).catch((err) => console.warn('Firestore user task sync warning:', err));
+        );
       } catch (err) {
         console.warn('Direct task sync to Firestore failed:', err);
       }

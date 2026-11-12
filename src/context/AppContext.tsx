@@ -630,6 +630,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [];
     }
   });
+  const paymentDepositsRef = useRef<PaymentDeposit[]>(paymentDeposits);
+  useEffect(() => {
+    paymentDepositsRef.current = paymentDeposits;
+  }, [paymentDeposits]);
 
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => {
     try {
@@ -3280,7 +3284,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const approvePaymentDeposit = async (depositId: string) => {
-    const deposit = paymentDeposits.find((d) => d.id === depositId);
+    let deposit = paymentDepositsRef.current.find((d) => d.id === depositId);
+    if (!deposit) {
+      try {
+        const depSnap = await getDoc(doc(db, 'deposits', depositId));
+        if (depSnap.exists()) {
+          deposit = depSnap.data() as PaymentDeposit;
+        }
+      } catch (e) {
+        console.warn('Fallback deposit fetch failed:', e);
+      }
+    }
     if (!deposit || deposit.status === 'approved') return;
 
     // 1. Update deposit in Firestore
@@ -3402,11 +3416,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           referralCode: ensuredReferralCode,
         };
       } else {
-        const totalCredited = deposit.amount + (deposit.bonus || 0);
+        const depositAmount = Number(deposit.amount) || 0;
+        let depositBonus = deposit.bonus !== undefined && deposit.bonus !== null ? Number(deposit.bonus) || 0 : 0;
+        if (!depositBonus && depositAmount > 0) {
+          const tiers = adminSettings?.addMoneyTiers || [];
+          const matchedTier = tiers.find((t) => Number(t.amount) === depositAmount);
+          if (matchedTier) {
+            depositBonus = Number(matchedTier.bonus) || 0;
+          }
+        }
+        const totalCredited = depositAmount + depositBonus;
         updatedUserData = {
           name: ensuredName,
-          balance: (resolvedUser.balance || 0) + totalCredited,
-          totalEarned: (resolvedUser.totalEarned || 0) + totalCredited,
+          balance: (Number(resolvedUser.balance) || 0) + totalCredited,
+          totalEarned: (Number(resolvedUser.totalEarned) || 0) + totalCredited,
           referralCode: ensuredReferralCode,
         };
       }
@@ -6462,13 +6485,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Only create upfront in-process deposit for general add_money.
       // For plan purchases, in-process state ONLY occurs AFTER member submits their 12-digit UTR!
+      const activeUser = userRef.current?.mobile ? userRef.current : user;
       let newDeposit: PaymentDeposit | null = null;
       if (depositType !== 'plan_purchase') {
         newDeposit = {
           id: depositId,
-          userId: user.mobile || 'Member',
-          userName: user.name || 'Member',
-          userMobile: user.mobile || '9876543210',
+          userId: activeUser.referralCode || activeUser.mobile || 'Member',
+          userName: (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : '') || 'Member',
+          userMobile: activeUser.mobile || '',
           amount,
           bonus,
           depositType,
@@ -6852,8 +6876,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: true, paymentUrl: targetUrl };
       } else {
         const msg = res.message || '';
-        // If plan purchase or empty response, suppress toast completely as requested
-        if (depositType !== 'plan_purchase' && msg && !msg.toLowerCase().includes('empty') && !msg.toLowerCase().includes('order response')) {
+        if (depositType === 'add_money') {
+          setPendingUPIAmount(amount);
+          setPendingUPIBonus(bonus);
+          setPendingDepositType('add_money');
+          setPendingPlanForUPI(null);
+          setIsUPIModalOpen(true);
+        } else if (msg && !msg.toLowerCase().includes('empty') && !msg.toLowerCase().includes('order response')) {
           showToast(`⚠️ ${msg}`);
         }
         return { success: false, message: msg };
@@ -6912,7 +6941,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const activeOrderId = orderIdFromUrl || pendingOrder?.orderId;
       if (!activeOrderId) return;
 
-      const matchingDep = paymentDeposits.find(
+      const matchingDep = paymentDepositsRef.current.find(
         (d) =>
           d.gatewayOrderId === activeOrderId ||
           d.qopayOrderId === activeOrderId ||

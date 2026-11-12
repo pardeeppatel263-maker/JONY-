@@ -43,7 +43,7 @@ export const AddMoneyScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout
+    // Direct QO Pay cashier checkout (falls back to UPI QR modal automatically if gateway fails)
     setIsRedirecting(true);
     try {
       const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
@@ -52,6 +52,7 @@ export const AddMoneyScreen: React.FC = () => {
       }
     } catch {
       setIsRedirecting(false);
+      addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
     }
   };
 

@@ -7003,15 +7003,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('🔄 Checking UTR & payment status...');
 
       let isPaidNow = false;
+      let verifyStatus = '';
       let verifiedUtr = utrFromUrl || '';
+      let gatewayConfirmed = false;
       try {
         const verifyRes = await checkQoPayStatus(depositId, activeOrderId);
+        verifyStatus = String(verifyRes.status || '').toUpperCase();
         if (verifyRes.utr) verifiedUtr = verifyRes.utr;
-        if (verifyRes.isPaid || verifyRes.status === 'SUCCESS' || verifyRes.status === 'PAID') {
+        if (verifyRes.isPaid || verifyStatus === 'SUCCESS' || verifyStatus === 'PAID' || verifyStatus === 'COMPLETED') {
           isPaidNow = true;
+          gatewayConfirmed = true;
+        } else if (verifyStatus === 'IN_PROCESS') {
+          gatewayConfirmed = true;
         }
       } catch (vErr) {
         console.warn('[QO-Pay] Return verification notice:', vErr);
+      }
+
+      const hasExplicitUtr = Boolean(utrFromUrl?.trim()) || Boolean(verifiedUtr?.trim());
+      const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
+
+      if (!isPaymentConfirmed) {
+        try {
+          localStorage.removeItem('taskvibe_pending_qopay_order');
+          localStorage.removeItem('taskvibe_pending_plan');
+        } catch {}
+        const isCancelledOrFailed =
+          verifyStatus === 'FAILED' ||
+          verifyStatus === 'CANCELLED' ||
+          verifyStatus === 'CANCELED' ||
+          verifyStatus === 'EXPIRED';
+        showToast(
+          isCancelledOrFailed
+            ? '❌ Payment cancelled or failed. Your plan was not placed in review.'
+            : '⚠️ Payment not completed. Please complete UPI payment to proceed.'
+        );
+        isVerifying = false;
+        return;
       }
 
       const userEnteredUtr = verifiedUtr ? formatDisplayUtr(verifiedUtr) : '';

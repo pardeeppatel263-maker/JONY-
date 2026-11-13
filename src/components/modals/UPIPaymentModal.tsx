@@ -37,6 +37,9 @@ export const UPIPaymentModal: React.FC = () => {
     verifyDramPayUtr,
     initiateQoPayment,
     checkQoPayStatus,
+    submitUserUtrForDeposit,
+    prefetchedQoPaySession,
+    clearPrefetchedQoPaySession,
     copyText,
     showToast,
   } = useApp();
@@ -124,6 +127,9 @@ export const UPIPaymentModal: React.FC = () => {
   const [qopayStatus, setQopayStatus] = useState<string>('0');
   const [isCheckingQopay, setIsCheckingQopay] = useState(false);
   const [qopaySuccess, setQopaySuccess] = useState(false);
+  const [qopayUtrInput, setQopayUtrInput] = useState('');
+  const [isSubmittingQopayUtr, setIsSubmittingQopayUtr] = useState(false);
+  const hasInitializedQoPayForOpenRef = useRef(false);
 
   // Active admin UPI ID & merchant from backend / settings
   const adminUpiId = adminSettings.adminUpiId || 'zorotask.pay@icici';
@@ -204,6 +210,7 @@ export const UPIPaymentModal: React.FC = () => {
   // Initialize or reset when modal opens
   useEffect(() => {
     if (!isUPIModalOpen) {
+      hasInitializedQoPayForOpenRef.current = false;
       setStep('pay');
       setUtrNumber('');
       setScreenshotData(null);
@@ -213,6 +220,8 @@ export const UPIPaymentModal: React.FC = () => {
       setQopayError(null);
       setQopayStatus('0');
       setQopaySuccess(false);
+      setQopayUtrInput('');
+      setIsSubmittingQopayUtr(false);
       setDrampayOrder(null);
       setDrampayError(null);
       setDrampayStatus('0');
@@ -226,7 +235,37 @@ export const UPIPaymentModal: React.FC = () => {
     }, 1000);
 
     if (paymentMode === 'qopay') {
-      createQoPaySession();
+      const freshPrefetch =
+        prefetchedQoPaySession &&
+        Date.now() - prefetchedQoPaySession.timestamp < 25000 &&
+        prefetchedQoPaySession.amount === pendingUPIAmount;
+
+      if (freshPrefetch && prefetchedQoPaySession) {
+        hasInitializedQoPayForOpenRef.current = true;
+        if (prefetchedQoPaySession.success && prefetchedQoPaySession.order) {
+          const ord = prefetchedQoPaySession.order;
+          setQopayOrder({
+            orderId: ord.orderId,
+            paymentUrl: ord.paymentUrl,
+            deeplink: ord.deeplink,
+            upiIntent: ord.upiIntent,
+            qrCode: ord.qrCode,
+            collectUpi: ord.collectUpi,
+            collectName: ord.collectName,
+            deeplinks: ord.deeplinks,
+            depositId: ord.depositId,
+          });
+          setQopayError(null);
+        } else {
+          // Gateway was in cooldown/timeout — do NOT spam create-order again; show Instant Dynamic QR cleanly
+          setQopayOrder(null);
+          setQopayError(prefetchedQoPaySession.message || 'Instant Dynamic UPI QR ready for fast payment.');
+        }
+        clearPrefetchedQoPaySession();
+      } else if (!hasInitializedQoPayForOpenRef.current) {
+        hasInitializedQoPayForOpenRef.current = true;
+        createQoPaySession();
+      }
     } else if (paymentMode === 'drampay') {
       createDramPaySession();
     }
@@ -261,11 +300,11 @@ export const UPIPaymentModal: React.FC = () => {
         if (res.message && !res.message.toLowerCase().includes('empty')) {
           setQopayError(res.message);
         } else {
-          setQopayError(null);
+          setQopayError('Instant Dynamic UPI QR ready for fast payment.');
         }
       }
     } catch {
-      setQopayError(null);
+      setQopayError('Instant Dynamic UPI QR ready for fast payment.');
     } finally {
       setQopayLoading(false);
     }
@@ -315,16 +354,71 @@ export const UPIPaymentModal: React.FC = () => {
     }
   };
 
-  const handleLaunchQoPayUPI = (targetDeeplink?: string) => {
+  const persistPendingQoPayReturnState = () => {
     try {
       localStorage.setItem('taskvibe_auth', 'true');
-      localStorage.setItem('taskvibe_screen', 'plan_detail');
+      localStorage.setItem(
+        'taskvibe_screen',
+        pendingDepositType === 'plan_purchase' ? 'plan_detail' : 'add_money'
+      );
       if (pendingPlanForUPI) {
         localStorage.setItem('taskvibe_pending_plan', JSON.stringify(pendingPlanForUPI));
       }
+      if (qopayOrder?.orderId) {
+        localStorage.setItem(
+          'taskvibe_pending_qopay_order',
+          JSON.stringify({
+            orderId: qopayOrder.orderId,
+            depositId: qopayOrder.depositId,
+            amount: pendingUPIAmount,
+            bonus: pendingUPIBonus,
+            depositType: pendingDepositType || 'add_money',
+            planId: pendingPlanForUPI?.id,
+            planLevel: pendingPlanForUPI?.level,
+            planTitle: pendingPlanForUPI?.title,
+            timestamp: Date.now(),
+          })
+        );
+      }
+    } catch {}
+  };
 
-      const rawTargetUri = targetDeeplink || qopayOrder?.upiIntent || qopayOrder?.deeplink || qopayOrder?.paymentUrl || upiIntentUri;
+  const handleQoPayInlineUtrSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUtr = qopayUtrInput.replace(/\s+/g, '').trim();
+    if (!cleanUtr || cleanUtr.length < 8) {
+      showToast('❌ Please enter a valid 12-digit UTR number');
+      return;
+    }
+    setIsSubmittingQopayUtr(true);
+    try {
+      if (qopayOrder?.orderId || qopayOrder?.depositId) {
+        const orderOrDepId = qopayOrder.orderId || qopayOrder.depositId || '';
+        const found = await submitUserUtrForDeposit(orderOrDepId, cleanUtr);
+        if (found) {
+          setIsUPIModalOpen(false);
+          return;
+        }
+      }
+      setIsUPIModalOpen(false);
+      await submitUPIPaymentProof(cleanUtr);
+    } finally {
+      setIsSubmittingQopayUtr(false);
+    }
+  };
+
+  const handleLaunchQoPayUPI = (targetDeeplink?: string) => {
+    try {
+      persistPendingQoPayReturnState();
+
+      const rawTargetUri =
+        targetDeeplink ||
+        qopayOrder?.upiIntent ||
+        qopayOrder?.deeplink ||
+        qopayOrder?.paymentUrl ||
+        upiIntentUri;
       const targetUri = sanitizeUpiPayeeName(rawTargetUri, adminMerchantName || 'ZoroTask');
+
       if (
         targetUri.startsWith('upi://') ||
         targetUri.startsWith('phonepe://') ||
@@ -333,13 +427,21 @@ export const UPIPaymentModal: React.FC = () => {
       ) {
         window.location.href = targetUri;
       } else if (targetUri.startsWith('http://') || targetUri.startsWith('https://')) {
+        let inIframe = false;
         try {
-          if (window.top && window.top !== window) {
-            window.top.location.href = targetUri;
-          } else {
-            window.location.href = targetUri;
-          }
+          inIframe = window.self !== window.top;
         } catch {
+          inIframe = true;
+        }
+        if (inIframe) {
+          const a = document.createElement('a');
+          a.href = targetUri;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
           window.location.href = targetUri;
         }
       } else {
@@ -484,10 +586,13 @@ export const UPIPaymentModal: React.FC = () => {
     }
   };
 
-  const handleLaunchDramPayUPI = (appName?: string) => {
+  const handleLaunchDramPayUPI = (_appName?: string) => {
     try {
       localStorage.setItem('taskvibe_auth', 'true');
-      localStorage.setItem('taskvibe_screen', 'plan_detail');
+      localStorage.setItem(
+        'taskvibe_screen',
+        pendingDepositType === 'plan_purchase' ? 'plan_detail' : 'add_money'
+      );
       if (pendingPlanForUPI) {
         localStorage.setItem('taskvibe_pending_plan', JSON.stringify(pendingPlanForUPI));
       }
@@ -497,7 +602,13 @@ export const UPIPaymentModal: React.FC = () => {
       window.location.href = targetUri;
     } catch {
       if (drampayOrder?.payUrl) {
-        window.open(drampayOrder.payUrl, '_blank');
+        const a = document.createElement('a');
+        a.href = drampayOrder.payUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
     }
   };
@@ -505,14 +616,17 @@ export const UPIPaymentModal: React.FC = () => {
   const handleLaunchManualUPIApp = () => {
     try {
       localStorage.setItem('taskvibe_auth', 'true');
-      localStorage.setItem('taskvibe_screen', 'plan_detail');
+      localStorage.setItem(
+        'taskvibe_screen',
+        pendingDepositType === 'plan_purchase' ? 'plan_detail' : 'add_money'
+      );
       if (pendingPlanForUPI) {
         localStorage.setItem('taskvibe_pending_plan', JSON.stringify(pendingPlanForUPI));
       }
       setStep('proof');
       window.location.href = upiIntentUri;
     } catch {
-      window.open(upiIntentUri, '_blank');
+      showToast('Scan the QR code or copy UPI ID above to complete payment.');
     }
   };
 
@@ -718,34 +832,40 @@ export const UPIPaymentModal: React.FC = () => {
               </div>
             )}
 
-            {/* NOTICE WHEN QOPAY CHANNEL IS INACTIVE OR STANDBY */}
-            {qopayError && !qopayLoading && (
-              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 text-left space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>QO Pay Provider Channel Notice</span>
+            {/* FRIENDLY NOTICE WHEN QOPAY CHANNEL IS BUSY OR IN STANDBY */}
+            {qopayError && !qopayLoading && !qopayOrder && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-left space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Instant UPI QR Ready</span>
                 </div>
-                <p className="text-[11px] text-amber-800 leading-snug">
-                  {typeof qopayError === 'string' && qopayError.includes('Channel inactive')
-                    ? 'QO Pay automated channel is in standby on provider. An Instant Dynamic UPI QR Code has been generated below for ₹' +
-                      pendingUPIAmount.toLocaleString('en-IN') +
-                      '. Scan with any UPI app to complete payment!'
+                <p className="text-[11px] text-emerald-800 leading-snug">
+                  {typeof qopayError === 'string' &&
+                  (qopayError.toLowerCase().includes('success rate') ||
+                    qopayError.toLowerCase().includes('channel inactive') ||
+                    qopayError.toLowerCase().includes('timed out'))
+                    ? `Scan the Dynamic UPI QR Code below (or tap 1-Click Pay) to pay ₹${pendingUPIAmount.toLocaleString(
+                        'en-IN'
+                      )}, then enter your 12-digit UTR below for fast verification!`
                     : qopayError}
                 </p>
                 <div className="flex items-center gap-2 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => setPaymentMode('manual')}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                    onClick={() => {
+                      setPaymentMode('manual');
+                      setStep('proof');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
                   >
-                    <UpiIcon size={14} /> Open Full QR &amp; UTR Form
+                    <UpiIcon size={14} /> Enter UTR / Screenshot
                   </button>
                   <button
                     type="button"
                     onClick={createQoPaySession}
-                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
-                    <RefreshCw className="w-3 h-3" /> Retry Gateway
+                    <RefreshCw className="w-3 h-3" /> Retry Live Gateway
                   </button>
                 </div>
               </div>
@@ -801,16 +921,16 @@ export const UPIPaymentModal: React.FC = () => {
                 {/* 1-Click Pay Buttons */}
                 <div className="space-y-1.5 pt-1">
                   {qopayOrder?.paymentUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.location.href = qopayOrder.paymentUrl!;
-                      }}
+                    <a
+                      href={qopayOrder.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => persistPendingQoPayReturnState()}
                       className="w-full py-3 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300 font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
                     >
                       <ExternalLink className="w-4 h-4 text-indigo-600" />
-                      <span>Proceed to Payment Page</span>
-                    </button>
+                      <span>Open QO Pay Payment Page</span>
+                    </a>
                   )}
 
                   <button
@@ -874,14 +994,48 @@ export const UPIPaymentModal: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Switch to UTR submission */}
+                  {/* Inline 12-Digit UTR Submission Box (Always works even if QO Pay cashier is slow/busy) */}
+                  <form
+                    onSubmit={handleQoPayInlineUtrSubmit}
+                    className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-2.5 text-left space-y-1.5"
+                  >
+                    <span className="text-[10px] font-bold text-indigo-950 uppercase tracking-wider block">
+                      Paid via QR or UPI? Enter 12-Digit UTR to Verify:
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={qopayUtrInput}
+                        onChange={(e) => setQopayUtrInput(e.target.value)}
+                        placeholder="e.g. 427819283749"
+                        className="flex-1 px-2.5 py-2 bg-white border border-indigo-300 rounded-lg text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSubmittingQopayUtr || qopayUtrInput.trim().length < 8}
+                        className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                      >
+                        {isSubmittingQopayUtr ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Submit UTR</span>
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Switch to Screenshot + UTR submission */}
                   <button
                     type="button"
-                    onClick={() => setPaymentMode('manual')}
-                    className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-xs"
+                    onClick={() => {
+                      setPaymentMode('manual');
+                      setStep('proof');
+                    }}
+                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition"
                   >
-                    <span>Paid via QR? Enter 12-Digit UTR to Verify</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Also Upload Payment Screenshot</span>
                   </button>
                 </div>
 
@@ -1250,7 +1404,7 @@ export const UPIPaymentModal: React.FC = () => {
             {/* SCREENSHOT UPLOAD BOX */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-700 uppercase tracking-wide block">
-                Payment Screenshot *
+                Payment Screenshot (Optional)
               </label>
 
               <input

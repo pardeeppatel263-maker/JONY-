@@ -13,6 +13,7 @@ import {
   onSnapshot,
   increment,
   getDocs,
+  getDocsFromServer,
   query,
   where,
   limit,
@@ -125,10 +126,10 @@ interface AppContextType {
   submitUPIPaymentProof: (utrNumber: string, screenshotUrl?: string) => void;
   submitUserUtrForDeposit: (orderIdOrDepositId: string, utrNumber: string) => Promise<boolean>;
   completeUPIPayment: () => void;
-  approvePaymentDeposit: (depositId: string) => void;
+  approvePaymentDeposit: (depositId: string, overrideDeposit?: PaymentDeposit) => Promise<void> | void;
   rejectPaymentDeposit: (depositId: string, reason?: string) => void;
   buyPlanWithWallet: (plan: PlanItem) => { success: boolean; message: string };
-  buyPlanWithUPI: (plan: PlanItem) => void;
+  buyPlanWithUPI: (plan: PlanItem, openModalDirectly?: boolean) => void;
   requestWithdrawal: (
     amount: number,
     payoutMethodOrUpiId: string | 'upi' | 'bank',
@@ -320,7 +321,8 @@ interface AppContextType {
   }>;
   checkQoPayStatus: (
     depositId: string,
-    orderId: string
+    orderId: string,
+    skipAutoApprove?: boolean
   ) => Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string }>;
   disburseQoPayout: (
     txId: string,
@@ -333,7 +335,16 @@ interface AppContextType {
     bonus: number,
     depositType: 'add_money' | 'plan_purchase',
     plan?: PlanItem
-  ) => Promise<{ success: boolean; paymentUrl?: string; message?: string }>;
+  ) => Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; message?: string }>;
+  prefetchedQoPaySession: {
+    amount: number;
+    depositType: 'add_money' | 'plan_purchase';
+    success: boolean;
+    order?: any;
+    message?: string;
+    timestamp: number;
+  } | null;
+  clearPrefetchedQoPaySession: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -341,6 +352,26 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const normalizeMobile = (m?: string | null) => {
   const digits = (m || '').replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : digits;
+};
+
+const extractReferralCode = (raw?: string | null): string => {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('invite=') || trimmed.includes('ref=')) {
+    try {
+      const url = trimmed.startsWith('http') ? new URL(trimmed) : new URL(`https://zorotask.app/?${trimmed.split('?').pop() || ''}`);
+      const extracted = url.searchParams.get('invite') || url.searchParams.get('ref');
+      if (extracted) {
+        return extracted.trim().toUpperCase().replace(/\s+/g, '');
+      }
+    } catch {
+      const m = trimmed.match(/[?&](?:invite|ref)=([a-zA-Z0-9_-]+)/i);
+      if (m && m[1]) {
+        return m[1].trim().toUpperCase();
+      }
+    }
+  }
+  return trimmed.toUpperCase().replace(/\s+/g, '');
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -380,14 +411,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('invite') || urlParams.get('ref') || '';
+        let code = urlParams.get('invite') || urlParams.get('ref') || '';
+        if (!code && window.location.hash.includes('?')) {
+          const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+          code = hashParams.get('invite') || hashParams.get('ref') || '';
+        }
         if (code) {
-          const clean = code.trim().toUpperCase();
+          const clean = extractReferralCode(code);
           localStorage.setItem('taskvibe_pending_invite', clean);
           return clean;
         }
       }
-      return localStorage.getItem('taskvibe_pending_invite') || '';
+      return extractReferralCode(localStorage.getItem('taskvibe_pending_invite') || '');
     } catch {
       return '';
     }
@@ -593,6 +628,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return initialPlans;
     }
   });
+  const plansRef = useRef<PlanItem[]>(plans);
+  useEffect(() => {
+    plansRef.current = plans;
+  }, [plans]);
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(() => {
     try {
       const saved = localStorage.getItem('taskvibe_selected_plan');
@@ -859,12 +898,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return defaultAdminSettings;
     }
   });
+  const adminSettingsRef = useRef<AdminSettings>(adminSettings);
+  useEffect(() => {
+    adminSettingsRef.current = adminSettings;
+  }, [adminSettings]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Modals
   const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
   const [isUPIModalOpen, setIsUPIModalOpen] = useState(false);
+  const isUPIModalOpenRef = useRef(isUPIModalOpen);
+  useEffect(() => {
+    isUPIModalOpenRef.current = isUPIModalOpen;
+  }, [isUPIModalOpen]);
+  const [prefetchedQoPaySession, setPrefetchedQoPaySession] = useState<{
+    amount: number;
+    depositType: 'add_money' | 'plan_purchase';
+    success: boolean;
+    order?: any;
+    message?: string;
+    timestamp: number;
+  } | null>(null);
+  const clearPrefetchedQoPaySession = () => setPrefetchedQoPaySession(null);
+  const pendingQoPayDepositsRef = useRef<Record<string, PaymentDeposit>>({});
   const [pendingUPIAmount, setPendingUPIAmount] = useState(1000);
   const [pendingUPIBonus, setPendingUPIBonus] = useState(150);
   const [pendingDepositType, setPendingDepositType] = useState<'add_money' | 'plan_purchase'>('add_money');
@@ -1066,9 +1123,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Real-time listener: sync all registered users ONLY when Admin Panel is active (saves Firestore read quota)
+  // Real-time listener: sync registered users when Admin Panel, Referral & Earn, or Team Modal is active
   useEffect(() => {
-    if (currentScreen !== 'admin') return;
+    if (currentScreen !== 'admin' && currentScreen !== 'referral_earn' && !isTeamModalOpen) return;
     try {
       const usersCol = collection(db, 'users');
       const unsubscribe = onSnapshot(
@@ -1082,7 +1139,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             if (!data.referralCode && (data.mobile || docSnap.id)) {
               const cleanM = normalizeMobile(data.mobile || docSnap.id);
-              data.referralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+              data.referralCode = cleanM.length >= 6 ? `ZT${cleanM.slice(-6)}` : `ZT${Math.floor(100000 + Math.random() * 900000)}`;
               if (cleanM) {
                 setDoc(doc(db, 'users', cleanM), { referralCode: data.referralCode }, { merge: true }).catch(() => {});
               }
@@ -1119,6 +1176,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     curr.name === cloudSelf.name &&
                     curr.password === cloudSelf.password &&
                     curr.withdrawn === cloudSelf.withdrawn &&
+                    curr.referralEarnings === cloudSelf.referralEarnings &&
+                    curr.teamTaskEarnings === cloudSelf.teamTaskEarnings &&
                     curr.dailySpinsUsed === cloudSelf.dailySpinsUsed &&
                     curr.lastSpinDate === cloudSelf.lastSpinDate &&
                     curr.claimedMegaBonusAt === cloudSelf.claimedMegaBonusAt &&
@@ -1173,7 +1232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Could not attach Firestore users listener:', err);
     }
-  }, [currentScreen]);
+  }, [currentScreen, isTeamModalOpen]);
 
   // Real-time deletion guard: ONLY terminates session if Admin explicitly created a tombstone in 'deleted_accounts'
   useEffect(() => {
@@ -1673,6 +1732,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 curr.name === cloudData.name &&
                 curr.password === cloudData.password &&
                 curr.withdrawn === cloudData.withdrawn &&
+                curr.referralEarnings === cloudData.referralEarnings &&
+                curr.teamTaskEarnings === cloudData.teamTaskEarnings &&
                 curr.dailySpinsUsed === cloudData.dailySpinsUsed &&
                 curr.lastSpinDate === cloudData.lastSpinDate &&
                 curr.claimedMegaBonusAt === cloudData.claimedMegaBonusAt &&
@@ -2275,7 +2336,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (snap.exists()) {
             const fresh = snap.data() as RegisteredUserAccount;
             if (!fresh.referralCode) {
-              fresh.referralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+              fresh.referralCode = cleanMobile.length >= 6 ? `ZT${cleanMobile.slice(-6)}` : `ZT${Math.floor(100000 + Math.random() * 900000)}`;
               setDoc(doc(db, 'users', cleanMobile), { referralCode: fresh.referralCode }, { merge: true }).catch(() => {});
             }
             setUser((curr) => ({ ...curr, ...fresh }));
@@ -2322,7 +2383,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (!matched.referralCode) {
-      matched.referralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+      matched.referralCode = cleanMobile.length >= 6 ? `ZT${cleanMobile.slice(-6)}` : `ZT${Math.floor(100000 + Math.random() * 900000)}`;
       setDoc(doc(db, 'users', cleanMobile), { referralCode: matched.referralCode }, { merge: true }).catch(() => {});
     }
 
@@ -2488,28 +2549,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Validate referral code if provided
     let matchedReferrer: RegisteredUserAccount | null = null;
     let matchedReferrerDocId = '';
-    const cleanRefCode = refCode ? refCode.trim().toUpperCase() : '';
+    const cleanRefCode = extractReferralCode(refCode);
     if (cleanRefCode) {
-      matchedReferrer =
-        registeredUsers.find(
-          (u) => u.referralCode && u.referralCode.trim().toUpperCase() === cleanRefCode
-        ) || null;
-
-      // Also check in Firestore if not in local memory
-      if (!matchedReferrer) {
-        try {
-          const qSnap = await getDocs(
-            query(collection(db, 'users'), where('referralCode', '==', cleanRefCode), limit(1))
-          );
-          if (!qSnap.empty) {
-            matchedReferrerDocId = qSnap.docs[0].id;
-            matchedReferrer = qSnap.docs[0].data() as RegisteredUserAccount;
-          }
-        } catch (e) {
-          console.warn('Referral check in Firestore failed:', e);
-        }
-      } else {
-        matchedReferrerDocId = normalizeMobile(matchedReferrer.mobile);
+      const resolvedRef = await findUserByReferralCode(cleanRefCode);
+      if (resolvedRef) {
+        matchedReferrer = resolvedRef.user;
+        matchedReferrerDocId = resolvedRef.docId;
       }
 
       // Allow master referral codes as valid default fallback
@@ -2523,48 +2568,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
 
-      // 1. Anti-Fraud: Strictly block self-referral
+      // 1. Anti-Fraud: Strictly block self-referral by same phone number
       if (matchedReferrer && normalizeMobile(matchedReferrer.mobile) === cleanMobile) {
         showToast('❌ Self-referral is not permitted. You cannot refer your own number!');
         return false;
       }
     }
 
-    // 1. Device Fingerprint & Multi-Account Detection
+    // 1. Device Fingerprint & Multi-Account Detection (flag for Admin review, do not falsely block OTP-verified numbers)
     const currentDevice = typeof window !== 'undefined'
       ? `${(navigator.userAgent || '').slice(0, 40)}_${window.screen?.width || 0}x${window.screen?.height || 0}_${navigator.language || ''}`
       : 'device_unknown';
 
-    if (matchedReferrer && matchedReferrer.deviceFingerprint && matchedReferrer.deviceFingerprint === currentDevice) {
-      showToast('❌ Self-referral blocked: Both accounts belong to the same device!');
-      return false;
-    }
-
     const sameDeviceAccounts = registeredUsers.filter((u) => u.deviceFingerprint && u.deviceFingerprint === currentDevice);
-    const isSuspicious = sameDeviceAccounts.length >= 2;
-    const suspiciousReason = isSuspicious ? `Multi-account cluster: ${sameDeviceAccounts.length + 1} accounts on same device` : '';
+    const isSameDeviceAsReferrer = Boolean(
+      matchedReferrer && matchedReferrer.deviceFingerprint && matchedReferrer.deviceFingerprint === currentDevice
+    );
+    const isSuspicious = isSameDeviceAsReferrer || sameDeviceAccounts.length >= 2;
+    const suspiciousReason = isSameDeviceAsReferrer
+      ? `Registered from same device profile as referrer (${matchedReferrer?.referralCode || cleanRefCode})`
+      : isSuspicious
+      ? `Multi-account cluster: ${sameDeviceAccounts.length + 1} accounts on same device`
+      : '';
 
-    // Generate unique referral code for this new user
+    // Generate unique referral code for this new user (verified against both memory & Firestore)
     let newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
-    while (registeredUsers.some((u) => u.referralCode === newReferralCode)) {
-      newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const existsInMem = registeredUsers.some(
+        (u) => u.referralCode && u.referralCode.trim().toUpperCase() === newReferralCode
+      );
+      if (existsInMem) {
+        newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+        continue;
+      }
+      try {
+        const collisionSnap = await getDocs(
+          query(collection(db, 'users'), where('referralCode', '==', newReferralCode), limit(1))
+        );
+        if (!collisionSnap.empty) {
+          newReferralCode = `ZT${Math.floor(100000 + Math.random() * 900000)}`;
+          continue;
+        }
+      } catch {}
+      break;
     }
 
     const initialTxs: TransactionItem[] = [];
+
+    const normalizedReferredBy = matchedReferrer?.referralCode
+      ? matchedReferrer.referralCode.trim().toUpperCase()
+      : cleanRefCode === 'ZOROTASK123' || cleanRefCode === 'TV982143' || cleanRefCode === 'TASKVIBE123'
+      ? 'ZT982143'
+      : cleanRefCode || '';
 
     const newUser: RegisteredUserAccount = {
       name: name.trim(),
       mobile: `+91 ${cleanMobile}`,
       email: email ? email.trim() : `${cleanMobile}@zorotask.in`,
       referralCode: newReferralCode,
-      referredBy: matchedReferrer
-        ? matchedReferrer.referralCode
-        : cleanRefCode
-        ? cleanRefCode
-        : '',
+      referredBy: normalizedReferredBy,
       balance: 0,
       totalEarned: 0,
       withdrawn: 0,
+      referralEarnings: 0,
+      teamTaskEarnings: 0,
       upiId: `${cleanMobile}@upi`,
       joinedDate: new Date().toLocaleDateString('en-IN', {
         day: 'numeric',
@@ -2585,13 +2652,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transactions: [],
     };
 
-    // Save new user to Firestore cloud database
-    try {
-      const userRef = doc(db, 'users', cleanMobile);
-      await setDoc(userRef, cleanFirestoreData(newUser));
-      console.log('✓ Successfully saved new registered user to Firestore users/', cleanMobile);
-    } catch (err) {
-      console.error('Failed to save user to Firestore', err);
+    // Save new user to Firestore cloud database (with retry so referralCode is immediately live)
+    let savedToCloud = false;
+    for (let saveAttempt = 0; saveAttempt < 2; saveAttempt++) {
+      try {
+        const userRef = doc(db, 'users', cleanMobile);
+        await setDoc(userRef, cleanFirestoreData(newUser));
+        savedToCloud = true;
+        console.log('✓ Successfully saved new registered user to Firestore users/', cleanMobile, 'refCode:', newReferralCode);
+        break;
+      } catch (err) {
+        console.error(`Failed to save user to Firestore (attempt ${saveAttempt + 1}):`, err);
+      }
+    }
+    if (!savedToCloud) {
+      showToast('⚠️ Network issue while syncing account to cloud. Please check your connection and try again.');
+      return false;
     }
 
     // Link referral relationship:
@@ -2632,6 +2708,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentScreen('home');
     setActiveTab('home');
     setHistoryStack(['home']);
+    setPendingInviteCode('');
 
     try {
       localStorage.setItem('taskvibe_auth', 'true');
@@ -2639,6 +2716,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('taskvibe_user', JSON.stringify(newUser));
       localStorage.setItem('taskvibe_txs', JSON.stringify(initialTxs));
       localStorage.setItem('taskvibe_last_registered_mobile', cleanMobile);
+      localStorage.removeItem('taskvibe_pending_invite');
       window.history.replaceState({ zorotask_app: true, screen: 'home' }, '', '#home');
     } catch (e) {
       console.warn(e);
@@ -2669,12 +2747,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addMoneyInitiate = (amount: number, bonus: number) => {
+    setPrefetchedQoPaySession(null);
     setPendingUPIAmount(amount);
     setPendingUPIBonus(bonus);
     setPendingDepositType('add_money');
     setPendingPlanForUPI(null);
 
-    // If manual payment is NOT enabled by Admin (default: false), directly open QO Pay cashier without modal popup!
+    // If manual payment is NOT enabled by Admin (default: false), start QO Pay (falls back to QR modal automatically if needed)
     if (adminSettings.manualPaymentEnabled !== true) {
       startDirectQoPayPayment(amount, bonus, 'add_money');
       return;
@@ -2685,8 +2764,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Real-time referral code validator helper (synchronous check against memory and defaults)
   const validateReferralCode = (code: string): { isValid: boolean; referrerName?: string } => {
-    if (!code || !code.trim()) return { isValid: false };
-    const clean = code.trim().toUpperCase();
+    const clean = extractReferralCode(code);
+    if (!clean) return { isValid: false };
+    const match = registeredUsers.find(
+      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
+    );
+    if (match) {
+      return { isValid: true, referrerName: match.name || 'Member' };
+    }
     if (
       clean === 'ZT982143' ||
       clean === 'ZOROTASK123' ||
@@ -2695,13 +2780,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) {
       return { isValid: true, referrerName: 'ZoroTask Official' };
     }
-    const match = registeredUsers.find(
+    return { isValid: false };
+  };
+
+  // Helper to resolve an upline user authoritatively from Firestore (with memory fallback)
+  const findUserByReferralCode = async (
+    code: string
+  ): Promise<{ user: RegisteredUserAccount; docId: string } | null> => {
+    const rawClean = extractReferralCode(code);
+    if (!rawClean) return null;
+    const clean =
+      rawClean === 'ZOROTASK123' || rawClean === 'TV982143' || rawClean === 'TASKVIBE123'
+        ? 'ZT982143'
+        : rawClean;
+
+    // 1. Indexed Firestore query (fastest server-backed lookup)
+    try {
+      let qSnap = await getDocsFromServer(
+        query(collection(db, 'users'), where('referralCode', '==', clean), limit(1))
+      ).catch(() =>
+        getDocs(query(collection(db, 'users'), where('referralCode', '==', clean), limit(1)))
+      );
+
+      if (!qSnap.empty) {
+        const docSnap = qSnap.docs[0];
+        const cloudData = docSnap.data() as RegisteredUserAccount;
+        const docId = normalizeMobile(cloudData.mobile) || docSnap.id;
+        return { user: cloudData, docId };
+      }
+    } catch (e) {
+      console.warn('Indexed referralCode query warning:', e);
+    }
+
+    // 2. Fallback scan against Firestore users collection (handles lowercase/whitespace or missing referralCode backfill)
+    try {
+      const allSnap = await getDocsFromServer(collection(db, 'users')).catch(() =>
+        getDocs(collection(db, 'users'))
+      );
+      for (const docSnap of allSnap.docs) {
+        const data = docSnap.data() as RegisteredUserAccount;
+        const cleanMob = normalizeMobile(data.mobile || docSnap.id);
+        const storedCode = (data.referralCode || '').trim().toUpperCase();
+        const fallbackCode = cleanMob ? `ZT${cleanMob.slice(-6)}` : '';
+        if (storedCode === clean || (!storedCode && fallbackCode === clean)) {
+          if (!storedCode && cleanMob) {
+            data.referralCode = clean;
+            setDoc(doc(db, 'users', cleanMob), { referralCode: clean }, { merge: true }).catch(() => {});
+          }
+          return { user: data, docId: cleanMob || docSnap.id };
+        }
+      }
+    } catch (e) {
+      console.warn('Fallback users scan warning:', e);
+    }
+
+    // 3. Last-resort check local memory (e.g., offline)
+    const inMem = registeredUsers.find(
       (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
     );
-    if (match) {
-      return { isValid: true, referrerName: match.name || 'Member' };
+    if (inMem) {
+      return { user: inMem, docId: normalizeMobile(inMem.mobile) };
     }
-    return { isValid: false };
+
+    return null;
   };
 
   // Asynchronous referral validator: Checks Firestore cloud database if not yet cached locally
@@ -2710,17 +2851,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<{ isValid: boolean; referrerName?: string }> => {
     const syncCheck = validateReferralCode(code);
     if (syncCheck.isValid) return syncCheck;
-    if (!code || !code.trim()) return { isValid: false };
-    const clean = code.trim().toUpperCase();
+    const clean = extractReferralCode(code);
+    if (!clean) return { isValid: false };
     try {
-      const qSnap = await getDocs(
-        query(collection(db, 'users'), where('referralCode', '==', clean), limit(1))
-      );
-      if (!qSnap.empty) {
-        const cloudUser = qSnap.docs[0].data() as RegisteredUserAccount;
-        // Cache this user into local state
+      const found = await findUserByReferralCode(clean);
+      if (found) {
+        const cloudUser = found.user;
         setRegisteredUsers((prev) => {
-          if (!prev.some((u) => normalizeMobile(u.mobile) === normalizeMobile(cloudUser.mobile))) {
+          const cleanMob = normalizeMobile(cloudUser.mobile) || found.docId;
+          if (!prev.some((u) => normalizeMobile(u.mobile) === cleanMob)) {
             const next = [...prev, cloudUser];
             try {
               localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
@@ -2735,35 +2874,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('validateReferralCodeAsync Firestore error:', err);
     }
     return { isValid: false };
-  };
-
-  // Helper to resolve an upline user either from memory or directly from Firestore
-  const findUserByReferralCode = async (
-    code: string
-  ): Promise<{ user: RegisteredUserAccount; docId: string } | null> => {
-    if (!code || !code.trim()) return null;
-    const clean = code.trim().toUpperCase();
-
-    // 1. Check local memory
-    const inMem = registeredUsers.find(
-      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
-    );
-    if (inMem) {
-      return { user: inMem, docId: normalizeMobile(inMem.mobile) };
-    }
-
-    // 2. Check Firestore cloud database
-    try {
-      const q = query(collection(db, 'users'), where('referralCode', '==', clean), limit(1));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const cloudData = snap.docs[0].data() as RegisteredUserAccount;
-        return { user: cloudData, docId: snap.docs[0].id };
-      }
-    } catch (e) {
-      console.warn('Error finding user by referral code in Firestore:', e);
-    }
-    return null;
   };
 
   // Manual one-tap sync for referral wallet and team counts from Firestore
@@ -2818,30 +2928,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     if (!buyerUser.referredBy || planPrice <= 0) return;
 
+    const buyerClean = normalizeMobile(buyerUser.mobile);
+    const visitedUplines = new Set<string>();
+    if (buyerClean) visitedUplines.add(buyerClean);
+
+    const activeBonusSetting = adminSettingsRef.current?.referralBonus ?? adminSettings.referralBonus ?? 100;
+
     try {
       // 1. Level 1 Upline (Direct Referrer) - 4.5% Commission + ₹100 Referral Bonus on VIP Plan Purchase!
       const upline1Data = await findUserByReferralCode(buyerUser.referredBy);
-      if (upline1Data) {
+      if (upline1Data && upline1Data.docId && !visitedUplines.has(upline1Data.docId)) {
         const upline1 = upline1Data.user;
         const u1Clean = upline1Data.docId;
+        visitedUplines.add(u1Clean);
 
         // 4.5% VIP Plan Commission
         const comm1 = Math.round(planPrice * 0.045 * 100) / 100;
 
         // ₹100 Referral Bonus awarded when invited user buys a VIP plan!
         const isFirstPlan = !buyerUser.firstPlanReferralBonusPaid;
-        const refBonus = isFirstPlan ? (adminSettings.referralBonus || 100) : 0;
+        const refBonus = isFirstPlan ? activeBonusSetting : 0;
         const totalU1Reward = comm1 + refBonus;
 
         if (totalU1Reward > 0) {
           const u1Txs: TransactionItem[] = [];
+          const nowTs = Date.now();
+          const dayInfo = getFormattedDayInfo(nowTs);
 
           if (comm1 > 0) {
             u1Txs.push({
-              id: `tx_ref1_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              id: `tx_ref1_${nowTs}_${Math.random().toString(36).substring(2, 6)}`,
               type: 'referral_reward',
               title: `Level 1 Referral Commission (4.5%)`,
-              date: 'Today',
+              date: dayInfo.displayString,
+              timestamp: nowTs,
               amount: comm1,
               isCredit: true,
               status: 'verified',
@@ -2851,10 +2971,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (refBonus > 0) {
             u1Txs.push({
-              id: `tx_ref_bonus_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              id: `tx_ref_bonus_${nowTs}_${Math.random().toString(36).substring(2, 6)}`,
               type: 'referral_reward',
               title: `Referral Plan Activation Bonus (+₹${refBonus})`,
-              date: 'Today',
+              date: dayInfo.displayString,
+              timestamp: nowTs,
               amount: refBonus,
               isCredit: true,
               status: 'verified',
@@ -2873,7 +2994,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   balance: (u.balance || 0) + totalU1Reward,
                   totalEarned: (u.totalEarned || 0) + totalU1Reward,
                   referralEarnings: (u.referralEarnings || 0) + totalU1Reward,
-                  transactions: [...u1Txs, ...(u.transactions || [])],
+                  transactions: [...u1Txs, ...(u.transactions || [])].slice(0, 200),
                 };
               }
               return u;
@@ -2884,7 +3005,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 balance: (upline1.balance || 0) + totalU1Reward,
                 totalEarned: (upline1.totalEarned || 0) + totalU1Reward,
                 referralEarnings: (upline1.referralEarnings || 0) + totalU1Reward,
-                transactions: [...u1Txs, ...(upline1.transactions || [])],
+                transactions: [...u1Txs, ...(upline1.transactions || [])].slice(0, 200),
               });
             }
             try {
@@ -2894,11 +3015,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
 
           // If current logged-in user is Level 1 upline
-          if (normalizeMobile(user.mobile) === u1Clean) {
+          if (normalizeMobile(userRef.current.mobile) === u1Clean) {
             setUser((curr) => ({
               ...curr,
-              balance: curr.balance + totalU1Reward,
-              totalEarned: curr.totalEarned + totalU1Reward,
+              balance: (curr.balance || 0) + totalU1Reward,
+              totalEarned: (curr.totalEarned || 0) + totalU1Reward,
               referralEarnings: (curr.referralEarnings || 0) + totalU1Reward,
             }));
             setTransactions((prev) => [...u1Txs, ...prev]);
@@ -2918,17 +3039,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Persist directly to Firestore
           try {
             const u1Ref = doc(db, 'users', u1Clean);
-            const u1Snap = await getDoc(u1Ref);
+            const u1Snap = await getDocFromServer(u1Ref).catch(() => getDoc(u1Ref));
             const existingU1Txs: TransactionItem[] =
-              u1Snap.exists() && u1Snap.data().transactions ? u1Snap.data().transactions : [];
+              u1Snap.exists() && Array.isArray(u1Snap.data().transactions) ? u1Snap.data().transactions : [];
             await setDoc(
               u1Ref,
-              {
+              cleanFirestoreData({
                 balance: increment(totalU1Reward),
                 totalEarned: increment(totalU1Reward),
                 referralEarnings: increment(totalU1Reward),
-                transactions: [...u1Txs, ...existingU1Txs],
-              },
+                transactions: [...u1Txs, ...existingU1Txs].slice(0, 200),
+              }),
               { merge: true }
             );
           } catch (e) {
@@ -2936,19 +3057,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           // Mark firstPlanReferralBonusPaid on buyer in Firestore and state
-          if (isFirstPlan && refBonus > 0) {
+          if (isFirstPlan && refBonus > 0 && buyerClean) {
             try {
-              const buyerClean = normalizeMobile(buyerUser.mobile);
-              if (buyerClean) {
-                await setDoc(doc(db, 'users', buyerClean), { firstPlanReferralBonusPaid: true }, { merge: true });
-                setRegisteredUsers((prev) =>
-                  prev.map((u) =>
-                    normalizeMobile(u.mobile) === buyerClean ? { ...u, firstPlanReferralBonusPaid: true } : u
-                  )
-                );
-                if (normalizeMobile(user.mobile) === buyerClean) {
-                  setUser((prev) => ({ ...prev, firstPlanReferralBonusPaid: true }));
-                }
+              await setDoc(doc(db, 'users', buyerClean), { firstPlanReferralBonusPaid: true }, { merge: true });
+              setRegisteredUsers((prev) =>
+                prev.map((u) =>
+                  normalizeMobile(u.mobile) === buyerClean ? { ...u, firstPlanReferralBonusPaid: true } : u
+                )
+              );
+              if (normalizeMobile(userRef.current.mobile) === buyerClean) {
+                setUser((prev) => ({ ...prev, firstPlanReferralBonusPaid: true }));
               }
             } catch (bErr) {
               console.warn('Failed to mark firstPlanReferralBonusPaid:', bErr);
@@ -2959,16 +3077,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 2. Level 2 Upline (Referrer of upline1) - 1.5%
         if (upline1.referredBy) {
           const upline2Data = await findUserByReferralCode(upline1.referredBy);
-          if (upline2Data) {
+          if (upline2Data && upline2Data.docId && !visitedUplines.has(upline2Data.docId)) {
             const upline2 = upline2Data.user;
+            const u2Clean = upline2Data.docId;
+            visitedUplines.add(u2Clean);
             const comm2 = Math.round(planPrice * 0.015 * 100) / 100;
             if (comm2 > 0) {
-              const u2Clean = upline2Data.docId;
+              const now2 = Date.now();
+              const dayInfo2 = getFormattedDayInfo(now2);
               const u2Tx: TransactionItem = {
-                id: `tx_ref2_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                id: `tx_ref2_${now2}_${Math.random().toString(36).substring(2, 6)}`,
                 type: 'referral_reward',
                 title: `Level 2 Team Referral Commission (1.5%)`,
-                date: 'Today',
+                date: dayInfo2.displayString,
+                timestamp: now2,
                 amount: comm2,
                 isCredit: true,
                 status: 'verified',
@@ -2985,7 +3107,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                       balance: (u.balance || 0) + comm2,
                       totalEarned: (u.totalEarned || 0) + comm2,
                       referralEarnings: (u.referralEarnings || 0) + comm2,
-                      transactions: [u2Tx, ...(u.transactions || [])],
+                      transactions: [u2Tx, ...(u.transactions || [])].slice(0, 200),
                     };
                   }
                   return u;
@@ -2996,7 +3118,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     balance: (upline2.balance || 0) + comm2,
                     totalEarned: (upline2.totalEarned || 0) + comm2,
                     referralEarnings: (upline2.referralEarnings || 0) + comm2,
-                    transactions: [u2Tx, ...(upline2.transactions || [])],
+                    transactions: [u2Tx, ...(upline2.transactions || [])].slice(0, 200),
                   });
                 }
                 try {
@@ -3005,11 +3127,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 return updated;
               });
 
-              if (normalizeMobile(user.mobile) === u2Clean) {
+              if (normalizeMobile(userRef.current.mobile) === u2Clean) {
                 setUser((curr) => ({
                   ...curr,
-                  balance: curr.balance + comm2,
-                  totalEarned: curr.totalEarned + comm2,
+                  balance: (curr.balance || 0) + comm2,
+                  totalEarned: (curr.totalEarned || 0) + comm2,
                   referralEarnings: (curr.referralEarnings || 0) + comm2,
                 }));
                 setTransactions((prev) => [u2Tx, ...prev]);
@@ -3028,17 +3150,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
               try {
                 const u2Ref = doc(db, 'users', u2Clean);
-                const u2Snap = await getDoc(u2Ref);
+                const u2Snap = await getDocFromServer(u2Ref).catch(() => getDoc(u2Ref));
                 const existingU2Txs: TransactionItem[] =
-                  u2Snap.exists() && u2Snap.data().transactions ? u2Snap.data().transactions : [];
+                  u2Snap.exists() && Array.isArray(u2Snap.data().transactions) ? u2Snap.data().transactions : [];
                 await setDoc(
                   u2Ref,
-                  {
+                  cleanFirestoreData({
                     balance: increment(comm2),
                     totalEarned: increment(comm2),
                     referralEarnings: increment(comm2),
-                    transactions: [u2Tx, ...existingU2Txs],
-                  },
+                    transactions: [u2Tx, ...existingU2Txs].slice(0, 200),
+                  }),
                   { merge: true }
                 );
               } catch (e) {
@@ -3049,16 +3171,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // 3. Level 3+ Upline (Referrer of upline2) - 1.0%
             if (upline2.referredBy) {
               const upline3Data = await findUserByReferralCode(upline2.referredBy);
-              if (upline3Data) {
+              if (upline3Data && upline3Data.docId && !visitedUplines.has(upline3Data.docId)) {
                 const upline3 = upline3Data.user;
+                const u3Clean = upline3Data.docId;
+                visitedUplines.add(u3Clean);
                 const comm3 = Math.round(planPrice * 0.01 * 100) / 100;
                 if (comm3 > 0) {
-                  const u3Clean = upline3Data.docId;
+                  const now3 = Date.now();
+                  const dayInfo3 = getFormattedDayInfo(now3);
                   const u3Tx: TransactionItem = {
-                    id: `tx_ref3_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                    id: `tx_ref3_${now3}_${Math.random().toString(36).substring(2, 6)}`,
                     type: 'referral_reward',
                     title: `Level 3 Team Referral Commission (1.0%)`,
-                    date: 'Today',
+                    date: dayInfo3.displayString,
+                    timestamp: now3,
                     amount: comm3,
                     isCredit: true,
                     status: 'verified',
@@ -3075,7 +3201,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                           balance: (u.balance || 0) + comm3,
                           totalEarned: (u.totalEarned || 0) + comm3,
                           referralEarnings: (u.referralEarnings || 0) + comm3,
-                          transactions: [u3Tx, ...(u.transactions || [])],
+                          transactions: [u3Tx, ...(u.transactions || [])].slice(0, 200),
                         };
                       }
                       return u;
@@ -3086,7 +3212,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         balance: (upline3.balance || 0) + comm3,
                         totalEarned: (upline3.totalEarned || 0) + comm3,
                         referralEarnings: (upline3.referralEarnings || 0) + comm3,
-                        transactions: [u3Tx, ...(upline3.transactions || [])],
+                        transactions: [u3Tx, ...(upline3.transactions || [])].slice(0, 200),
                       });
                     }
                     try {
@@ -3095,11 +3221,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     return updated;
                   });
 
-                  if (normalizeMobile(user.mobile) === u3Clean) {
+                  if (normalizeMobile(userRef.current.mobile) === u3Clean) {
                     setUser((curr) => ({
                       ...curr,
-                      balance: curr.balance + comm3,
-                      totalEarned: curr.totalEarned + comm3,
+                      balance: (curr.balance || 0) + comm3,
+                      totalEarned: (curr.totalEarned || 0) + comm3,
                       referralEarnings: (curr.referralEarnings || 0) + comm3,
                     }));
                     setTransactions((prev) => [u3Tx, ...prev]);
@@ -3107,17 +3233,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                   try {
                     const u3Ref = doc(db, 'users', u3Clean);
-                    const u3Snap = await getDoc(u3Ref);
+                    const u3Snap = await getDocFromServer(u3Ref).catch(() => getDoc(u3Ref));
                     const existingU3Txs: TransactionItem[] =
-                      u3Snap.exists() && u3Snap.data().transactions ? u3Snap.data().transactions : [];
+                      u3Snap.exists() && Array.isArray(u3Snap.data().transactions) ? u3Snap.data().transactions : [];
                     await setDoc(
                       u3Ref,
-                      {
+                      cleanFirestoreData({
                         balance: increment(comm3),
                         totalEarned: increment(comm3),
                         referralEarnings: increment(comm3),
-                        transactions: [u3Tx, ...existingU3Txs],
-                      },
+                        transactions: [u3Tx, ...existingU3Txs].slice(0, 200),
+                      }),
                       { merge: true }
                     );
                   } catch (e) {
@@ -3134,7 +3260,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const buyPlanWithUPI = (plan: PlanItem) => {
+  const buyPlanWithUPI = (plan: PlanItem, openModalDirectly = false) => {
     if (plan.price === 0) {
       showToast('✓ Free Starter Level 0 plan is active.');
       return;
@@ -3144,13 +3270,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast(`❌ You have already purchased ${plan.title}! Each member can buy each plan once.`);
       return;
     }
+    setPrefetchedQoPaySession(null);
     setSelectedPlan(plan);
     setPendingUPIAmount(plan.price);
     setPendingUPIBonus(plan.bonus || 0);
     setPendingDepositType('plan_purchase');
     setPendingPlanForUPI(plan);
 
-    // Direct QO Pay cashier checkout redirect - NO POPUP!
+    if (openModalDirectly) {
+      setIsUPIModalOpen(true);
+      return;
+    }
+
+    // Start QO Pay (falls back seamlessly to UPI QR & UTR modal if needed)
     startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
   };
 
@@ -3272,6 +3404,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    if (!updated) {
+      const pendingEntry = Object.values(pendingQoPayDepositsRef.current).find(
+        (d) =>
+          d.id === orderIdOrDepositId ||
+          d.gatewayOrderId === orderIdOrDepositId ||
+          d.qopayOrderId === orderIdOrDepositId
+      );
+      if (pendingEntry) {
+        updated = true;
+        targetDepId = pendingEntry.id;
+        const promotedDep: PaymentDeposit = {
+          ...pendingEntry,
+          userSubmittedUtr: cleanUtr,
+          utrNumber: cleanUtr,
+          status: 'in_process',
+        };
+        delete pendingQoPayDepositsRef.current[pendingEntry.id];
+        setPaymentDeposits((prev) => [promotedDep, ...prev.filter((d) => d.id !== promotedDep.id)]);
+        try {
+          setDoc(doc(db, 'deposits', promotedDep.id), cleanFirestoreData(promotedDep), { merge: true }).catch(() => {});
+        } catch {}
+
+        const newTx: TransactionItem = {
+          id: `tx_${promotedDep.id}`,
+          type: promotedDep.depositType === 'plan_purchase' ? 'purchase' : 'add_money',
+          title:
+            promotedDep.depositType === 'plan_purchase'
+              ? `VIP Level ${promotedDep.planLevel ?? 1} UPI Payment (In-Process)`
+              : `Wallet Deposit ₹${promotedDep.amount.toLocaleString('en-IN')} (In-Process)`,
+          date: 'Today',
+          timestamp: Date.now(),
+          amount: promotedDep.amount,
+          isCredit: promotedDep.depositType !== 'plan_purchase',
+          status: 'in_process',
+          orderId: promotedDep.gatewayOrderId || orderIdOrDepositId,
+          utrNumber: cleanUtr,
+          note: `UTR: ${cleanUtr} • Awaiting Admin verification & approval`,
+        };
+        setTransactions((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)]);
+      }
+    }
+
     setTransactions((prev) =>
       prev.map((t) => {
         if (
@@ -3293,8 +3467,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updated;
   };
 
-  const approvePaymentDeposit = async (depositId: string) => {
-    let deposit = paymentDepositsRef.current.find((d) => d.id === depositId);
+  const approvePaymentDeposit = async (depositId: string, overrideDeposit?: PaymentDeposit) => {
+    let deposit = overrideDeposit || paymentDepositsRef.current.find((d) => d.id === depositId);
     if (!deposit) {
       try {
         const depSnap = await getDoc(doc(db, 'deposits', depositId));
@@ -3309,19 +3483,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 1. Update deposit in Firestore
     try {
-      await setDoc(doc(db, 'deposits', depositId), { status: 'approved' }, { merge: true });
+      await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData({ ...deposit, status: 'approved' }), { merge: true });
     } catch (err) {
       console.warn('Failed to update deposit in Firestore:', err);
     }
 
     // 2. Mark deposit as approved in local state
-    setPaymentDeposits((prev) =>
-      prev.map((d) => (d.id === depositId ? { ...d, status: 'approved' } : d))
-    );
+    setPaymentDeposits((prev) => {
+      const exists = prev.some((d) => d.id === depositId);
+      if (!exists) return [{ ...deposit!, status: 'approved' }, ...prev];
+      return prev.map((d) => (d.id === depositId ? { ...d, status: 'approved' } : d));
+    });
 
     // 3. Update user balance or VIP level in Firestore and local state
-    const safePlans = Array.isArray(plans) && plans.length > 0 ? plans : initialPlans;
-    const cleanMobile = deposit.userMobile ? normalizeMobile(deposit.userMobile) : '';
+    const safePlans = Array.isArray(plansRef.current) && plansRef.current.length > 0 ? plansRef.current : initialPlans;
+    const cleanMobile = normalizeMobile(deposit.userMobile || userRef.current?.mobile);
 
     // Determine target VIP level: check explicit planLevel, or parse from planTitle, or match by amount
     let targetLevel: number | undefined = deposit.planLevel;
@@ -3522,13 +3698,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return nextList;
       });
 
-      // Distribute multi-tier commission on approved plan purchase:
-      if (isPlan) {
-        distributePlanPurchaseCommissions(
+      // Distribute multi-tier commission on approved plan purchase (idempotent guard):
+      if (isPlan && !deposit.commissionDistributed) {
+        await distributePlanPurchaseCommissions(
           { ...resolvedUser, ...updatedUserData } as RegisteredUserAccount,
           deposit.amount,
           finalLevel
         );
+        try {
+          await setDoc(doc(db, 'deposits', depositId), { commissionDistributed: true }, { merge: true });
+          setPaymentDeposits((prev) =>
+            prev.map((d) => (d.id === depositId ? { ...d, commissionDistributed: true } : d))
+          );
+        } catch {}
       }
 
       showToast(isPlan ? `✓ Level ${finalLevel} VIP Plan Approved & Active for user!` : `✓ Deposit approved! ₹${deposit.amount} credited.`);
@@ -3692,9 +3874,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
-    // Distribute multi-tier commission on plan purchase: 4.5% to Level 1, 1.5% to Level 2, 1.0% to Level 3+
-    distributePlanPurchaseCommissions(updatedUser as RegisteredUserAccount, plan.price, plan.level);
-
     // Record Debit Transaction
     const orderId = `#VIP${Date.now().toString().slice(-8)}`;
     const vipNow = Date.now();
@@ -3712,7 +3891,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orderId,
       note: `VIP Level ${plan.level} (${plan.levelTag}) activated using Wallet Balance`,
     };
-    setTransactions((prev) => [newTx, ...prev]);
+    const updatedTxs = [newTx, ...transactions];
+    setTransactions(updatedTxs);
 
     setLastPurchase({
       amount: plan.price,
@@ -3728,11 +3908,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'verified',
     });
 
-    // Authoritatively sync user & new transaction to Firestore
-    syncUserToFirestore(updatedUser, [newTx, ...transactions]);
+    // Authoritatively sync buyer to Firestore FIRST, then distribute multi-tier commission:
+    // 4.5% to Level 1 (+ ₹100 first-plan bonus), 1.5% to Level 2, 1.0% to Level 3+
+    (async () => {
+      await syncUserToFirestore(updatedUser, updatedTxs);
+      await distributePlanPurchaseCommissions(updatedUser as RegisteredUserAccount, plan.price, plan.level);
+    })();
     try {
       localStorage.setItem('taskvibe_user', JSON.stringify(updatedUser));
-      localStorage.setItem('taskvibe_txs', JSON.stringify([newTx, ...transactions]));
+      localStorage.setItem('taskvibe_txs', JSON.stringify(updatedTxs));
     } catch {}
 
     triggerConfetti();
@@ -3793,7 +3977,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : `Bonus for ₹${amount.toLocaleString('en-IN')} UPI Recharge`,
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    const updatedTxs = [newTx, ...transactions];
+    setTransactions(updatedTxs);
+
+    const updatedUserForSync: UserProfile = {
+      ...user,
+      balance: user.balance + bonus,
+      totalEarned: user.totalEarned + bonus,
+      ...(isPlanPurchase && selectedPlan ? {
+        vipLevel: maxLevel,
+        vipTag: selectedPlan.levelTag || `Level ${maxLevel}`,
+        purchasedPlanIds: updatedPurchased,
+      } : {}),
+    };
+    if (isPlanPurchase && selectedPlan) {
+      (async () => {
+        await syncUserToFirestore(updatedUserForSync, updatedTxs);
+        await distributePlanPurchaseCommissions(updatedUserForSync as RegisteredUserAccount, selectedPlan.price, selectedPlan.level);
+      })();
+    } else {
+      syncUserToFirestore(updatedUserForSync, updatedTxs);
+    }
 
     setLastPurchase({
       amount,
@@ -4376,7 +4580,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user.referredBy) {
       try {
         const upline1Data = await findUserByReferralCode(user.referredBy);
-        if (upline1Data) {
+        const selfClean = normalizeMobile(user.mobile);
+        if (upline1Data && upline1Data.docId && upline1Data.docId !== selfClean) {
           const upline1 = upline1Data.user;
           const taskComm = Math.round(reward * 0.016 * 100) / 100;
           if (taskComm > 0) {
@@ -4407,7 +4612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     balance: (u.balance || 0) + taskComm,
                     totalEarned: (u.totalEarned || 0) + taskComm,
                     teamTaskEarnings: (u.teamTaskEarnings || 0) + taskComm,
-                    transactions: [taskTx, ...(u.transactions || [])],
+                    transactions: [taskTx, ...(u.transactions || [])].slice(0, 200),
                   };
                 }
                 return u;
@@ -4418,7 +4623,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   balance: (upline1.balance || 0) + taskComm,
                   totalEarned: (upline1.totalEarned || 0) + taskComm,
                   teamTaskEarnings: (upline1.teamTaskEarnings || 0) + taskComm,
-                  transactions: [taskTx, ...(upline1.transactions || [])],
+                  transactions: [taskTx, ...(upline1.transactions || [])].slice(0, 200),
                 });
               }
               try {
@@ -4428,11 +4633,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
 
             // If active user is upline1, update active user state and transactions
-            if (normalizeMobile(user.mobile) === u1Clean) {
+            if (normalizeMobile(userRef.current.mobile) === u1Clean) {
               setUser((curr) => ({
                 ...curr,
-                balance: curr.balance + taskComm,
-                totalEarned: curr.totalEarned + taskComm,
+                balance: (curr.balance || 0) + taskComm,
+                totalEarned: (curr.totalEarned || 0) + taskComm,
                 teamTaskEarnings: (curr.teamTaskEarnings || 0) + taskComm,
               }));
               setTransactions((prev) => [taskTx, ...prev]);
@@ -4441,17 +4646,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // Persist directly to Firestore
             try {
               const u1Ref = doc(db, 'users', u1Clean);
-              const u1Snap = await getDoc(u1Ref);
+              const u1Snap = await getDocFromServer(u1Ref).catch(() => getDoc(u1Ref));
               const existingU1Txs: TransactionItem[] =
-                u1Snap.exists() && u1Snap.data().transactions ? u1Snap.data().transactions : [];
+                u1Snap.exists() && Array.isArray(u1Snap.data().transactions) ? u1Snap.data().transactions : [];
               await setDoc(
                 u1Ref,
-                {
+                cleanFirestoreData({
                   balance: increment(taskComm),
                   totalEarned: increment(taskComm),
                   teamTaskEarnings: increment(taskComm),
-                  transactions: [taskTx, ...existingU1Txs],
-                },
+                  transactions: [taskTx, ...existingU1Txs].slice(0, 200),
+                }),
                 { merge: true }
               );
             } catch (err) {
@@ -6525,41 +6730,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const orderId = `ORD_${directUtr}`;
       const depositId = `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-      // Only create upfront in-process deposit for general add_money.
-      // For plan purchases, in-process state ONLY occurs AFTER member submits their 12-digit UTR!
+      // Only create upfront in-process deposit in Firestore for general add_money.
+      // For plan purchases, keep pending metadata in memory ref so UPIPaymentModal polling can still
+      // approve & distribute commissions once paid without polluting Admin "In Process" before UTR.
       const activeUser = userRef.current?.mobile ? userRef.current : user;
+      const draftDeposit: PaymentDeposit = {
+        id: depositId,
+        userId: activeUser.referralCode || activeUser.mobile || 'Member',
+        userName: (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : '') || 'Member',
+        userMobile: activeUser.mobile || '',
+        amount,
+        bonus,
+        depositType,
+        ...(plan?.id ? { planId: plan.id } : {}),
+        ...(plan?.level !== undefined ? { planLevel: plan.level } : {}),
+        ...(plan ? { planTitle: plan.levelTag || `Level ${plan.level}` } : {}),
+        adminUpiId: adminSettings.adminUpiId || 'qopay@upi',
+        utrNumber: directUtr,
+        submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
+        status: 'in_process',
+        gateway: 'qopay',
+        gatewayOrderId: orderId,
+        qopayOrderId: orderId,
+      };
       let newDeposit: PaymentDeposit | null = null;
       if (depositType !== 'plan_purchase') {
-        newDeposit = {
-          id: depositId,
-          userId: activeUser.referralCode || activeUser.mobile || 'Member',
-          userName: (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : '') || 'Member',
-          userMobile: activeUser.mobile || '',
-          amount,
-          bonus,
-          depositType,
-          adminUpiId: adminSettings.adminUpiId || 'qopay@upi',
-          utrNumber: directUtr,
-          submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          timestamp: Date.now(),
-          status: 'in_process',
-          gateway: 'qopay',
-          gatewayOrderId: orderId,
-          qopayOrderId: orderId,
-        };
-
-        const depToSave = newDeposit;
-        if (depToSave) {
-          setPaymentDeposits((prev) => [depToSave, ...prev]);
-
-          try {
-            setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(depToSave)).catch((e) => {
-              console.warn('Background saving deposit to Firestore:', e);
-            });
-          } catch (e) {
-            console.warn('Background setDoc initiation error:', e);
-          }
+        newDeposit = draftDeposit;
+        setPaymentDeposits((prev) => [draftDeposit, ...prev]);
+        try {
+          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(draftDeposit)).catch((e) => {
+            console.warn('Background saving deposit to Firestore:', e);
+          });
+        } catch (e) {
+          console.warn('Background setDoc initiation error:', e);
         }
+      } else {
+        pendingQoPayDepositsRef.current[depositId] = draftDeposit;
       }
 
       // Construct the absolute public return callback URL for QO Pay cashier
@@ -6572,87 +6779,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           !window.location.origin.includes('localhost') &&
           !window.location.origin.includes('capacitor:')
           ? window.location.origin
-          : 'https://ais-pre-cgdga3yv2d33dg4wlq3ahi-300326017780.asia-east1.run.app');
-      const returnCallbackUrl = `${publicBaseUrl}/api/qopay/callback?order_id=${encodeURIComponent(orderId)}`;
+          : 'https://ais-pre-3cfwnkafats6ngxztw372a-555131316104.asia-southeast1.run.app');
+      const returnCallbackUrl = `${publicBaseUrl.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(orderId)}`;
 
-      // Ultra-Fast Parallel Execution:
-      // Resolves immediately on whichever returns a valid cashier paymentUrl first,
-      // or settles immediately if both fail without stalling.
-      const executeOrderCreation = (): Promise<any> => {
-        const backendPromise = (async () => {
-          try {
-            const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body: JSON.stringify({
-                userToken: activeUserToken,
-                baseUrl: activeBaseUrl,
-                amount,
-                orderId,
-                customerMobile: user.mobile || '9876543210',
-                customerName: user.name || 'Member',
-                customerEmail: user.email || 'member@zorotask.com',
-                redirectUrl: returnCallbackUrl,
-                remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
-                remark2: depositId,
-              }),
-              signal: AbortSignal.timeout(5000),
-            });
-            const rawText = await res.text();
-            if (rawText && !rawText.trim().startsWith('<')) {
-              const parsed = JSON.parse(rawText);
-              if (parsed.success && parsed.paymentUrl) return parsed;
+      // Single authoritative create-order call via backend proxy first (avoids duplicate order spam that drops success rate).
+      // Only fall back to direct client call if backend proxy is unreachable or returns non-JSON HTML (e.g. Capacitor APK).
+      const executeOrderCreation = async (): Promise<any> => {
+        let serverRespondedJson = false;
+        let lastResponse: any = null;
+        const cleanMob = String(activeUser.mobile || '9876543210').replace(/\D/g, '').slice(-10) || '9876543210';
+        const cleanName = (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : 'ZoroTask Member').trim();
+        const cleanEmail = (activeUser.email || 'member@zorotask.com').trim();
+
+        try {
+          const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+              userToken: activeUserToken,
+              baseUrl: activeBaseUrl,
+              amount,
+              orderId,
+              customerMobile: cleanMob,
+              customerName: cleanName,
+              customerEmail: cleanEmail,
+              redirectUrl: returnCallbackUrl,
+              remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
+              remark2: depositId,
+            }),
+            signal: AbortSignal.timeout(15500),
+          });
+          const rawText = await res.text();
+          if (rawText && !rawText.trim().startsWith('<')) {
+            const parsed = JSON.parse(rawText);
+            serverRespondedJson = true;
+            lastResponse = parsed;
+            if (parsed.success && (parsed.paymentUrl || parsed.upiIntent || parsed.qrCode)) {
+              return parsed;
             }
-          } catch {}
-          return null;
-        })();
+          }
+        } catch (err) {
+          console.warn('[QO-Pay] Backend create-order unreachable/timed out, trying direct:', err);
+        }
 
-        const directPromise = (async () => {
+        if (!serverRespondedJson) {
           try {
             const directRes = await callDirectQoPayCreateOrder({
               userToken: activeUserToken,
               amount,
               orderId,
-              customerMobile: user.mobile || '9876543210',
-              customerName: user.name || 'Member',
-              customerEmail: user.email || 'member@zorotask.com',
+              customerMobile: cleanMob,
+              customerName: cleanName,
+              customerEmail: cleanEmail,
               redirectUrl: returnCallbackUrl,
               remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
               remark2: depositId,
               baseUrl: activeBaseUrl,
             });
-            if (directRes.success && directRes.paymentUrl) return directRes;
+            return directRes;
           } catch {}
-          return null;
-        })();
+        }
 
-        return new Promise((resolve) => {
-          let settled = false;
-          let completedCount = 0;
-          const finish = (val: any) => {
-            if (!settled) {
-              settled = true;
-              resolve(val);
-            }
-          };
-
-          const handleResult = (res: any) => {
-            completedCount += 1;
-            if (res && res.paymentUrl) {
-              finish(res);
-            } else if (completedCount >= 2) {
-              finish({ success: false, message: '' });
-            }
-          };
-
-          backendPromise.then(handleResult);
-          directPromise.then(handleResult);
-        });
+        return lastResponse || { success: false, message: '' };
       };
 
       const data = await executeOrderCreation();
 
-      if (data?.success && (data.paymentUrl || data.deeplinks || data.orderId || data.qrCode)) {
+      if (data?.success && (data.paymentUrl || data.deeplinks || data.upiIntent || data.qrCode)) {
         const resolvedQr = data.qrCode || data.upiIntent || data.paymentUrl;
         if (newDeposit) {
           const updatedDeposit: PaymentDeposit = {
@@ -6701,11 +6894,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const checkQoPayStatus = async (
     depositId: string,
-    orderId: string
+    orderId: string,
+    skipAutoApprove = false
   ): Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string }> => {
     try {
-      const activeUserToken = (adminSettings.qopayUserToken || '').trim();
-      const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+      const currentSettings = adminSettingsRef.current;
+      const activeUserToken = (currentSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
+      const activeBaseUrl = (currentSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
       let data: any = {};
       try {
@@ -6738,10 +6933,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      if (data.isPaid === true || data.status === 'SUCCESS' || data.status === 'COMPLETED' || data.status === 'PAID') {
+      const normStatus = String(data.status || '').toUpperCase();
+      if (
+        data.isPaid === true ||
+        normStatus === 'SUCCESS' ||
+        normStatus === 'COMPLETED' ||
+        normStatus === 'PAID' ||
+        normStatus === 'TXN_SUCCESS' ||
+        normStatus === 'CAPTURED' ||
+        normStatus === 'SETTLED'
+      ) {
         const utr = data.utr || formatDisplayUtr((orderId || '').replace(/^ORD_/i, ''));
-        if (adminSettings.qopayAutoApprove === true) {
-          await approvePaymentDeposit(depositId);
+        if (!skipAutoApprove && currentSettings.qopayAutoApprove === true) {
+          let pendingOverride = pendingQoPayDepositsRef.current[depositId];
+          if (pendingOverride) {
+            pendingOverride = { ...pendingOverride, utrNumber: utr, userSubmittedUtr: utr };
+            delete pendingQoPayDepositsRef.current[depositId];
+          }
+          await approvePaymentDeposit(depositId, pendingOverride);
+        }
+        if (currentSettings.qopayAutoApprove === true) {
           return {
             success: true,
             isPaid: true,
@@ -6875,10 +7086,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bonus: number,
     depositType: 'add_money' | 'plan_purchase',
     plan?: PlanItem
-  ): Promise<{ success: boolean; paymentUrl?: string; message?: string }> => {
+  ): Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; message?: string }> => {
     try {
       const res = await initiateQoPayment(amount, bonus, depositType, plan);
-      if (res.success && res.paymentUrl) {
+      if (res.success && (res.paymentUrl || res.upiIntent || res.qrCode)) {
         try {
           localStorage.setItem(
             'taskvibe_pending_qopay_order',
@@ -6902,288 +7113,338 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } catch {}
 
-        const targetUrl = res.paymentUrl;
-        if (typeof window !== 'undefined') {
-          let redirected = false;
-          try {
-            if (window.top && window.top !== window) {
-              window.top.location.href = targetUrl;
-              redirected = true;
-            }
-          } catch {}
-          if (!redirected) {
-            window.location.href = targetUrl;
-          }
+        let isEmbeddedIframe = false;
+        try {
+          isEmbeddedIframe = typeof window !== 'undefined' && window.self !== window.top;
+        } catch {
+          isEmbeddedIframe = true;
         }
-        return { success: true, paymentUrl: targetUrl };
-      } else {
-        const msg = res.message || '';
-        if (depositType === 'add_money') {
+
+        // Inside an embedded iframe (preview/webview frame), external cashiers often block framing or cross-origin top navigation fails.
+        // Open UPIPaymentModal with the already-created QO Pay order so user sees live QR + 1-Click UPI + New-Tab Cashier + Auto Polling!
+        if (isEmbeddedIframe || !res.paymentUrl) {
+          setPrefetchedQoPaySession({
+            amount,
+            depositType,
+            success: true,
+            order: res,
+            timestamp: Date.now(),
+          });
           setPendingUPIAmount(amount);
           setPendingUPIBonus(bonus);
-          setPendingDepositType('add_money');
-          setPendingPlanForUPI(null);
+          setPendingDepositType(depositType);
+          setPendingPlanForUPI(plan || null);
           setIsUPIModalOpen(true);
-        } else if (msg && !msg.toLowerCase().includes('empty') && !msg.toLowerCase().includes('order response')) {
-          showToast(`⚠️ ${msg}`);
+          return { success: true, paymentUrl: res.paymentUrl, openedModal: true };
         }
-        return { success: false, message: msg };
+
+        if (typeof window !== 'undefined' && res.paymentUrl) {
+          window.location.href = res.paymentUrl;
+        }
+        return { success: true, paymentUrl: res.paymentUrl };
+      } else {
+        // Smooth seamless fallback for BOTH add_money AND plan_purchase:
+        // Open UPIPaymentModal with instant Dynamic QR + UPI App Pay + UTR submission without firing another doomed create-order!
+        const msg = res.message || '';
+        setPrefetchedQoPaySession({
+          amount,
+          depositType,
+          success: false,
+          message: msg,
+          timestamp: Date.now(),
+        });
+        setPendingUPIAmount(amount);
+        setPendingUPIBonus(bonus);
+        setPendingDepositType(depositType);
+        setPendingPlanForUPI(plan || null);
+        setIsUPIModalOpen(true);
+        return { success: false, openedModal: true, message: msg };
       }
     } catch {
-      return { success: false, message: '' };
+      setPrefetchedQoPaySession({
+        amount,
+        depositType,
+        success: false,
+        message: '',
+        timestamp: Date.now(),
+      });
+      setPendingUPIAmount(amount);
+      setPendingUPIBonus(bonus);
+      setPendingDepositType(depositType);
+      setPendingPlanForUPI(plan || null);
+      setIsUPIModalOpen(true);
+      return { success: false, openedModal: true, message: '' };
     }
   };
 
   // Real-time automatic listener: verifies QO Pay orders upon return or callback
-  useEffect(() => {
-    let isVerifying = false;
-    const checkActiveReturnOrder = async () => {
-      if (typeof window === 'undefined' || isVerifying) return;
+  const isVerifyingQoPayReturnRef = useRef(false);
+  const checkActiveReturnOrder = async () => {
+    if (typeof window === 'undefined' || isVerifyingQoPayReturnRef.current) return;
 
-      let orderIdFromUrl: string | null = null;
-      let utrFromUrl: string | null = null;
-      let returnedFromUrl = false;
+    let orderIdFromUrl: string | null = null;
+    let utrFromUrl: string | null = null;
+    let returnedFromUrl = false;
 
-      try {
-        const fullHref = window.location.href;
-        const urlObj = new URL(fullHref);
-        orderIdFromUrl = urlObj.searchParams.get('qopay_order') || urlObj.searchParams.get('order_id');
-        utrFromUrl = urlObj.searchParams.get('utr') || urlObj.searchParams.get('bank_ref_no');
-        returnedFromUrl = urlObj.searchParams.get('returned') === 'true';
+    try {
+      const fullHref = window.location.href;
+      const urlObj = new URL(fullHref);
+      orderIdFromUrl = urlObj.searchParams.get('qopay_order') || urlObj.searchParams.get('order_id');
+      utrFromUrl = urlObj.searchParams.get('utr') || urlObj.searchParams.get('bank_ref_no');
+      returnedFromUrl = urlObj.searchParams.get('returned') === 'true';
 
-        if (!orderIdFromUrl && window.location.hash.includes('qopay_order')) {
-          const hashParts = window.location.hash.split('?');
-          if (hashParts[1]) {
-            const hp = new URLSearchParams(hashParts[1]);
-            orderIdFromUrl = hp.get('qopay_order') || hp.get('order_id');
-            utrFromUrl = utrFromUrl || hp.get('utr') || hp.get('bank_ref_no');
-            returnedFromUrl = returnedFromUrl || hp.get('returned') === 'true';
-          }
+      if (!orderIdFromUrl && window.location.hash.includes('qopay_order')) {
+        const hashParts = window.location.hash.split('?');
+        if (hashParts[1]) {
+          const hp = new URLSearchParams(hashParts[1]);
+          orderIdFromUrl = hp.get('qopay_order') || hp.get('order_id');
+          utrFromUrl = utrFromUrl || hp.get('utr') || hp.get('bank_ref_no');
+          returnedFromUrl = returnedFromUrl || hp.get('returned') === 'true';
         }
-      } catch (e) {
-        console.warn('URL parsing error:', e);
       }
+    } catch (e) {
+      console.warn('URL parsing error:', e);
+    }
 
-      let pendingOrder: any = null;
+    let pendingOrder: any = null;
+    try {
+      const saved = localStorage.getItem('taskvibe_pending_qopay_order');
+      if (saved) pendingOrder = JSON.parse(saved);
+    } catch {}
+
+    // While UPIPaymentModal is open, its built-in 3.5s poller handles status checks unless we explicitly returned via callback URL
+    if (isUPIModalOpenRef.current && !orderIdFromUrl && !returnedFromUrl) {
+      return;
+    }
+
+    // Trigger when user returns via callback URL OR resumes app after paying on QO Pay cashier
+    const hasResumedPendingOrder =
+      Boolean(pendingOrder?.orderId) &&
+      typeof pendingOrder?.timestamp === 'number' &&
+      Date.now() - pendingOrder.timestamp > 4000;
+
+    if (!orderIdFromUrl && !returnedFromUrl && !hasResumedPendingOrder) {
+      return;
+    }
+
+    const activeOrderId = orderIdFromUrl || pendingOrder?.orderId;
+    if (!activeOrderId) return;
+
+    const matchingDep = paymentDepositsRef.current.find(
+      (d) =>
+        d.gatewayOrderId === activeOrderId ||
+        d.qopayOrderId === activeOrderId ||
+        (d.utrNumber && d.utrNumber.includes(activeOrderId))
+    );
+    const depositId = matchingDep?.id || pendingOrder?.depositId || `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // Clean URL query parameters so user is not re-prompted on every refresh
+    if (orderIdFromUrl || returnedFromUrl) {
       try {
-        const saved = localStorage.getItem('taskvibe_pending_qopay_order');
-        if (saved) pendingOrder = JSON.parse(saved);
+        const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
+        window.history.replaceState({}, '', window.location.pathname + cleanHash);
       } catch {}
+    }
 
-      // Trigger when user returns via callback URL OR resumes app after paying on QO Pay cashier
-      const hasResumedPendingOrder =
-        Boolean(pendingOrder?.orderId) &&
-        typeof pendingOrder?.timestamp === 'number' &&
-        Date.now() - pendingOrder.timestamp > 4000;
+    isVerifyingQoPayReturnRef.current = true;
+    showToast('🔄 Checking UTR & payment status...');
 
-      if (!orderIdFromUrl && !returnedFromUrl && !hasResumedPendingOrder) {
-        return;
+    let isPaidNow = false;
+    let verifyStatus = '';
+    let verifiedUtr = utrFromUrl || '';
+    let gatewayConfirmed = false;
+    try {
+      const verifyRes = await checkQoPayStatus(depositId, activeOrderId, true);
+      verifyStatus = String(verifyRes.status || '').toUpperCase();
+      if (verifyRes.utr) verifiedUtr = verifyRes.utr;
+      if (
+        verifyRes.isPaid ||
+        verifyStatus === 'SUCCESS' ||
+        verifyStatus === 'PAID' ||
+        verifyStatus === 'COMPLETED' ||
+        verifyStatus === 'TXN_SUCCESS' ||
+        verifyStatus === 'CAPTURED' ||
+        verifyStatus === 'SETTLED'
+      ) {
+        isPaidNow = true;
+        gatewayConfirmed = true;
+      } else if (verifyStatus === 'IN_PROCESS') {
+        gatewayConfirmed = true;
       }
+    } catch (vErr) {
+      console.warn('[QO-Pay] Return verification notice:', vErr);
+    }
 
-      const activeOrderId = orderIdFromUrl || pendingOrder?.orderId;
-      if (!activeOrderId) return;
+    const hasExplicitUtr = Boolean(utrFromUrl?.trim()) || Boolean(verifiedUtr?.trim());
+    const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
 
-      const matchingDep = paymentDepositsRef.current.find(
-        (d) =>
-          d.gatewayOrderId === activeOrderId ||
-          d.qopayOrderId === activeOrderId ||
-          (d.utrNumber && d.utrNumber.includes(activeOrderId))
-      );
-      const depositId = matchingDep?.id || pendingOrder?.depositId || `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-      // Clean URL query parameters so user is not re-prompted on every refresh
-      if (orderIdFromUrl || returnedFromUrl) {
-        try {
-          const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
-          window.history.replaceState({}, '', window.location.pathname + cleanHash);
-        } catch {}
-      }
-
-      isVerifying = true;
-      showToast('🔄 Checking UTR & payment status...');
-
-      let isPaidNow = false;
-      let verifyStatus = '';
-      let verifiedUtr = utrFromUrl || '';
-      let gatewayConfirmed = false;
-      try {
-        const verifyRes = await checkQoPayStatus(depositId, activeOrderId);
-        verifyStatus = String(verifyRes.status || '').toUpperCase();
-        if (verifyRes.utr) verifiedUtr = verifyRes.utr;
-        if (verifyRes.isPaid || verifyStatus === 'SUCCESS' || verifyStatus === 'PAID' || verifyStatus === 'COMPLETED') {
-          isPaidNow = true;
-          gatewayConfirmed = true;
-        } else if (verifyStatus === 'IN_PROCESS') {
-          gatewayConfirmed = true;
-        }
-      } catch (vErr) {
-        console.warn('[QO-Pay] Return verification notice:', vErr);
-      }
-
-      const hasExplicitUtr = Boolean(utrFromUrl?.trim()) || Boolean(verifiedUtr?.trim());
-      const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
-
-      if (!isPaymentConfirmed) {
-        try {
-          localStorage.removeItem('taskvibe_pending_qopay_order');
-          localStorage.removeItem('taskvibe_pending_plan');
-        } catch {}
-        const isCancelledOrFailed =
-          verifyStatus === 'FAILED' ||
-          verifyStatus === 'CANCELLED' ||
-          verifyStatus === 'CANCELED' ||
-          verifyStatus === 'EXPIRED';
-        showToast(
-          isCancelledOrFailed
-            ? '❌ Payment cancelled or failed. Your plan was not placed in review.'
-            : '⚠️ Payment not completed. Please complete UPI payment to proceed.'
-        );
-        isVerifying = false;
-        return;
-      }
-
-      const userEnteredUtr = verifiedUtr ? formatDisplayUtr(verifiedUtr) : '';
-      const orderNo = activeOrderId;
-      const finalUtr = userEnteredUtr || formatDisplayUtr((activeOrderId || '').replace(/^ORD_/i, ''));
-
-      if (isPaidNow && adminSettings.qopayAutoApprove === true) {
-        try {
-          localStorage.removeItem('taskvibe_pending_qopay_order');
-          localStorage.removeItem('taskvibe_pending_plan');
-        } catch {}
-        triggerConfetti();
-        showToast('🎉 Payment Successful! ₹' + (matchingDep?.amount || pendingOrder?.amount || '') + ' verified & credited!');
-        navigate('record');
-        isVerifying = false;
-        return;
-      }
-
-      // If matching deposit already exists and user has now submitted their UTR, update it immediately
-      if (matchingDep && userEnteredUtr && !matchingDep.userSubmittedUtr) {
-        const updatedDep: PaymentDeposit = {
-          ...matchingDep,
-          userSubmittedUtr: userEnteredUtr,
-          utrNumber: userEnteredUtr,
-          gatewayOrderId: orderNo,
-          qopayOrderId: orderNo,
-        };
-        setPaymentDeposits((prev) => prev.map((d) => (d.id === matchingDep.id ? updatedDep : d)));
-        try {
-          setDoc(doc(db, 'deposits', matchingDep.id), cleanFirestoreData(updatedDep), { merge: true }).catch(() => {});
-        } catch {}
-      }
-
-      // Place deposit in "In Process" state until Admin approves from Admin Panel
-      const amount = matchingDep?.amount || pendingOrder?.amount || 0;
-      const bonus = matchingDep?.bonus || pendingOrder?.bonus || 0;
-      const depositType: 'add_money' | 'plan_purchase' =
-        matchingDep?.depositType || pendingOrder?.depositType || 'add_money';
-      const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-      if (!matchingDep && amount > 0) {
-        let resolvedUser = userRef.current;
-        if (!resolvedUser?.mobile) {
-          try {
-            const savedRaw = localStorage.getItem('taskvibe_user');
-            if (savedRaw) resolvedUser = JSON.parse(savedRaw);
-          } catch {}
-        }
-        const activeUserMobile = resolvedUser?.mobile || pendingOrder?.userMobile || localStorage.getItem('taskvibe_active_mobile') || '';
-        const activeUserName =
-          (resolvedUser?.name && resolvedUser.name !== 'Member' ? resolvedUser.name : '') ||
-          pendingOrder?.userName ||
-          'Member';
-        const activeUserId =
-          resolvedUser?.referralCode ||
-          pendingOrder?.userReferralCode ||
-          activeUserMobile ||
-          'Member';
-
-        const reviewDeposit: PaymentDeposit = {
-          id: depositId,
-          userId: activeUserId,
-          userName: activeUserName,
-          userMobile: activeUserMobile,
-          amount,
-          bonus,
-          depositType,
-          planId: pendingOrder?.planId,
-          planLevel: pendingOrder?.planLevel,
-          planTitle: pendingOrder?.planTitle,
-          adminUpiId: adminSettings.adminUpiId || 'qopay@upi',
-          utrNumber: finalUtr,
-          userSubmittedUtr: userEnteredUtr || undefined,
-          submittedAt: nowTime,
-          timestamp: Date.now(),
-          status: 'in_process',
-          gateway: 'qopay',
-          gatewayOrderId: orderNo,
-          qopayOrderId: orderNo,
-        };
-        setPaymentDeposits((prev) => [reviewDeposit, ...prev.filter((d) => d.id !== depositId)]);
-        try {
-          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(reviewDeposit)).catch(() => {});
-        } catch {}
-      }
-
-      // Ensure a matching Transaction exists in Record & History
-      const existingTx = transactions.find(
-        (t) =>
-          t.id === `tx_${depositId}` ||
-          (t.utrNumber && finalUtr && t.utrNumber.trim().toLowerCase() === finalUtr.trim().toLowerCase()) ||
-          t.orderId === activeOrderId
-      );
-      if (!existingTx && amount > 0) {
-        const reviewTx: TransactionItem = {
-          id: `tx_${depositId}`,
-          type: depositType === 'plan_purchase' ? 'purchase' : 'add_money',
-          title:
-            depositType === 'plan_purchase'
-              ? `VIP Level ${pendingOrder?.planLevel || 1} Plan (In Process)`
-              : `Wallet Deposit ₹${amount} (In Review)`,
-          amount,
-          isCredit: depositType !== 'plan_purchase',
-          status: 'in_process',
-          date: 'Today',
-          timestamp: Date.now(),
-          orderId: activeOrderId,
-          utrNumber: finalUtr,
-          note:
-            depositType === 'plan_purchase'
-              ? `UTR: ${finalUtr} • In Process (Awaiting Admin Approval)`
-              : `UTR: ${finalUtr} • Submitted & In Review`,
-        };
-        setTransactions((prev) => [reviewTx, ...prev]);
-      }
-
+    if (!isPaymentConfirmed) {
       try {
         localStorage.removeItem('taskvibe_pending_qopay_order');
         localStorage.removeItem('taskvibe_pending_plan');
       } catch {}
+      const isCancelledOrFailed =
+        verifyStatus === 'FAILED' ||
+        verifyStatus === 'CANCELLED' ||
+        verifyStatus === 'CANCELED' ||
+        verifyStatus === 'EXPIRED';
+      showToast(
+        isCancelledOrFailed
+          ? '❌ Payment cancelled or failed. Your plan was not placed in review.'
+          : '⚠️ Payment not completed. Please complete UPI payment to proceed.'
+      );
+      isVerifyingQoPayReturnRef.current = false;
+      return;
+    }
 
-      if (depositType === 'plan_purchase') {
-        showToast(`⏳ UTR ${finalUtr} submitted! VIP Plan is now In Process until Admin approves.`);
-        navigate('member_plans');
-      } else {
-        navigate('record');
+    const userEnteredUtr = verifiedUtr ? formatDisplayUtr(verifiedUtr) : '';
+    const orderNo = activeOrderId;
+    const finalUtr = userEnteredUtr || formatDisplayUtr((activeOrderId || '').replace(/^ORD_/i, ''));
+
+    const amount = matchingDep?.amount || pendingOrder?.amount || 0;
+    const bonus = matchingDep?.bonus || pendingOrder?.bonus || 0;
+    const depositType: 'add_money' | 'plan_purchase' =
+      matchingDep?.depositType || pendingOrder?.depositType || 'add_money';
+    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    let ensuredDeposit: PaymentDeposit | undefined = matchingDep;
+    if (matchingDep && userEnteredUtr && !matchingDep.userSubmittedUtr) {
+      ensuredDeposit = {
+        ...matchingDep,
+        userSubmittedUtr: userEnteredUtr,
+        utrNumber: userEnteredUtr,
+        gatewayOrderId: orderNo,
+        qopayOrderId: orderNo,
+      };
+      setPaymentDeposits((prev) => prev.map((d) => (d.id === matchingDep.id ? ensuredDeposit! : d)));
+      try {
+        await setDoc(doc(db, 'deposits', matchingDep.id), cleanFirestoreData(ensuredDeposit), { merge: true });
+      } catch {}
+    }
+
+    if (!ensuredDeposit && amount > 0) {
+      let resolvedUser = userRef.current;
+      if (!resolvedUser?.mobile) {
+        try {
+          const savedRaw = localStorage.getItem('taskvibe_user');
+          if (savedRaw) resolvedUser = JSON.parse(savedRaw);
+        } catch {}
       }
-      isVerifying = false;
-    };
+      const activeUserMobile = resolvedUser?.mobile || pendingOrder?.userMobile || localStorage.getItem('taskvibe_active_mobile') || '';
+      const activeUserName =
+        (resolvedUser?.name && resolvedUser.name !== 'Member' ? resolvedUser.name : '') ||
+        pendingOrder?.userName ||
+        'Member';
+      const activeUserId =
+        resolvedUser?.referralCode ||
+        pendingOrder?.userReferralCode ||
+        activeUserMobile ||
+        'Member';
 
+      ensuredDeposit = {
+        id: depositId,
+        userId: activeUserId,
+        userName: activeUserName,
+        userMobile: activeUserMobile,
+        amount,
+        bonus,
+        depositType,
+        planId: pendingOrder?.planId,
+        planLevel: pendingOrder?.planLevel,
+        planTitle: pendingOrder?.planTitle,
+        adminUpiId: adminSettingsRef.current.adminUpiId || 'qopay@upi',
+        utrNumber: finalUtr,
+        userSubmittedUtr: userEnteredUtr || undefined,
+        submittedAt: nowTime,
+        timestamp: Date.now(),
+        status: 'in_process',
+        gateway: 'qopay',
+        gatewayOrderId: orderNo,
+        qopayOrderId: orderNo,
+      };
+      setPaymentDeposits((prev) => [ensuredDeposit!, ...prev.filter((d) => d.id !== depositId)]);
+      try {
+        await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(ensuredDeposit));
+      } catch {}
+    }
+
+    if (isPaidNow && adminSettingsRef.current.qopayAutoApprove === true) {
+      await approvePaymentDeposit(depositId, ensuredDeposit);
+      try {
+        localStorage.removeItem('taskvibe_pending_qopay_order');
+        localStorage.removeItem('taskvibe_pending_plan');
+      } catch {}
+      triggerConfetti();
+      showToast('🎉 Payment Successful! ₹' + (amount || '') + ' verified & credited!');
+      navigate(depositType === 'plan_purchase' ? 'member_plans' : 'record');
+      isVerifyingQoPayReturnRef.current = false;
+      return;
+    }
+
+    // Ensure a matching Transaction exists in Record & History when placed in review
+    const existingTx = transactions.find(
+      (t) =>
+        t.id === `tx_${depositId}` ||
+        (t.utrNumber && finalUtr && t.utrNumber.trim().toLowerCase() === finalUtr.trim().toLowerCase()) ||
+        t.orderId === activeOrderId
+    );
+    if (!existingTx && amount > 0) {
+      const reviewTx: TransactionItem = {
+        id: `tx_${depositId}`,
+        type: depositType === 'plan_purchase' ? 'purchase' : 'add_money',
+        title:
+          depositType === 'plan_purchase'
+            ? `VIP Level ${pendingOrder?.planLevel || 1} Plan (In Process)`
+            : `Wallet Deposit ₹${amount} (In Review)`,
+        amount,
+        isCredit: depositType !== 'plan_purchase',
+        status: 'in_process',
+        date: 'Today',
+        timestamp: Date.now(),
+        orderId: activeOrderId,
+        utrNumber: finalUtr,
+        note:
+          depositType === 'plan_purchase'
+            ? `UTR: ${finalUtr} • In Process (Awaiting Admin Approval)`
+            : `UTR: ${finalUtr} • Submitted & In Review`,
+      };
+      setTransactions((prev) => [reviewTx, ...prev]);
+    }
+
+    try {
+      localStorage.removeItem('taskvibe_pending_qopay_order');
+      localStorage.removeItem('taskvibe_pending_plan');
+    } catch {}
+
+    if (depositType === 'plan_purchase') {
+      showToast(`⏳ UTR ${finalUtr} submitted! VIP Plan is now In Process until Admin approves.`);
+      navigate('member_plans');
+    } else {
+      navigate('record');
+    }
+    isVerifyingQoPayReturnRef.current = false;
+  };
+  const checkActiveReturnOrderRef = useRef(checkActiveReturnOrder);
+  checkActiveReturnOrderRef.current = checkActiveReturnOrder;
+
+  useEffect(() => {
+    const runCheck = () => {
+      checkActiveReturnOrderRef.current();
+    };
     const handleVisibilityOrFocus = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        checkActiveReturnOrder();
+        runCheck();
       }
     };
 
-    checkActiveReturnOrder();
-    window.addEventListener('hashchange', checkActiveReturnOrder);
-    window.addEventListener('popstate', checkActiveReturnOrder);
+    runCheck();
+    window.addEventListener('hashchange', runCheck);
+    window.addEventListener('popstate', runCheck);
     window.addEventListener('focus', handleVisibilityOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     return () => {
-      window.removeEventListener('hashchange', checkActiveReturnOrder);
-      window.removeEventListener('popstate', checkActiveReturnOrder);
+      window.removeEventListener('hashchange', runCheck);
+      window.removeEventListener('popstate', runCheck);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
@@ -7370,6 +7631,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkQoPayStatus,
         disburseQoPayout,
         startDirectQoPayPayment,
+        prefetchedQoPaySession,
+        clearPrefetchedQoPaySession,
       }}
     >
       {children}

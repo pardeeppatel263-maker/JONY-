@@ -82,15 +82,15 @@ export const PlanDetailScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout redirect - NO POPUP!
+    // Start QO Pay cashier checkout or open UPI modal smoothly
     setIsRedirectingToUPI(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirectingToUPI(false);
-    }, 4000);
+    }, 16500);
 
     try {
       const res = await startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
-      if (!res.success) {
+      if (!res.success || res.openedModal) {
         clearTimeout(safetyTimer);
         setIsRedirectingToUPI(false);
       }
@@ -500,7 +500,7 @@ export const PlanDetailScreen: React.FC = () => {
               {adminSettings.manualPaymentEnabled === true && (
                 <button
                   type="button"
-                  onClick={() => buyPlanWithUPI(plan)}
+                  onClick={() => buyPlanWithUPI(plan, true)}
                   className="w-full py-1 text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
                 >
                   Or Pay with Manual QR & UTR

@@ -1152,11 +1152,11 @@ async function startServer() {
     });
   });
 
-  // 3. Test QO Pay Connection
+  // 3. Test QO Pay Connection (Uses non-destructive order-status check so test clicks never degrade merchant success rate)
   app.post('/api/qopay/test', async (req, res) => {
     try {
       const { userToken, user_token, baseUrl, base_url } = req.body || {};
-      const activeToken = String(userToken || user_token || qopayConfig.userToken || '').trim();
+      const activeToken = String(userToken || user_token || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
       const activeBase = String(baseUrl || base_url || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
 
       if (!activeToken) {
@@ -1166,31 +1166,35 @@ async function startServer() {
         });
       }
 
-      // Check create-order with test order
-      const testOrderId = `TEST_${Date.now()}`;
+      // Check token validity via non-destructive order-status endpoint first
+      const pingOrderId = `PING_${Date.now()}`;
       const { status, data } = await callQoPayApi(
-        `${activeBase}/api/create-order`,
+        `${activeBase}/api/order-status`,
         {
           user_token: activeToken,
-          amount: '100.00',
-          order_id: testOrderId,
-          customer_mobile: '9876543210',
-          customer_name: 'Test Merchant',
-          customer_email: 'test@merchant.com',
-          redirect_url: `${req.protocol}://${req.get('host')}/api/qopay/callback`,
-          remark1: 'Connectivity Check',
+          order_id: pingOrderId,
         },
-        'POST',
-        10000
+        'GET',
+        12000
       );
 
-      const isValidToken = data && data.message !== 'Invalid API token' && data.message !== 'API token required';
+      const rawMsg = String(data?.message || '').toLowerCase();
+      const isInvalidToken =
+        rawMsg.includes('invalid api token') ||
+        rawMsg.includes('invalid token') ||
+        rawMsg.includes('token required') ||
+        rawMsg.includes('unauthorized');
+      const isValidToken = Boolean(data) && !isInvalidToken && status < 500;
 
       return res.json({
         success: Boolean(data?.status || isValidToken),
         httpStatus: status,
         tokenValid: isValidToken,
-        message: data?.message || (isValidToken ? 'Token authenticated with QO Pay' : 'Invalid API token'),
+        message: isInvalidToken
+          ? data?.message || 'Invalid API token'
+          : rawMsg.includes('order not found')
+          ? 'Token authenticated & QO Pay gateway reachable'
+          : data?.message || 'Token authenticated with QO Pay',
         data,
       });
     } catch (err: any) {
@@ -1236,7 +1240,12 @@ async function startServer() {
         (req.get('x-forwarded-host')
           ? `${req.get('x-forwarded-proto') || 'https'}://${req.get('x-forwarded-host')}`
           : `${req.protocol}://${req.get('host')}`);
-      const effectiveRedirectUrl = redirectUrl || `${defaultHost}/api/qopay/callback?order_id=${activeOrderId}`;
+      // Use path parameter callback so gateways that append ?status=... never corrupt query params
+      const isLocalCallback = typeof redirectUrl === 'string' && redirectUrl.includes('localhost');
+      const effectiveRedirectUrl =
+        redirectUrl && !isLocalCallback
+          ? redirectUrl
+          : `${defaultHost.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(activeOrderId)}`;
       const formattedAmount = numAmount % 1 === 0 ? String(Math.round(numAmount)) : numAmount.toFixed(2);
 
       const payload = {
@@ -1252,8 +1261,8 @@ async function startServer() {
       };
 
       const endpoint = `${activeBase}/api/create-order`;
-      // Direct fast API call (5s timeout)
-      const { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 5000);
+      // Allow up to 14s since qo-pay.com can take >5s to respond
+      const { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 14000);
 
       const resultObj = data?.result || data?.data || data || {};
       const paymentUrl =
@@ -1316,7 +1325,7 @@ async function startServer() {
         orderId,
       } = req.body || {};
 
-      const activeToken = String(userToken || qopayConfig.userToken || '').trim();
+      const activeToken = String(userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
       const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
 
       if (!orderId) {
@@ -1338,7 +1347,7 @@ async function startServer() {
 
       // 2. Query QO Pay live order-status GET endpoint
       const endpoint = `${activeBase}/api/order-status`;
-      const { status: httpStatus, data } = await callQoPayApi(
+      const { data } = await callQoPayApi(
         endpoint,
         {
           user_token: activeToken,
@@ -1352,22 +1361,34 @@ async function startServer() {
       const rawStatus = String(
         resultObj.payment_status ||
         data?.payment_status ||
+        resultObj.txnStatus ||
+        data?.txnStatus ||
+        resultObj.order_status ||
+        data?.order_status ||
         resultObj.status ||
         data?.status ||
         ''
       ).toUpperCase();
 
-      const utr =
-        resultObj.utr && resultObj.utr !== 'null'
-          ? String(resultObj.utr)
-          : resultObj.bank_ref_no || resultObj.bank_txn_id || resultObj.rrn || '';
+      const rawUtr =
+        resultObj.utr ||
+        resultObj.bank_ref_no ||
+        resultObj.bank_txn_id ||
+        resultObj.rrn ||
+        resultObj.ref_no ||
+        data?.utr ||
+        '';
+      const utr = rawUtr && String(rawUtr).toLowerCase() !== 'null' ? String(rawUtr) : '';
 
       const isPaid =
         rawStatus === 'SUCCESS' ||
         rawStatus === 'COMPLETED' ||
         rawStatus === 'PAID' ||
+        rawStatus === 'TXN_SUCCESS' ||
+        rawStatus === 'CAPTURED' ||
+        rawStatus === 'SETTLED' ||
         rawStatus === '1' ||
-        (Boolean(utr && utr.length >= 8) && rawStatus !== 'FAILED' && rawStatus !== 'PENDING');
+        (Boolean(utr && utr.length >= 8) && rawStatus !== 'FAILED' && rawStatus !== 'PENDING' && rawStatus !== 'FALSE');
 
       if (isPaid) {
         const existing = qopayOrders.get(orderId) || {};
@@ -1394,12 +1415,13 @@ async function startServer() {
   });
 
   // 6. QO Pay Webhook & Callback Notifications
-  app.post(['/api/qopay/notify', '/api/qopay/webhook', '/api/qopay/callback'], (req, res) => {
+  app.post(['/api/qopay/notify', '/api/qopay/webhook', '/api/qopay/callback', '/api/qopay/callback/:orderId'], (req, res) => {
     try {
       const payload = req.body || {};
       console.log('[QO-Pay-Webhook]', JSON.stringify(payload));
 
       const orderId =
+        req.params.orderId ||
         payload.order_id ||
         payload.orderId ||
         payload.client_txn_id ||
@@ -1407,9 +1429,11 @@ async function startServer() {
         (payload.result && (payload.result.order_id || payload.result.orderId));
 
       const rawStatus = String(
+        payload.payment_status ||
+        payload.txnStatus ||
         payload.status ||
         payload.order_status ||
-        (payload.result && payload.result.status) ||
+        (payload.result && (payload.result.payment_status || payload.result.status)) ||
         ''
       ).toUpperCase();
 
@@ -1435,6 +1459,9 @@ async function startServer() {
         rawStatus === 'SUCCESS' ||
         rawStatus === 'PAID' ||
         rawStatus === 'COMPLETED' ||
+        rawStatus === 'TXN_SUCCESS' ||
+        rawStatus === 'CAPTURED' ||
+        rawStatus === 'SETTLED' ||
         rawStatus === '1' ||
         payload.status === true;
 
@@ -1452,33 +1479,57 @@ async function startServer() {
       }
 
       return res.status(200).json({ status: true, message: 'Webhook received successfully' });
-    } catch (err: any) {
+    } catch {
       return res.status(200).json({ status: true, message: 'Webhook acknowledged' });
     }
   });
 
   // 7. QO Pay Browser Callback Redirect Route (Returns user back to app after UTR submit)
-  app.get(['/api/qopay/callback', '/api/qopay/return'], (req, res) => {
-    const orderId = req.query.order_id || req.query.orderId || req.query.client_txn_id || req.query.merchant_order_id || '';
-    const status = req.query.status || 'submitted';
-    const utr =
+  app.get(['/api/qopay/callback/:orderId?', '/api/qopay/return/:orderId?'], (req, res) => {
+    let rawOrderId = String(
+      req.params.orderId ||
+        req.query.order_id ||
+        req.query.orderId ||
+        req.query.client_txn_id ||
+        req.query.merchant_order_id ||
+        ''
+    );
+    let rawStatus = String(req.query.status || 'submitted');
+    let rawUtr = String(
       req.query.utr ||
-      req.query.bank_ref_no ||
-      req.query.rrn ||
-      req.query.ref_no ||
-      req.query.reference_no ||
-      req.query.txn_id ||
-      req.query.utr_number ||
-      req.query.user_utr ||
-      req.query.UTR ||
-      '';
-    console.log('[QO-Pay-Browser-Callback]', { orderId, status, utr });
+        req.query.bank_ref_no ||
+        req.query.rrn ||
+        req.query.ref_no ||
+        req.query.reference_no ||
+        req.query.txn_id ||
+        req.query.utr_number ||
+        req.query.user_utr ||
+        req.query.UTR ||
+        ''
+    );
+
+    // Handle malformed gateways that append ?status=... directly after ?order_id=ORD_123
+    if (rawOrderId.includes('?')) {
+      const [cleanId, extraQuery] = rawOrderId.split('?');
+      rawOrderId = cleanId;
+      if (extraQuery) {
+        const extraParams = new URLSearchParams(extraQuery);
+        rawStatus = extraParams.get('status') || rawStatus;
+        rawUtr =
+          extraParams.get('utr') ||
+          extraParams.get('bank_ref_no') ||
+          extraParams.get('rrn') ||
+          rawUtr;
+      }
+    }
+
+    console.log('[QO-Pay-Browser-Callback]', { orderId: rawOrderId, status: rawStatus, utr: rawUtr });
     const params = new URLSearchParams({
-      qopay_order: String(orderId),
-      status: String(status),
+      qopay_order: rawOrderId,
+      status: rawStatus,
       returned: 'true',
     });
-    if (utr) params.set('utr', String(utr));
+    if (rawUtr) params.set('utr', rawUtr);
     return res.redirect(`/?${params.toString()}`);
   });
 

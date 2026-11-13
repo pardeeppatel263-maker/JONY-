@@ -115,7 +115,7 @@ export async function callDirectQoPayCreateOrder(
         'Accept': 'application/json',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(12000),
     });
 
     const rawText = await res.text();
@@ -186,7 +186,7 @@ export async function callDirectQoPayStatusCheck(
   baseUrl = 'https://qo-pay.com'
 ): Promise<QoPayStatusResult> {
   const cleanBase = (baseUrl || 'https://qo-pay.com').replace(/\/+$/, '');
-  const activeToken = String(userToken || '').trim();
+  const activeToken = String(userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
 
   if (!activeToken || !orderId) {
     return {
@@ -228,20 +228,32 @@ export async function callDirectQoPayStatusCheck(
     const paymentStatus = String(
       resultObj.payment_status ||
       data?.payment_status ||
+      resultObj.txnStatus ||
+      data?.txnStatus ||
+      resultObj.order_status ||
+      data?.order_status ||
       resultObj.status ||
       ''
     ).toUpperCase();
 
-    const utr =
-      resultObj.utr && resultObj.utr !== 'null'
-        ? String(resultObj.utr)
-        : resultObj.bank_ref_no || resultObj.rrn || '';
+    const rawUtr =
+      resultObj.utr ||
+      resultObj.bank_ref_no ||
+      resultObj.rrn ||
+      resultObj.ref_no ||
+      data?.utr ||
+      '';
+    const utr = rawUtr && String(rawUtr).toLowerCase() !== 'null' ? String(rawUtr) : '';
 
     const isPaid =
       paymentStatus === 'SUCCESS' ||
       paymentStatus === 'COMPLETED' ||
       paymentStatus === 'PAID' ||
-      Boolean(utr && utr.length >= 8);
+      paymentStatus === 'TXN_SUCCESS' ||
+      paymentStatus === 'CAPTURED' ||
+      paymentStatus === 'SETTLED' ||
+      paymentStatus === '1' ||
+      (Boolean(utr && utr.length >= 8) && paymentStatus !== 'FAILED' && paymentStatus !== 'PENDING' && paymentStatus !== 'FALSE');
 
     return {
       success: data?.status === true || isPaid,

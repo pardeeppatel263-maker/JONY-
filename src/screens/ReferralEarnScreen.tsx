@@ -20,7 +20,10 @@ import {
 export const ReferralEarnScreen: React.FC = () => {
   const { user, copyText, showToast, registeredUsers, setIsTeamModalOpen, syncReferralWallet } = useApp();
   const [isSyncing, setIsSyncing] = useState(false);
-  const referralCode = user.referralCode || 'ZT982143';
+  const cleanMob = (user.mobile || '').replace(/\D/g, '').slice(-10);
+  const referralCode =
+    (user.referralCode && user.referralCode.trim().toUpperCase()) ||
+    (cleanMob.length >= 6 ? `ZT${cleanMob.slice(-6)}` : 'ZT982143');
   const referralLink =
     typeof window !== 'undefined'
       ? `${window.location.origin}${window.location.pathname}?invite=${referralCode}`

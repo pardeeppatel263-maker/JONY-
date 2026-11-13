@@ -64,9 +64,28 @@ export const RegisterScreen: React.FC = () => {
   const [asyncRefStatus, setAsyncRefStatus] = useState<{ isValid: boolean; referrerName?: string } | null>(null);
   const [isValidatingRef, setIsValidatingRef] = useState(false);
 
+  const normalizeReferralInput = (val: string): string => {
+    const trimmed = (val || '').trim();
+    if (!trimmed) return '';
+    if (trimmed.includes('invite=') || trimmed.includes('ref=')) {
+      const match = trimmed.match(/[?&](?:invite|ref)=([a-zA-Z0-9_-]+)/i);
+      if (match && match[1]) {
+        return match[1].trim().toUpperCase().replace(/\s+/g, '');
+      }
+    }
+    return trimmed.toUpperCase().replace(/\s+/g, '');
+  };
+
+  useEffect(() => {
+    if (pendingInviteCode && !referralCode) {
+      setReferralCode(normalizeReferralInput(pendingInviteCode));
+    }
+  }, [pendingInviteCode]);
+
   // Live real-time referral verification with fallback to cloud database
   useEffect(() => {
-    const code = referralCode.trim();
+    let cancelled = false;
+    const code = normalizeReferralInput(referralCode);
     if (!code) {
       setAsyncRefStatus(null);
       setIsValidatingRef(false);
@@ -78,14 +97,28 @@ export const RegisterScreen: React.FC = () => {
       setIsValidatingRef(false);
       return;
     }
+    // Clear stale async status before verifying so "Invalid Code" doesn't flash prematurely
+    setAsyncRefStatus(null);
     setIsValidatingRef(true);
     const timer = setTimeout(async () => {
-      const asyncVal = await validateReferralCodeAsync(code);
-      setAsyncRefStatus(asyncVal);
-      setIsValidatingRef(false);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [referralCode, registeredUsers]);
+      try {
+        const asyncVal = await validateReferralCodeAsync(code);
+        if (!cancelled) {
+          setAsyncRefStatus(asyncVal);
+          setIsValidatingRef(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setAsyncRefStatus({ isValid: false });
+          setIsValidatingRef(false);
+        }
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [referralCode]);
 
   const cleanMobileDigits = (mobile || '').replace(/\D/g, '').slice(-10);
   const isNumberAlreadyRegistered = cleanMobileDigits.length === 10 && isPhoneAlreadyRegistered(cleanMobileDigits);
@@ -213,13 +246,14 @@ export const RegisterScreen: React.FC = () => {
         return;
       }
 
-      if (referralCode.trim()) {
-        let check = validateReferralCode(referralCode.trim());
+      const cleanRef = normalizeReferralInput(referralCode);
+      if (cleanRef) {
+        let check = validateReferralCode(cleanRef);
         if (!check.isValid) {
-          check = await validateReferralCodeAsync(referralCode.trim());
+          check = await validateReferralCodeAsync(cleanRef);
         }
         if (!check.isValid) {
-          showToast(`❌ Invalid invite code "${referralCode.trim()}"! Please enter a valid candidate invite code or leave it blank.`);
+          showToast(`❌ Invalid invite code "${cleanRef}"! Please enter a valid candidate invite code or leave it blank.`);
           return;
         }
       }
@@ -230,7 +264,7 @@ export const RegisterScreen: React.FC = () => {
         console.warn(e);
       }
 
-      await register(fullName, mobile, email, password, referralCode.trim());
+      await register(fullName, mobile, email, password, cleanRef);
     } finally {
       setIsRegistering(false);
     }
@@ -582,23 +616,31 @@ export const RegisterScreen: React.FC = () => {
             <input
               type="text"
               value={referralCode}
-              onChange={(e) => setReferralCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
+              onChange={(e) => setReferralCode(normalizeReferralInput(e.target.value))}
               placeholder="Enter unique invite code (e.g. ZT982143)"
               className="w-full py-2.5 px-3 text-sm font-bold text-amber-900 outline-none placeholder:text-slate-400 tracking-wider"
             />
             {referralCode.trim().length > 0 && (() => {
-              if (isValidatingRef) {
+              const syncVal = validateReferralCode(referralCode.trim());
+              if (syncVal.isValid) {
+                return (
+                  <span className="pr-3 text-xs font-bold text-emerald-600 flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Valid ({syncVal.referrerName})</span>
+                  </span>
+                );
+              }
+              if (isValidatingRef || !asyncRefStatus) {
                 return (
                   <span className="pr-3 text-xs font-bold text-amber-600 flex items-center gap-1 shrink-0 animate-pulse">
                     <span>Checking code...</span>
                   </span>
                 );
               }
-              const val = asyncRefStatus || validateReferralCode(referralCode.trim());
-              return val.isValid ? (
+              return asyncRefStatus.isValid ? (
                 <span className="pr-3 text-xs font-bold text-emerald-600 flex items-center gap-1 shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Valid ({val.referrerName})</span>
+                  <span>Valid ({asyncRefStatus.referrerName})</span>
                 </span>
               ) : (
                 <span className="pr-3 text-xs font-bold text-rose-600 flex items-center gap-1 shrink-0">

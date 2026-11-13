@@ -279,6 +279,7 @@ export interface PaymentDeposit {
   qopayOrderId?: string;
   qopayPaymentUrl?: string;
   userSubmittedUtr?: string;
+  commissionDistributed?: boolean;
 }
 
 export interface TransactionItem {

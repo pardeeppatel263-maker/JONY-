@@ -141,19 +141,20 @@ export interface DramPayBalanceDetailResponse {
 export const BACKEND_FALLBACK_URL =
   (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
   (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('capacitor:') && !window.location.origin.includes('localhost') ? window.location.origin : '') ||
-  'https://ais-pre-cgdga3yv2d33dg4wlq3ahi-300326017780.asia-east1.run.app';
+  'https://ais-pre-3cfwnkafats6ngxztw372a-555131316104.asia-southeast1.run.app';
 
 export function getApiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   if (typeof window !== 'undefined') {
-    // If in standalone Capacitor native app without an origin host or on local device
-    const isCapacitorOrLocal =
+    // If in standalone Capacitor native app without an origin host
+    const isCapacitorNative =
       window.location.protocol === 'capacitor:' ||
       window.location.protocol === 'ionic:' ||
       window.location.protocol === 'file:' ||
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-    if (isCapacitorOrLocal) {
+      ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+        window.location.port !== '3000' &&
+        Boolean((window as any).Capacitor?.isNativePlatform?.()));
+    if (isCapacitorNative) {
       return `${BACKEND_FALLBACK_URL}${cleanPath}`;
     }
   }

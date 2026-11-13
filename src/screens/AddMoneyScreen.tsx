@@ -43,14 +43,19 @@ export const AddMoneyScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout (falls back to UPI QR modal automatically if gateway fails)
+    // Direct QO Pay cashier checkout (falls back to UPI QR modal automatically if in iframe or gateway fails)
     setIsRedirecting(true);
+    const safetyTimer = setTimeout(() => {
+      setIsRedirecting(false);
+    }, 16500);
     try {
       const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
-      if (!res.success) {
+      if (!res.success || res.openedModal) {
+        clearTimeout(safetyTimer);
         setIsRedirecting(false);
       }
     } catch {
+      clearTimeout(safetyTimer);
       setIsRedirecting(false);
       addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
     }

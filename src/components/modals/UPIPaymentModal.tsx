@@ -273,6 +273,31 @@ export const UPIPaymentModal: React.FC = () => {
     return () => clearInterval(interval);
   }, [isUPIModalOpen, paymentMode]);
 
+  const openQoPayCashierUrl = (url?: string) => {
+    if (!url || typeof window === 'undefined') return;
+    persistPendingQoPayReturnState();
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    if (inIframe) {
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch {}
+    } else {
+      window.location.href = url;
+    }
+  };
+
   // Create QO Pay order on demand
   const createQoPaySession = async () => {
     setQopayLoading(true);
@@ -296,15 +321,18 @@ export const UPIPaymentModal: React.FC = () => {
           deeplinks: res.deeplinks,
           depositId: res.depositId,
         });
+        if (res.paymentUrl) {
+          openQoPayCashierUrl(res.paymentUrl);
+        }
       } else {
         if (res.message && !res.message.toLowerCase().includes('empty')) {
           setQopayError(res.message);
         } else {
-          setQopayError('Instant Dynamic UPI QR ready for fast payment.');
+          setQopayError('QO Pay cashier temporarily unavailable. Please use the Dynamic UPI QR below.');
         }
       }
     } catch {
-      setQopayError('Instant Dynamic UPI QR ready for fast payment.');
+      setQopayError('QO Pay cashier temporarily unavailable. Please use the Dynamic UPI QR below.');
     } finally {
       setQopayLoading(false);
     }
@@ -832,22 +860,18 @@ export const UPIPaymentModal: React.FC = () => {
               </div>
             )}
 
-            {/* FRIENDLY NOTICE WHEN QOPAY CHANNEL IS BUSY OR IN STANDBY */}
+            {/* TRANSPARENT NOTICE WHEN QO PAY GATEWAY REJECTS ORDER (E.G. 6-HOUR SUCCESS RATE HOLD) */}
             {qopayError && !qopayLoading && !qopayOrder && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-left space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Instant UPI QR Ready</span>
+              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 text-left space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>QO Pay Cashier Unavailable</span>
                 </div>
-                <p className="text-[11px] text-emerald-800 leading-snug">
-                  {typeof qopayError === 'string' &&
-                  (qopayError.toLowerCase().includes('success rate') ||
-                    qopayError.toLowerCase().includes('channel inactive') ||
-                    qopayError.toLowerCase().includes('timed out'))
-                    ? `Scan the Dynamic UPI QR Code below (or tap 1-Click Pay) to pay ₹${pendingUPIAmount.toLocaleString(
-                        'en-IN'
-                      )}, then enter your 12-digit UTR below for fast verification!`
-                    : qopayError}
+                <p className="text-[11px] text-amber-900 font-semibold leading-snug">
+                  Gateway Reason: {qopayError}
+                </p>
+                <p className="text-[10px] text-amber-800 leading-snug">
+                  You can pay ₹{pendingUPIAmount.toLocaleString('en-IN')} instantly via the Dynamic UPI QR below and submit your 12-digit UTR.
                 </p>
                 <div className="flex items-center gap-2 pt-0.5">
                   <button
@@ -863,9 +887,9 @@ export const UPIPaymentModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={createQoPaySession}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
                   >
-                    <RefreshCw className="w-3 h-3" /> Retry Live Gateway
+                    <RefreshCw className="w-3 h-3" /> Retry Cashier
                   </button>
                 </div>
               </div>
@@ -874,6 +898,19 @@ export const UPIPaymentModal: React.FC = () => {
             {/* QOPAY ORDER OR DYNAMIC UPI QR CODE READY */}
             {!qopayLoading && !qopaySuccess && (
               <div className="space-y-3">
+                {/* PROMINENT DIRECT QO PAY CASHIER PAGE CTA WHEN AVAILABLE */}
+                {qopayOrder?.paymentUrl && (
+                  <button
+                    type="button"
+                    onClick={() => openQoPayCashierUrl(qopayOrder.paymentUrl)}
+                    className="w-full py-3.5 px-3 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 hover:from-indigo-800 hover:to-purple-800 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md shadow-indigo-500/30 active:scale-98"
+                  >
+                    <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                    <span>Open QO Pay Cashier Page</span>
+                    <ExternalLink className="w-4 h-4 text-white" />
+                  </button>
+                )}
+
                 {/* QR Code Container */}
                 <div className="bg-white border-2 border-dashed border-indigo-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
                   <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
@@ -920,18 +957,6 @@ export const UPIPaymentModal: React.FC = () => {
 
                 {/* 1-Click Pay Buttons */}
                 <div className="space-y-1.5 pt-1">
-                  {qopayOrder?.paymentUrl && (
-                    <a
-                      href={qopayOrder.paymentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => persistPendingQoPayReturnState()}
-                      className="w-full py-3 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300 font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
-                    >
-                      <ExternalLink className="w-4 h-4 text-indigo-600" />
-                      <span>Open QO Pay Payment Page</span>
-                    </a>
-                  )}
 
                   <button
                     type="button"

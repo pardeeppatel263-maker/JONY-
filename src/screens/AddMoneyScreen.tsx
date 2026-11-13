@@ -36,9 +36,14 @@ export const AddMoneyScreen: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<AmountOption>(defaultSelected);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
+  const isQoPayActive = Boolean(
+    (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
+    (adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c')
+  );
+
   const handleProceed = async () => {
-    // If manual payment is explicitly turned ON by Admin, allow manual modal
-    if (adminSettings.manualPaymentEnabled === true) {
+    // Only skip QO Pay when QO Pay is OFF and Manual Payment is ON
+    if (adminSettings.manualPaymentEnabled === true && !isQoPayActive) {
       addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
       return;
     }

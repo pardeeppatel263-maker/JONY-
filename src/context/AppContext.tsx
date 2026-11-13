@@ -7120,9 +7120,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isEmbeddedIframe = true;
         }
 
-        // Inside an embedded iframe (preview/webview frame), external cashiers often block framing or cross-origin top navigation fails.
-        // Open UPIPaymentModal with the already-created QO Pay order so user sees live QR + 1-Click UPI + New-Tab Cashier + Auto Polling!
-        if (isEmbeddedIframe || !res.paymentUrl) {
+        if (isEmbeddedIframe) {
+          // Inside an embedded preview iframe, cross-origin framing of qo-pay.com is blocked by X-Frame-Options.
+          // Launch the QO Pay Cashier Page immediately in a new tab AND keep UPIPaymentModal open with a prominent
+          // "Open QO Pay Cashier Page" button + live auto-polling in case the browser blocks the automatic new tab.
+          if (typeof document !== 'undefined' && res.paymentUrl) {
+            try {
+              const link = document.createElement('a');
+              link.href = res.paymentUrl;
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            } catch {}
+          }
           setPrefetchedQoPaySession({
             amount,
             depositType,
@@ -7140,8 +7153,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (typeof window !== 'undefined' && res.paymentUrl) {
           window.location.href = res.paymentUrl;
+          return { success: true, paymentUrl: res.paymentUrl };
         }
-        return { success: true, paymentUrl: res.paymentUrl };
+
+        // If QO Pay succeeded without a paymentUrl (only upiIntent/qrCode), show UPIPaymentModal
+        setPrefetchedQoPaySession({
+          amount,
+          depositType,
+          success: true,
+          order: res,
+          timestamp: Date.now(),
+        });
+        setPendingUPIAmount(amount);
+        setPendingUPIBonus(bonus);
+        setPendingDepositType(depositType);
+        setPendingPlanForUPI(plan || null);
+        setIsUPIModalOpen(true);
+        return { success: true, paymentUrl: res.paymentUrl, openedModal: true };
       } else {
         // Smooth seamless fallback for BOTH add_money AND plan_purchase:
         // Open UPIPaymentModal with instant Dynamic QR + UPI App Pay + UTR submission without firing another doomed create-order!

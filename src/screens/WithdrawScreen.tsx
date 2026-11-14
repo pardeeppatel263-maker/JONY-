@@ -139,8 +139,9 @@ export const WithdrawScreen: React.FC = () => {
       return;
     }
 
-    if (selectedAmount < 1000) {
-      showToast('❌ Minimum withdrawal amount is ₹1,000');
+    const minW = Math.max(100, Number(adminSettings.minWithdrawal || 1000));
+    if (selectedAmount < minW) {
+      showToast(`❌ Minimum withdrawal amount is ₹${minW.toLocaleString('en-IN')}`);
       return;
     }
 

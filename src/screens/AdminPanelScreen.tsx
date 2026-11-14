@@ -369,11 +369,13 @@ export const AdminPanelScreen: React.FC = () => {
   const [isSavingGateway, setIsSavingGateway] = useState(false);
   const [isSavingDrampay, setIsSavingDrampay] = useState(false);
   const [isSavingQopay, setIsSavingQopay] = useState(false);
-  const [gatewaySubTab, setGatewaySubTab] = useState<'drampay' | 'qopay'>('drampay');
+  const [gatewaySubTab, setGatewaySubTab] = useState<'drampay' | 'qopay'>(
+    adminSettings.paymentGatewayProvider === 'drampay' ? 'drampay' : 'qopay'
+  );
   const [testResult, setTestResult] = useState<string | null>(null);
 
   // QO Pay API Specific State (https://qo-pay.com/api)
-  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? false);
+  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? true);
   const [qopayUserToken, setQopayUserToken] = useState(adminSettings.qopayUserToken || '');
   const [qopayBaseUrl, setQopayBaseUrl] = useState(adminSettings.qopayBaseUrl || 'https://qo-pay.com');
   const [qopayAutoApprove, setQopayAutoApprove] = useState(adminSettings.qopayAutoApprove ?? true);
@@ -386,7 +388,7 @@ export const AdminPanelScreen: React.FC = () => {
   const [isCheckingQopayStatus, setIsCheckingQopayStatus] = useState(false);
 
   // DramPay API Specific State
-  const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? true);
+  const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? false);
   const [drampayMerchantId, setDrampayMerchantId] = useState(adminSettings.drampayMerchantId || '');
   const [drampaySecretKey, setDrampaySecretKey] = useState(adminSettings.drampaySecretKey || '');
   const [drampayBaseUrl, setDrampayBaseUrl] = useState(adminSettings.drampayBaseUrl || 'https://drampay.net');
@@ -433,9 +435,12 @@ export const AdminPanelScreen: React.FC = () => {
     setIsSavingDrampay(true);
     try {
       const isDrampayOn = Boolean(drampayEnabled);
-      const chosenProvider = isDrampayOn ? 'drampay' : (qopayEnabled ? 'qopay' : 'manual');
+      const nextQopayOn = isDrampayOn ? false : qopayEnabled;
+      const chosenProvider = isDrampayOn ? 'drampay' : (nextQopayOn ? 'qopay' : 'manual');
+      if (isDrampayOn) setQopayEnabled(false);
       await updateAdminSettings({
         drampayEnabled: isDrampayOn,
+        qopayEnabled: nextQopayOn,
         drampayMerchantId: (drampayMerchantId || gatewayMerchantId).trim(),
         drampaySecretKey: (drampaySecretKey || gatewayApiKey).trim(),
         drampayBaseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
@@ -443,7 +448,7 @@ export const AdminPanelScreen: React.FC = () => {
         drampayAutoPayoutEnabled,
         drampayUpiMode,
         paymentGatewayProvider: chosenProvider,
-        paymentGatewayEnabled: isDrampayOn || qopayEnabled,
+        paymentGatewayEnabled: isDrampayOn || nextQopayOn,
       });
 
       fetch('/api/drampay/config', {
@@ -470,15 +475,18 @@ export const AdminPanelScreen: React.FC = () => {
     setIsSavingQopay(true);
     try {
       const isQopayOn = Boolean(qopayEnabled);
-      const chosenProvider = isQopayOn ? 'qopay' : (drampayEnabled ? 'drampay' : 'manual');
+      const nextDrampayOn = isQopayOn ? false : drampayEnabled;
+      const chosenProvider = isQopayOn ? 'qopay' : (nextDrampayOn ? 'drampay' : 'manual');
+      if (isQopayOn) setDrampayEnabled(false);
       await updateAdminSettings({
         qopayEnabled: isQopayOn,
+        drampayEnabled: nextDrampayOn,
         qopayUserToken: qopayUserToken.trim(),
         qopayBaseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
         qopayAutoApprove,
         qopayAutoPayoutEnabled,
         paymentGatewayProvider: chosenProvider,
-        paymentGatewayEnabled: isQopayOn || drampayEnabled,
+        paymentGatewayEnabled: isQopayOn || nextDrampayOn,
       });
 
       fetch('/api/qopay/config', {
@@ -972,6 +980,7 @@ export const AdminPanelScreen: React.FC = () => {
   const [newPlanBadge, setNewPlanBadge] = useState('LV 4');
   const [newPlanTheme, setNewPlanTheme] = useState('cyan');
   const [newPlanRecommended, setNewPlanRecommended] = useState(false);
+  const [confirmDeletePlanId, setConfirmDeletePlanId] = useState<string | null>(null);
 
   // Selected screenshot preview modal
   const [viewScreenshotDeposit, setViewScreenshotDeposit] = useState<PaymentDeposit | null>(null);
@@ -3592,6 +3601,8 @@ export const AdminPanelScreen: React.FC = () => {
                     className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
                       dep.status === 'in_process'
                         ? 'bg-slate-900 border-amber-500/40 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/20'
+                        : dep.status === 'gateway_pending'
+                        ? 'bg-slate-900/80 border-blue-500/30'
                         : dep.status === 'approved'
                         ? 'bg-slate-900/70 border-emerald-500/30'
                         : 'bg-slate-900/40 border-red-500/20 opacity-80'
@@ -3624,12 +3635,18 @@ export const AdminPanelScreen: React.FC = () => {
                           className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
                             dep.status === 'in_process'
                               ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 animate-pulse'
+                              : dep.status === 'gateway_pending'
+                              ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
                               : dep.status === 'approved'
                               ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                               : 'bg-red-500/15 text-red-400 border-red-500/30'
                           }`}
                         >
-                          {dep.status === 'in_process' ? 'Pending Approval' : dep.status}
+                          {dep.status === 'in_process'
+                            ? 'Pending Approval'
+                            : dep.status === 'gateway_pending'
+                            ? 'Awaiting QO Pay'
+                            : dep.status}
                         </span>
                       </div>
 
@@ -5223,14 +5240,28 @@ export const AdminPanelScreen: React.FC = () => {
                       <span className="py-2 bg-slate-950 text-slate-500 font-bold text-[11px] rounded-xl text-center border border-slate-800">
                         Default Free
                       </span>
+                    ) : confirmDeletePlanId === p.id ? (
+                      <div className="grid grid-cols-2 gap-1">
+                        <button
+                          onClick={async () => {
+                            await deleteVIPPlan(p.id);
+                            setConfirmDeletePlanId(null);
+                          }}
+                          className="py-2 bg-red-600 hover:bg-red-500 text-white font-black text-[11px] rounded-xl transition cursor-pointer"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeletePlanId(null)}
+                          className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-[11px] rounded-xl transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     ) : (
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete VIP Plan "${p.title}"? This cannot be undone.`)) {
-                            deleteVIPPlan(p.id);
-                          }
-                        }}
-                        className="py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-red-500/20"
+                        onClick={() => setConfirmDeletePlanId(p.id)}
+                        className="py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-red-500/20 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Delete</span>
@@ -9853,8 +9884,10 @@ export const AdminPanelScreen: React.FC = () => {
                       `Instant Verification & Direct VIP Support`,
                     ],
                   };
-                  await addVIPPlan(newPlanItem);
-                  setIsAddPlanModalOpen(false);
+                  const ok = await addVIPPlan(newPlanItem);
+                  if (ok) {
+                    setIsAddPlanModalOpen(false);
+                  }
                 }}
                 className="py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 font-black text-xs shadow-lg shadow-orange-500/20 transition active:scale-95 flex items-center justify-center gap-1.5"
               >

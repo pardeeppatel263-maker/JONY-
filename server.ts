@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
@@ -10,6 +11,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
@@ -1277,9 +1279,11 @@ async function startServer() {
       const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
       const qrCodeString = upiIntent || paymentUrl;
 
+      const resolvedOrderId = String(data?.order_id || resultObj?.order_id || activeOrderId);
+
       // Cache order in memory for status checks and webhook tracking
-      qopayOrders.set(activeOrderId, {
-        orderId: activeOrderId,
+      const cachedOrderObj = {
+        orderId: resolvedOrderId,
         amount: numAmount,
         status: data?.status ? 'PENDING' : 'FAILED',
         createdAt: Date.now(),
@@ -1289,12 +1293,16 @@ async function startServer() {
         qrCode: qrCodeString,
         customerMobile,
         raw: data,
-      });
+      };
+      qopayOrders.set(resolvedOrderId, cachedOrderObj);
+      if (resolvedOrderId !== activeOrderId) {
+        qopayOrders.set(activeOrderId, cachedOrderObj);
+      }
 
       if (data?.status === true || Boolean(paymentUrl)) {
         return res.json({
           success: true,
-          orderId: activeOrderId,
+          orderId: resolvedOrderId,
           paymentUrl,
           deeplinks,
           upiIntent,
@@ -1642,7 +1650,9 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
+        allowedHosts: true,
         hmr: process.env.DISABLE_HMR !== 'true',
+        ws: { server: httpServer },
         watch: process.env.DISABLE_HMR === 'true' ? null : {},
       },
       appType: 'spa',
@@ -1656,7 +1666,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running at http://0.0.0.0:${PORT}`);
   });
 }

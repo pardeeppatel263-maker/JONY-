@@ -132,7 +132,13 @@ export const HomeScreen: React.FC = () => {
         : []),
     ])
   );
-  const boughtPlans = (plans || []).filter((p: any) => p && activePlanIds.includes(p.id) && (p.level ?? 0) > 0);
+  const boughtPlans = Array.from(
+    new Map(
+      (plans || [])
+        .filter((p: any) => p && activePlanIds.includes(p.id) && (p.level ?? 0) > 0)
+        .map((p: any) => [p.level, p])
+    ).values()
+  );
 
   const isVideoPending = taskSubmissions.some((s: any) => s.status === 'pending' && s.taskType === 'youtube_video');
   const isVideoApproved = taskSubmissions.some((s: any) => s.status === 'approved' && s.taskType === 'youtube_video');

@@ -31,7 +31,13 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
 
   // Internal tab selection ('drampay' | 'qopay')
   const [selectedGateway, setSelectedGateway] = useState<'drampay' | 'qopay'>(
-    activeTab === 'qopay' ? 'qopay' : 'drampay'
+    activeTab === 'qopay'
+      ? 'qopay'
+      : activeTab === 'drampay'
+      ? 'drampay'
+      : adminSettings.paymentGatewayProvider === 'drampay'
+      ? 'drampay'
+      : 'qopay'
   );
 
   useEffect(() => {
@@ -40,7 +46,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
   }, [activeTab]);
 
   // DramPay state
-  const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? true);
+  const [drampayEnabled, setDrampayEnabled] = useState(adminSettings.drampayEnabled ?? false);
   const [drampayMerchantId, setDrampayMerchantId] = useState(adminSettings.drampayMerchantId || '');
   const [drampaySecretKey, setDrampaySecretKey] = useState(adminSettings.drampaySecretKey || '');
   const [drampayBaseUrl, setDrampayBaseUrl] = useState(adminSettings.drampayBaseUrl || 'https://drampay.net');
@@ -59,7 +65,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
   const [isCheckingDrampayUtr, setIsCheckingDrampayUtr] = useState(false);
 
   // QO Pay state (https://qo-pay.com)
-  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? false);
+  const [qopayEnabled, setQopayEnabled] = useState(adminSettings.qopayEnabled ?? true);
   const [qopayUserToken, setQopayUserToken] = useState(adminSettings.qopayUserToken || '');
   const [qopayBaseUrl, setQopayBaseUrl] = useState(adminSettings.qopayBaseUrl || 'https://qo-pay.com');
   const [qopayAutoApprove, setQopayAutoApprove] = useState(adminSettings.qopayAutoApprove ?? true);
@@ -120,15 +126,18 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
     }
   };
 
-  // SAVE DRAMPAY SETTINGS (Independent)
+  // SAVE DRAMPAY SETTINGS (Mutually disables QO Pay when DramPay is activated)
   const handleSaveDrampay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSavingDrampay(true);
     try {
       const isDrampayOn = Boolean(drampayEnabled);
-      const chosenProvider = isDrampayOn ? 'drampay' : (qopayEnabled ? 'qopay' : 'manual');
+      const nextQopayOn = isDrampayOn ? false : qopayEnabled;
+      const chosenProvider = isDrampayOn ? 'drampay' : (nextQopayOn ? 'qopay' : 'manual');
+      if (isDrampayOn) setQopayEnabled(false);
       await updateAdminSettings({
         drampayEnabled: isDrampayOn,
+        qopayEnabled: nextQopayOn,
         drampayMerchantId: drampayMerchantId.trim(),
         drampaySecretKey: drampaySecretKey.trim(),
         drampayBaseUrl: drampayBaseUrl.trim() || 'https://drampay.net',
@@ -136,7 +145,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
         drampayAutoPayoutEnabled,
         drampayUpiMode,
         paymentGatewayProvider: chosenProvider,
-        paymentGatewayEnabled: isDrampayOn || qopayEnabled,
+        paymentGatewayEnabled: isDrampayOn || nextQopayOn,
       });
 
       fetch('/api/drampay/config', {
@@ -151,7 +160,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
 
       showToast(
         isDrampayOn
-          ? '✓ DramPay Gateway is now ACTIVE & Synced to Cloud!'
+          ? '✓ DramPay Gateway is now ACTIVE (QO Pay turned OFF) & Synced!'
           : '✓ DramPay Gateway turned COMPLETELY OFF & Synced to Cloud!'
       );
     } catch (err: any) {
@@ -162,21 +171,24 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
     }
   };
 
-  // SAVE QO PAY SETTINGS (Independent)
+  // SAVE QO PAY SETTINGS (Mutually disables DramPay when QO Pay is activated)
   const handleSaveQopay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSavingQopay(true);
     try {
       const isQopayOn = Boolean(qopayEnabled);
-      const chosenProvider = isQopayOn ? 'qopay' : (drampayEnabled ? 'drampay' : 'manual');
+      const nextDrampayOn = isQopayOn ? false : drampayEnabled;
+      const chosenProvider = isQopayOn ? 'qopay' : (nextDrampayOn ? 'drampay' : 'manual');
+      if (isQopayOn) setDrampayEnabled(false);
       await updateAdminSettings({
         qopayEnabled: isQopayOn,
+        drampayEnabled: nextDrampayOn,
         qopayUserToken: qopayUserToken.trim(),
         qopayBaseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
         qopayAutoApprove,
         qopayAutoPayoutEnabled,
         paymentGatewayProvider: chosenProvider,
-        paymentGatewayEnabled: isQopayOn || drampayEnabled,
+        paymentGatewayEnabled: isQopayOn || nextDrampayOn,
       });
 
       fetch('/api/qopay/config', {
@@ -190,7 +202,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
 
       showToast(
         isQopayOn
-          ? '✓ QO Pay Gateway is now ACTIVE & Synced to Cloud!'
+          ? '✓ QO Pay Gateway is now ACTIVE (DramPay turned OFF) & Synced!'
           : '✓ QO Pay Gateway turned COMPLETELY OFF & Synced to Cloud!'
       );
     } catch (err: any) {
@@ -198,6 +210,43 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
       showToast(`❌ Failed to save QO Pay settings: ${err.message || ''}`);
     } finally {
       setIsSavingQopay(false);
+    }
+  };
+
+  // Instant 1-Click Card Switches (persists immediately to Firestore)
+  const handleQuickToggleDrampay = async () => {
+    const nextVal = !drampayEnabled;
+    const nextQopay = nextVal ? false : qopayEnabled;
+    setDrampayEnabled(nextVal);
+    if (nextVal) setQopayEnabled(false);
+    try {
+      await updateAdminSettings({
+        drampayEnabled: nextVal,
+        qopayEnabled: nextQopay,
+        paymentGatewayProvider: nextVal ? 'drampay' : (nextQopay ? 'qopay' : 'manual'),
+        paymentGatewayEnabled: nextVal || nextQopay,
+      });
+      showToast(nextVal ? '✓ DramPay switched ON (QO Pay turned OFF)' : '✓ DramPay switched OFF');
+    } catch (err: any) {
+      showToast(`Error switching DramPay: ${err.message || ''}`);
+    }
+  };
+
+  const handleQuickToggleQopay = async () => {
+    const nextVal = !qopayEnabled;
+    const nextDrampay = nextVal ? false : drampayEnabled;
+    setQopayEnabled(nextVal);
+    if (nextVal) setDrampayEnabled(false);
+    try {
+      await updateAdminSettings({
+        qopayEnabled: nextVal,
+        drampayEnabled: nextDrampay,
+        paymentGatewayProvider: nextVal ? 'qopay' : (nextDrampay ? 'drampay' : 'manual'),
+        paymentGatewayEnabled: nextVal || nextDrampay,
+      });
+      showToast(nextVal ? '✓ QO Pay switched ON (DramPay turned OFF)' : '✓ QO Pay switched OFF');
+    } catch (err: any) {
+      showToast(`Error switching QO Pay: ${err.message || ''}`);
     }
   };
 
@@ -408,7 +457,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
             <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={() => setDrampayEnabled(!drampayEnabled)}
+                onClick={handleQuickToggleDrampay}
                 className={`w-12 h-6.5 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
                   drampayEnabled ? 'bg-amber-500 justify-end' : 'bg-slate-700 justify-start'
                 }`}
@@ -460,7 +509,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
             <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={() => setQopayEnabled(!qopayEnabled)}
+                onClick={handleQuickToggleQopay}
                 className={`w-12 h-6.5 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
                   qopayEnabled ? 'bg-indigo-500 justify-end' : 'bg-slate-700 justify-start'
                 }`}

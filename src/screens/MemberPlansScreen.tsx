@@ -37,20 +37,46 @@ export const MemberPlansScreen: React.FC = () => {
   } = useApp();
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
+  const uniquePlans = React.useMemo(() => {
+    const raw = Array.isArray(plans) ? plans : [];
+    const sorted = [...raw].sort((a, b) => {
+      const lvDiff = Number(a?.level || 0) - Number(b?.level || 0);
+      if (lvDiff !== 0) return lvDiff;
+      return (a?.id === `plan_lv${a?.level}` ? 0 : 1) - (b?.id === `plan_lv${b?.level}` ? 0 : 1);
+    });
+    const out: PlanItem[] = [];
+    const seenLevels = new Set<number>();
+    const seenPaidPrices = new Set<number>();
+    for (const p of sorted) {
+      if (!p || typeof p.level !== 'number') continue;
+      const price = Number(p.price ?? p.amount ?? 0);
+      if (seenLevels.has(p.level)) continue;
+      if (p.level > 0 && price > 0 && seenPaidPrices.has(price)) continue;
+      seenLevels.add(p.level);
+      if (p.level > 0 && price > 0) seenPaidPrices.add(price);
+      out.push(p);
+    }
+    return out;
+  }, [plans]);
+
   const userPurchasedIds: string[] = user.purchasedPlanIds || [];
   const activePlanIds = Array.from(
     new Set([
       ...userPurchasedIds,
       ...(user.vipLevel && user.vipLevel > 0
-        ? [plans.find((p) => p && p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
+        ? [uniquePlans.find((p) => p && p.level === user.vipLevel)?.id || `plan_lv${user.vipLevel}`]
         : []),
     ])
   );
 
-  const boughtLevels = activePlanIds
-    .filter((id) => id !== 'plan_lv0')
-    .map((id) => plans.find((p) => p && p.id === id)?.level)
-    .filter((l): l is number => typeof l === 'number');
+  const boughtLevels = Array.from(
+    new Set(
+      activePlanIds
+        .filter((id) => id !== 'plan_lv0')
+        .map((id) => uniquePlans.find((p) => p && p.id === id)?.level)
+        .filter((l): l is number => typeof l === 'number')
+    )
+  ).sort((a, b) => a - b);
 
   const handleSelectPlan = (plan: PlanItem) => {
     navigate('plan_detail', plan);
@@ -248,7 +274,7 @@ export const MemberPlansScreen: React.FC = () => {
                   <p className="text-[10px] text-slate-500">Official Daily Income &amp; Mission Table</p>
                 </div>
                 <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  8 Levels
+                  {Math.max(1, uniquePlans.filter((p) => p.level > 0).length)} Levels
                 </span>
               </div>
 
@@ -266,8 +292,8 @@ export const MemberPlansScreen: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {plans.map((plan) => {
-                      const isBought = userPurchasedIds.includes(plan.id) && plan.level > 0;
+                    {uniquePlans.map((plan) => {
+                      const isBought = (userPurchasedIds.includes(plan.id) || boughtLevels.includes(plan.level)) && plan.level > 0;
                       const isPlanPending = paymentDeposits.some(
                         (d) =>
                           d.status === 'in_process' &&
@@ -347,8 +373,8 @@ export const MemberPlansScreen: React.FC = () => {
           ) : (
             /* SLEEK, COMPACT, AESTHETIC VIP LEVEL CARDS SECTION */
             <div className="space-y-2.5">
-              {plans.map((plan) => {
-                const isBought = userPurchasedIds.includes(plan.id) && plan.level > 0;
+              {uniquePlans.map((plan) => {
+                const isBought = (userPurchasedIds.includes(plan.id) || boughtLevels.includes(plan.level)) && plan.level > 0;
                 const isPlanPending = paymentDeposits.some(
                   (d) =>
                     d.status === 'in_process' &&

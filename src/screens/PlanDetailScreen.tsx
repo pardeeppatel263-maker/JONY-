@@ -71,6 +71,12 @@ export const PlanDetailScreen: React.FC = () => {
     }, 600);
   };
 
+  const isQoPayActive = Boolean(
+    adminSettings.paymentGatewayProvider !== 'drampay' &&
+    (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
+    (adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c')
+  );
+
   const handleUPIPay = async () => {
     if (isAlreadyPurchased) {
       showToast(`❌ You have already purchased ${plan.title}! Each member can buy each plan once.`);
@@ -79,6 +85,11 @@ export const PlanDetailScreen: React.FC = () => {
     if (plan.price === 0) {
       showToast('✓ Level 0 Free Plan already active on your account!');
       navigate('mission');
+      return;
+    }
+
+    if (!isQoPayActive) {
+      buyPlanWithUPI(plan, true);
       return;
     }
 

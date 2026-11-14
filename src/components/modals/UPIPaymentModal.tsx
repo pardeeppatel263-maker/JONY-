@@ -46,12 +46,13 @@ export const UPIPaymentModal: React.FC = () => {
 
   // Mode: 'qopay' | 'drampay' | 'manual'
   const isQoPayActive = Boolean(
+    adminSettings.paymentGatewayProvider !== 'drampay' &&
     (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
     (adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c')
   );
 
   const isDrampayActive = Boolean(
-    adminSettings.drampayEnabled === true &&
+    (adminSettings.drampayEnabled === true || adminSettings.paymentGatewayProvider === 'drampay') &&
     adminSettings.drampayMerchantId?.trim() &&
     adminSettings.drampaySecretKey?.trim() &&
     adminSettings.drampayMerchantId.trim().toLowerCase() !== 'int32' &&
@@ -60,8 +61,10 @@ export const UPIPaymentModal: React.FC = () => {
 
   const canUseManual = adminSettings.manualPaymentEnabled === true;
 
-  const initialMode: 'qopay' | 'drampay' | 'manual' =
-    adminSettings.paymentGatewayProvider === 'qopay' && isQoPayActive
+  const preferredMode: 'qopay' | 'drampay' | 'manual' =
+    adminSettings.paymentGatewayProvider === 'drampay' && isDrampayActive
+      ? 'drampay'
+      : adminSettings.paymentGatewayProvider === 'qopay' && isQoPayActive
       ? 'qopay'
       : isQoPayActive
       ? 'qopay'
@@ -71,7 +74,14 @@ export const UPIPaymentModal: React.FC = () => {
       ? 'manual'
       : 'qopay';
 
-  const [paymentMode, setPaymentMode] = useState<'qopay' | 'drampay' | 'manual'>(initialMode);
+  const [paymentMode, setPaymentMode] = useState<'qopay' | 'drampay' | 'manual'>(preferredMode);
+
+  // Sync preferred gateway mode when modal opens or Firestore settings resolve
+  useEffect(() => {
+    if (isUPIModalOpen) {
+      setPaymentMode(preferredMode);
+    }
+  }, [isUPIModalOpen, preferredMode]);
 
   // Auto fallback when admin switches a gateway OFF
   useEffect(() => {
@@ -282,18 +292,7 @@ export const UPIPaymentModal: React.FC = () => {
     } catch {
       inIframe = true;
     }
-    if (inIframe) {
-      try {
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch {}
-    } else {
+    if (!inIframe) {
       window.location.href = url;
     }
   };
@@ -896,82 +895,115 @@ export const UPIPaymentModal: React.FC = () => {
             )}
 
             {/* QOPAY ORDER OR DYNAMIC UPI QR CODE READY */}
-            {!qopayLoading && !qopaySuccess && (
+            {!qopayLoading && !qopaySuccess && (() => {
+              const hasRealUpiIntent = Boolean(
+                (qopayOrder?.upiIntent && qopayOrder.upiIntent.startsWith('upi://')) ||
+                (qopayOrder?.deeplink && qopayOrder.deeplink.startsWith('upi://')) ||
+                (qopayOrder?.qrCode && qopayOrder.qrCode.startsWith('upi://'))
+              );
+              const hasHostedCashierOnly = Boolean(
+                qopayOrder?.paymentUrl && !hasRealUpiIntent && !qopayOrder?.collectUpi
+              );
+
+              return (
               <div className="space-y-3">
                 {/* PROMINENT DIRECT QO PAY CASHIER PAGE CTA WHEN AVAILABLE */}
                 {qopayOrder?.paymentUrl && (
-                  <button
-                    type="button"
-                    onClick={() => openQoPayCashierUrl(qopayOrder.paymentUrl)}
-                    className="w-full py-3.5 px-3 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 hover:from-indigo-800 hover:to-purple-800 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md shadow-indigo-500/30 active:scale-98"
-                  >
-                    <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                    <span>Open QO Pay Cashier Page</span>
-                    <ExternalLink className="w-4 h-4 text-white" />
-                  </button>
+                  <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 border-2 border-indigo-200 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-black text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-full border border-emerald-300 w-fit mx-auto">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      <span>QO Pay Live Cashier Ready • Instant Auto-Credit</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-medium leading-snug">
+                      Complete your UPI / QR / PhonePe / GPay / Paytm payment safely on QO Pay&apos;s official cashier page.
+                    </p>
+                    <a
+                      href={qopayOrder.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => persistPendingQoPayReturnState()}
+                      className="w-full py-3.5 px-3 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 hover:from-indigo-800 hover:to-purple-800 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md shadow-indigo-500/30 active:scale-98 no-underline"
+                    >
+                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                      <span>Open QO Pay Cashier Page</span>
+                      <ExternalLink className="w-4 h-4 text-white" />
+                    </a>
+                    <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                      <PhonePeIcon size={18} className="rounded-full shadow-xs border border-slate-200" />
+                      <GPayIcon size={18} className="rounded-full shadow-xs border border-slate-200" />
+                      <PaytmIcon size={18} className="rounded-full shadow-xs border border-slate-200" />
+                      <BhimIcon size={18} className="rounded-full shadow-xs border border-slate-200" />
+                      <span className="text-[10px] font-semibold text-slate-500">All UPI Apps Supported Inside</span>
+                    </div>
+                  </div>
                 )}
 
-                {/* QR Code Container */}
-                <div className="bg-white border-2 border-dashed border-indigo-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
-                  <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
-                    <img
-                      src={activeQrCodeSrc}
-                      alt="QO Pay Dynamic UPI QR Code"
-                      className="w-44 h-44 object-contain rounded"
-                      loading="eager"
-                    />
-                  </div>
+                {/* QR Code Container (Only when real UPI QR exists or QO Pay cashier URL is unavailable) */}
+                {!hasHostedCashierOnly && (
+                  <div className="bg-white border-2 border-dashed border-indigo-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
+                    <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
+                      <img
+                        src={activeQrCodeSrc}
+                        alt="QO Pay Dynamic UPI QR Code"
+                        className="w-44 h-44 object-contain rounded"
+                        loading="eager"
+                      />
+                    </div>
 
-                  <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-900 bg-indigo-100/80 px-2.5 py-0.5 rounded-full border border-indigo-300">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    <span>
-                      {qopayOrder
-                        ? 'Live QO Pay Auto-Verification Active'
-                        : 'Instant Dynamic UPI QR Code • Any UPI App'}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-900 bg-indigo-100/80 px-2.5 py-0.5 rounded-full border border-indigo-300">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      <span>
+                        {qopayOrder
+                          ? 'Live QO Pay Auto-Verification Active'
+                          : 'Instant Dynamic UPI QR Code • Any UPI App'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Live Payee UPI Information */}
-                <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-2.5 flex items-center justify-between text-left">
-                  <div className="min-w-0 pr-2">
-                    <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block">
-                      Payee: {qopayOrder?.collectName || adminMerchantName || 'ZoroTask Pay'}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-slate-900 truncate block">
-                      {qopayOrder?.collectUpi || adminUpiId}
-                    </span>
+                {/* Live Payee UPI Information (Only when gateway returned a collect UPI ID or when in offline QR fallback) */}
+                {(qopayOrder?.collectUpi || !qopayOrder?.paymentUrl) && (
+                  <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl p-2.5 flex items-center justify-between text-left">
+                    <div className="min-w-0 pr-2">
+                      <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block">
+                        Payee: {qopayOrder?.collectName || adminMerchantName || 'ZoroTask Pay'}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-slate-900 truncate block">
+                        {qopayOrder?.collectUpi || adminUpiId}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        copyText(qopayOrder?.collectUpi || adminUpiId);
+                        showToast('✓ Payee UPI ID copied to clipboard!');
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-xs active:scale-95 transition"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy UPI</span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      copyText(qopayOrder?.collectUpi || adminUpiId);
-                      showToast('✓ Payee UPI ID copied to clipboard!');
-                    }}
-                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-xs active:scale-95 transition"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>Copy UPI</span>
-                  </button>
-                </div>
+                )}
 
                 {/* 1-Click Pay Buttons */}
                 <div className="space-y-1.5 pt-1">
-
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchQoPayUPI()}
-                    className="w-full py-3 px-3 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-700 hover:to-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2.5 shadow-md shadow-indigo-500/25 active:scale-98 transition cursor-pointer"
-                  >
-                    <div className="flex items-center -space-x-1.5">
-                      <PhonePeIcon size={20} className="rounded-full shadow-xs border border-white" />
-                      <GPayIcon size={20} className="rounded-full shadow-xs border border-white" />
-                      <PaytmIcon size={20} className="rounded-full shadow-xs border border-white" />
-                      <BhimIcon size={20} className="rounded-full shadow-xs border border-white" />
-                    </div>
-                    <span>1-Click Pay (PhonePe / GPay / Paytm / UPI)</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-white shrink-0" />
-                  </button>
+                  {!hasHostedCashierOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleLaunchQoPayUPI()}
+                      className="w-full py-3 px-3 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-700 hover:to-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2.5 shadow-md shadow-indigo-500/25 active:scale-98 transition cursor-pointer"
+                    >
+                      <div className="flex items-center -space-x-1.5">
+                        <PhonePeIcon size={20} className="rounded-full shadow-xs border border-white" />
+                        <GPayIcon size={20} className="rounded-full shadow-xs border border-white" />
+                        <PaytmIcon size={20} className="rounded-full shadow-xs border border-white" />
+                        <BhimIcon size={20} className="rounded-full shadow-xs border border-white" />
+                      </div>
+                      <span>1-Click Pay (PhonePe / GPay / Paytm / UPI)</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-white shrink-0" />
+                    </button>
+                  )}
 
                   {/* Individual UPI App Shortcuts if available */}
                   {qopayOrder?.deeplinks && (
@@ -1088,7 +1120,8 @@ export const UPIPaymentModal: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -1216,8 +1249,20 @@ export const UPIPaymentModal: React.FC = () => {
                     <a
                       href={drampayOrder.payUrl}
                       target="_blank"
-                      rel="noreferrer"
-                      className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-200 transition"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        try {
+                          localStorage.setItem('taskvibe_auth', 'true');
+                          localStorage.setItem(
+                            'taskvibe_screen',
+                            pendingDepositType === 'plan_purchase' ? 'plan_detail' : 'add_money'
+                          );
+                          if (pendingPlanForUPI) {
+                            localStorage.setItem('taskvibe_pending_plan', JSON.stringify(pendingPlanForUPI));
+                          }
+                        } catch {}
+                      }}
+                      className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-200 transition no-underline"
                     >
                       <span>Open DramPay Web Cashier Page</span>
                       <ExternalLink className="w-3.5 h-3.5" />

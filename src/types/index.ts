@@ -103,8 +103,9 @@ export interface AdminSettings {
   updateChangelog?: string;
   // Add Money Extra Bonus & Tiers
   addMoneyTiers?: AddMoneyTier[];
-  // VIP Plans persistent cloud backup
+  // VIP Plans persistent cloud backup & lock revision
   plans?: PlanItem[];
+  plansLockedRevision?: string;
   // Lucky Spin & Win Settings (Feature 1)
   spinEnabled?: boolean;
   dailyFreeSpins?: number;
@@ -270,7 +271,7 @@ export interface PaymentDeposit {
   screenshotUrl?: string; // Base64 or image preview URL
   submittedAt: string;
   timestamp?: number;
-  status: 'in_process' | 'approved' | 'rejected';
+  status: 'gateway_pending' | 'in_process' | 'approved' | 'rejected';
   rejectionReason?: string;
   gateway?: 'qopay' | 'drampay' | 'manual';
   gatewayOrderId?: string;

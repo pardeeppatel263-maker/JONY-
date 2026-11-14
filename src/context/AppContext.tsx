@@ -126,7 +126,7 @@ interface AppContextType {
   submitUPIPaymentProof: (utrNumber: string, screenshotUrl?: string) => void;
   submitUserUtrForDeposit: (orderIdOrDepositId: string, utrNumber: string) => Promise<boolean>;
   completeUPIPayment: () => void;
-  approvePaymentDeposit: (depositId: string, overrideDeposit?: PaymentDeposit) => Promise<void> | void;
+  approvePaymentDeposit: (depositId: string, overrideDeposit?: PaymentDeposit, approvalSource?: string) => Promise<void> | void;
   rejectPaymentDeposit: (depositId: string, reason?: string) => void;
   buyPlanWithWallet: (plan: PlanItem) => { success: boolean; message: string };
   buyPlanWithUPI: (plan: PlanItem, openModalDirectly?: boolean) => void;
@@ -540,13 +540,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isLoggedIn, currentScreen]);
 
-  // One-time cleanup of obsolete mock keys from localStorage
+  // One-time cleanup of obsolete mock keys from localStorage (keep taskvibe_plans cached so VIP plans never flicker)
   useEffect(() => {
     try {
-      localStorage.removeItem('taskvibe_plans');
       localStorage.removeItem('taskvibe_surveys');
       localStorage.removeItem('taskvibe_tasks');
-      localStorage.removeItem('taskvibe_selected_plan');
     } catch (e) {
       console.warn('LocalStorage cleanup notice:', e);
     }
@@ -602,25 +600,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [surveys, setSurveys] = useState<SurveyItem[]>([]);
 
-  const mergeWithInitialPlans = (list?: PlanItem[] | null): PlanItem[] => {
-    if (!Array.isArray(list) || list.length === 0) return initialPlans;
-    const map = new Map<string, PlanItem>();
-    initialPlans.forEach((p) => map.set(p.id, p));
-    list.forEach((p) => {
-      if (p && p.id) {
-        map.set(p.id, p);
-      }
+  const PLANS_LOCK_REVISION = 'vip_8_locked_v2';
+
+  const sanitizePlansList = (rawList: any[]): PlanItem[] => {
+    if (!Array.isArray(rawList) || rawList.length === 0) return initialPlans;
+    const valid = rawList.filter(
+      (p): p is PlanItem => Boolean(p && typeof p === 'object' && p.id && typeof p.level === 'number')
+    );
+    if (valid.length === 0) return initialPlans;
+
+    // Prefer canonical `plan_lv{level}` IDs and non-generic titles over accidental timestamped duplicates
+    const sortedCandidates = [...valid].sort((a, b) => {
+      const lvDiff = Number(a.level || 0) - Number(b.level || 0);
+      if (lvDiff !== 0) return lvDiff;
+      const aCanonical = a.id === `plan_lv${a.level}` ? 0 : 1;
+      const bCanonical = b.id === `plan_lv${b.level}` ? 0 : 1;
+      if (aCanonical !== bCanonical) return aCanonical - bCanonical;
+      const aAutoTitle = /^VIP\s+\d+\s+Plan$/i.test((a.levelTag || a.title || '').trim()) ? 1 : 0;
+      const bAutoTitle = /^VIP\s+\d+\s+Plan$/i.test((b.levelTag || b.title || '').trim()) ? 1 : 0;
+      return aAutoTitle - bAutoTitle;
     });
-    return Array.from(map.values()).sort((a, b) => (a.level || 0) - (b.level || 0));
+
+    const deduped: PlanItem[] = [];
+    const seenIds = new Set<string>();
+    const seenLevels = new Set<number>();
+    const seenPaidPrices = new Set<number>();
+
+    for (const p of sortedCandidates) {
+      const lv = Number(p.level || 0);
+      const price = Number(p.price ?? p.amount ?? 0);
+      if (seenIds.has(p.id) || seenLevels.has(lv)) continue;
+      if (lv > 0 && price > 0 && seenPaidPrices.has(price)) continue;
+      seenIds.add(p.id);
+      seenLevels.add(lv);
+      if (lv > 0 && price > 0) seenPaidPrices.add(price);
+      deduped.push({
+        ...p,
+        level: lv,
+        price,
+        amount: price,
+      });
+    }
+
+    if (!seenLevels.has(0)) {
+      deduped.unshift(defaultLevel0Plan);
+    }
+
+    return deduped.sort((a, b) => (a.level || 0) - (b.level || 0));
+  };
+
+  const cleanupOrphanVipPlanDocs = async (validPlans: PlanItem[]) => {
+    try {
+      const validIds = new Set(validPlans.map((p) => p.id));
+      const snap = await getDocs(collection(db, 'vip_plans'));
+      snap.forEach((d) => {
+        if (!validIds.has(d.id)) {
+          deleteDoc(doc(db, 'vip_plans', d.id)).catch(() => {});
+        }
+      });
+    } catch {}
   };
 
   const [plans, setPlans] = useState<PlanItem[]>(() => {
     try {
+      const savedRevision = localStorage.getItem('zorotask_plans_lock_rev');
       const saved = localStorage.getItem('taskvibe_plans');
-      if (saved) {
+      if (saved && savedRevision === PLANS_LOCK_REVISION) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return mergeWithInitialPlans(parsed);
+          const clean = sanitizePlansList(parsed);
+          if (clean.length !== parsed.length) {
+            localStorage.setItem('taskvibe_plans', JSON.stringify(clean));
+          }
+          return clean;
         }
       }
       return initialPlans;
@@ -855,6 +907,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       { amount: 30000, bonus: 850 },
     ],
     plans: initialPlans,
+    plansLockedRevision: PLANS_LOCK_REVISION,
   };
 
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
@@ -922,6 +975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   } | null>(null);
   const clearPrefetchedQoPaySession = () => setPrefetchedQoPaySession(null);
   const pendingQoPayDepositsRef = useRef<Record<string, PaymentDeposit>>({});
+  const approvingDepositIdsRef = useRef<Set<string>>(new Set());
   const [pendingUPIAmount, setPendingUPIAmount] = useState(1000);
   const [pendingUPIBonus, setPendingUPIBonus] = useState(150);
   const [pendingDepositType, setPendingDepositType] = useState<'add_money' | 'plan_purchase'>('add_money');
@@ -1467,12 +1521,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 : defaultAdminSettings.drampaySecretKey,
               manualPaymentEnabled: cloudSettings.manualPaymentEnabled === true,
             };
-            if (Array.isArray(cloudSettings.plans) && cloudSettings.plans.length > 0) {
-              const sorted = [...cloudSettings.plans].sort((a, b) => (a.level || 0) - (b.level || 0));
+            if (
+              Array.isArray(cloudSettings.plans) &&
+              cloudSettings.plans.length > 0 &&
+              cloudSettings.plansLockedRevision === PLANS_LOCK_REVISION
+            ) {
+              const sorted = sanitizePlansList(cloudSettings.plans);
               setPlans(sorted);
+              setSelectedPlan((prev) =>
+                prev
+                  ? sorted.find((p) => p.id === prev.id || p.level === prev.level) || sorted[1] || sorted[0]
+                  : sorted[1] || sorted[0]
+              );
               try {
                 localStorage.setItem('taskvibe_plans', JSON.stringify(sorted));
+                localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
               } catch {}
+              // Auto-heal Firestore immediately if duplicate level/price plans somehow existed in cloudSettings.plans
+              if (sorted.length !== cloudSettings.plans.length) {
+                setDoc(
+                  settingsDocRef,
+                  cleanFirestoreData({ plans: sorted, plansLockedRevision: PLANS_LOCK_REVISION }),
+                  { merge: true }
+                ).catch(() => {});
+                cleanupOrphanVipPlanDocs(sorted);
+              }
             }
             setAdminSettings((prev) => ({
               ...prev,
@@ -1515,14 +1588,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Ensure master Gagan@123 password is initialized in Firestore settings
+  // Ensure master settings & locked VIP plans revision are initialized once in Firestore
   useEffect(() => {
     const ensureDefaultSettingsInFirestore = async () => {
       try {
         const settingsDocRef = doc(db, 'settings', 'admin');
         const snap = await getDoc(settingsDocRef);
         if (!snap.exists()) {
-          await setDoc(settingsDocRef, defaultAdminSettings, { merge: true });
+          await setDoc(settingsDocRef, cleanFirestoreData(defaultAdminSettings), { merge: true });
+          for (const p of initialPlans) {
+            setDoc(doc(db, 'vip_plans', p.id), cleanFirestoreData(p), { merge: true }).catch(() => {});
+          }
         } else {
           const current = snap.data();
           const legacy = ['TaskVibe@Admin2026', 'admin', 'admin123', '1234', '123456', 'admin@123'];
@@ -1541,8 +1617,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updates.drampayEnabled = false;
             updates.paymentGatewayProvider = 'qopay';
           }
+          // One-time lock migration to exact Level 0..8 VIP plans; once locked, NEVER overwritten automatically again!
+          if (current.plansLockedRevision !== PLANS_LOCK_REVISION) {
+            updates.plans = cleanFirestoreData(initialPlans);
+            updates.plansLockedRevision = PLANS_LOCK_REVISION;
+            setPlans(initialPlans);
+            try {
+              localStorage.setItem('taskvibe_plans', JSON.stringify(initialPlans));
+              localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+            } catch {}
+            for (const p of initialPlans) {
+              setDoc(doc(db, 'vip_plans', p.id), cleanFirestoreData(p), { merge: true }).catch(() => {});
+            }
+            cleanupOrphanVipPlanDocs(initialPlans);
+          } else if (Array.isArray(current.plans) && current.plans.length > 0) {
+            const sanitizedCloudPlans = sanitizePlansList(current.plans);
+            if (sanitizedCloudPlans.length !== current.plans.length) {
+              updates.plans = cleanFirestoreData(sanitizedCloudPlans);
+              setPlans(sanitizedCloudPlans);
+              try {
+                localStorage.setItem('taskvibe_plans', JSON.stringify(sanitizedCloudPlans));
+                localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+              } catch {}
+              cleanupOrphanVipPlanDocs(sanitizedCloudPlans);
+            }
+          }
           if (Object.keys(updates).length > 0) {
-            await setDoc(settingsDocRef, updates, { merge: true });
+            await setDoc(settingsDocRef, cleanFirestoreData(updates), { merge: true });
           }
         }
       } catch (err) {
@@ -1581,45 +1682,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   }, [currentScreen, isLoggedIn, user.mobile]);
 
-  // Real-time listener: sync VIP Plans from Firestore across all devices (100% Cloud-driven, NO auto-seeding or resurrecting deleted plans)
-  useEffect(() => {
-    try {
-      const plansCol = collection(db, 'vip_plans');
-      const unsubscribe = onSnapshot(
-        plansCol,
-        (snapshot) => {
-          const cloudPlans: PlanItem[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as PlanItem;
-            if (data && data.id) {
-              cloudPlans.push(data);
-            }
-          });
-
-          // Exactly what is in Firestore
-          const sortedPlans = cloudPlans.sort((a, b) => (a.level || 0) - (b.level || 0));
-          if (sortedPlans.length > 0) {
-            setPlans(sortedPlans);
-            setSelectedPlan((prev) => (prev ? sortedPlans.find((p) => p.id === prev.id) || sortedPlans[0] : sortedPlans[0]));
-          } else {
-            // Firestore vip_plans is empty: keep initialPlans and seed them to Firestore so plans are never missing!
-            setPlans(initialPlans);
-            setSelectedPlan(initialPlans[1] || initialPlans[0]);
-            initialPlans.forEach((p) => {
-              setDoc(doc(db, 'vip_plans', p.id), cleanFirestoreData(p), { merge: true }).catch(() => {});
-            });
-          }
-        },
-        (error) => {
-          console.warn('Firestore vip_plans onSnapshot error:', error);
-          setPlans(initialPlans);
-        }
-      );
-      return () => unsubscribe();
-    } catch (err) {
-      console.warn('Could not attach Firestore vip_plans listener:', err);
-    }
-  }, []);
+  // VIP Plans are synced atomically via the single authoritative settings/admin listener above
+  // (No secondary vip_plans listener that could overwrite Admin-saved plans with initialPlans!)
 
   // Real-time listener: sync surveys across all devices from Firestore in real time
   useEffect(() => {
@@ -2753,8 +2817,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPendingDepositType('add_money');
     setPendingPlanForUPI(null);
 
-    // If manual payment is NOT enabled by Admin (default: false), start QO Pay (falls back to QR modal automatically if needed)
-    if (adminSettings.manualPaymentEnabled !== true) {
+    const isQoPayActiveNow =
+      adminSettings.paymentGatewayProvider !== 'drampay' &&
+      (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
+      Boolean(adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c');
+
+    // Only start direct QO Pay checkout when QO Pay is the active provider
+    if (isQoPayActiveNow && adminSettings.manualPaymentEnabled !== true) {
       startDirectQoPayPayment(amount, bonus, 'add_money');
       return;
     }
@@ -3394,6 +3463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...d,
             userSubmittedUtr: cleanUtr,
             utrNumber: cleanUtr,
+            status: d.status === 'gateway_pending' ? 'in_process' : d.status,
           };
           try {
             setDoc(doc(db, 'deposits', d.id), cleanFirestoreData(newDep), { merge: true }).catch(() => {});
@@ -3467,23 +3537,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updated;
   };
 
-  const approvePaymentDeposit = async (depositId: string, overrideDeposit?: PaymentDeposit) => {
+  const approvePaymentDeposit = async (
+    depositId: string,
+    overrideDeposit?: PaymentDeposit,
+    approvalSource?: string
+  ) => {
+    if (!depositId || approvingDepositIdsRef.current.has(depositId)) return;
+    approvingDepositIdsRef.current.add(depositId);
+    try {
     let deposit = overrideDeposit || paymentDepositsRef.current.find((d) => d.id === depositId);
-    if (!deposit) {
-      try {
-        const depSnap = await getDoc(doc(db, 'deposits', depositId));
-        if (depSnap.exists()) {
-          deposit = depSnap.data() as PaymentDeposit;
+    try {
+      const depSnap = await getDoc(doc(db, 'deposits', depositId));
+      if (depSnap.exists()) {
+        const cloudDep = depSnap.data() as PaymentDeposit;
+        // Strict cross-tab / cross-device idempotency guard: never double-credit an already approved deposit!
+        if (cloudDep.status === 'approved') {
+          setPaymentDeposits((prev) => {
+            const exists = prev.some((d) => d.id === depositId);
+            return exists
+              ? prev.map((d) => (d.id === depositId ? { ...d, ...cloudDep, status: 'approved' } : d))
+              : [cloudDep, ...prev];
+          });
+          return;
         }
-      } catch (e) {
-        console.warn('Fallback deposit fetch failed:', e);
+        deposit = overrideDeposit ? { ...cloudDep, ...overrideDeposit } : cloudDep;
       }
+    } catch (e) {
+      console.warn('Deposit cloud verification notice:', e);
     }
     if (!deposit || deposit.status === 'approved') return;
 
-    // 1. Update deposit in Firestore
+    // 1. Update deposit in Firestore immediately as approved
+    const approvedDepRecord: PaymentDeposit = {
+      ...deposit,
+      status: 'approved',
+    };
     try {
-      await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData({ ...deposit, status: 'approved' }), { merge: true });
+      await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(approvedDepRecord), { merge: true });
     } catch (err) {
       console.warn('Failed to update deposit in Firestore:', err);
     }
@@ -3491,17 +3581,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Mark deposit as approved in local state
     setPaymentDeposits((prev) => {
       const exists = prev.some((d) => d.id === depositId);
-      if (!exists) return [{ ...deposit!, status: 'approved' }, ...prev];
-      return prev.map((d) => (d.id === depositId ? { ...d, status: 'approved' } : d));
+      if (!exists) return [approvedDepRecord, ...prev];
+      return prev.map((d) => (d.id === depositId ? approvedDepRecord : d));
     });
 
     // 3. Update user balance or VIP level in Firestore and local state
     const safePlans = Array.isArray(plansRef.current) && plansRef.current.length > 0 ? plansRef.current : initialPlans;
     const cleanMobile = normalizeMobile(deposit.userMobile || userRef.current?.mobile);
 
-    // Determine target VIP level: check explicit planLevel, or parse from planTitle, or match by amount
-    let targetLevel: number | undefined = deposit.planLevel;
-    if (targetLevel === undefined && deposit.planTitle) {
+    // Determine target VIP level ONLY when depositType is plan_purchase (or unspecified legacy deposit).
+    // Never treat an explicit add_money deposit (e.g. ₹500 Add Money) as a plan purchase!
+    let targetLevel: number | undefined = deposit.depositType === 'add_money' ? undefined : deposit.planLevel;
+    if (targetLevel === undefined && deposit.depositType !== 'add_money' && deposit.planTitle) {
       const match = deposit.planTitle.match(/Level\s*(\d+)/i) || deposit.planTitle.match(/LV\s*(\d+)/i) || deposit.planTitle.match(/VIP\s*(\d+)/i);
       if (match && match[1]) {
         targetLevel = parseInt(match[1], 10);
@@ -3515,16 +3606,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         targetLevel = 1; // Default to Level 1
       }
     }
-    if (targetLevel === undefined && deposit.amount === 500) {
+    if (targetLevel === undefined && !deposit.depositType && deposit.amount === 500) {
       targetLevel = 1;
     }
 
-    const isPlan = deposit.depositType === 'plan_purchase' || (targetLevel !== undefined && targetLevel > 0);
+    const isPlan =
+      deposit.depositType === 'plan_purchase' ||
+      (!deposit.depositType && targetLevel !== undefined && targetLevel > 0);
 
     if (cleanMobile) {
       let targetUser: RegisteredUserAccount | null =
         registeredUsers.find((u) => normalizeMobile(u.mobile) === cleanMobile) ||
-        (cleanMobile === normalizeMobile(user.mobile) ? (user as RegisteredUserAccount) : null);
+        (cleanMobile === normalizeMobile(userRef.current?.mobile) ? (userRef.current as RegisteredUserAccount) : null);
 
       // Authoritative check from Firestore users/{cleanMobile}
       try {
@@ -3587,6 +3680,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : resolvedUser.name || 'Member';
 
       let updatedUserData: Partial<RegisteredUserAccount> = {};
+      let resolvedDepositBonus = Number(deposit.bonus) || 0;
       if (isPlan) {
         const currentPurchased = Array.isArray(resolvedUser.purchasedPlanIds) ? [...resolvedUser.purchasedPlanIds] : [];
         if (!currentPurchased.includes(planId)) {
@@ -3605,12 +3699,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const depositAmount = Number(deposit.amount) || 0;
         let depositBonus = deposit.bonus !== undefined && deposit.bonus !== null ? Number(deposit.bonus) || 0 : 0;
         if (!depositBonus && depositAmount > 0) {
-          const tiers = adminSettings?.addMoneyTiers || [];
+          const tiers = adminSettingsRef.current?.addMoneyTiers || adminSettings?.addMoneyTiers || [];
           const matchedTier = tiers.find((t) => Number(t.amount) === depositAmount);
           if (matchedTier) {
             depositBonus = Number(matchedTier.bonus) || 0;
           }
         }
+        resolvedDepositBonus = depositBonus;
         const totalCredited = depositAmount + depositBonus;
         updatedUserData = {
           name: ensuredName,
@@ -3627,8 +3722,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const approvedTitle = isPlan
           ? `VIP Level ${finalLevel} (Approved & Active)`
-          : `Wallet Deposit (Approved +₹${deposit.bonus || 0} Bonus)`;
-        const approvedNote = `Approved by Admin Panel on ${new Date().toLocaleDateString('en-IN')}`;
+          : `Wallet Deposit (Approved +₹${resolvedDepositBonus} Bonus)`;
+        const resolvedSource =
+          approvalSource ||
+          (deposit.gateway === 'qopay'
+            ? 'Verified Automatically via QO Pay Gateway'
+            : deposit.gateway === 'drampay'
+            ? 'Verified Automatically via DramPay Gateway'
+            : 'Approved by Admin Panel');
+        const approvedNote = `${resolvedSource} on ${new Date().toLocaleDateString('en-IN')}`;
 
         let found = false;
         const updatedTxs = currentTxs.map((tx) => {
@@ -3677,7 +3779,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Update local state if active user
-      if (cleanMobile === normalizeMobile(user.mobile)) {
+      if (cleanMobile === normalizeMobile(userRef.current?.mobile)) {
         setUser((u) => ({
           ...u,
           ...updatedUserData,
@@ -3729,9 +3831,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...tx,
             status: 'verified',
             title: isPlan
-              ? `VIP Level ${deposit.planLevel} (Approved & Active)`
-              : `Wallet Deposit (Approved +₹${deposit.bonus || 0} Bonus)`,
-            note: `Approved by Admin Panel on ${new Date().toLocaleDateString('en-IN')}`,
+              ? `VIP Level ${targetLevel ?? deposit.planLevel ?? 1} (Approved & Active)`
+              : `Wallet Deposit (Approved +₹${Number(deposit.bonus) || (adminSettingsRef.current?.addMoneyTiers?.find((t) => Number(t.amount) === Number(deposit.amount))?.bonus ?? 0)} Bonus)`,
+            note: `${
+              approvalSource ||
+              (deposit.gateway === 'qopay'
+                ? 'Verified Automatically via QO Pay Gateway'
+                : deposit.gateway === 'drampay'
+                ? 'Verified Automatically via DramPay Gateway'
+                : 'Approved by Admin Panel')
+            } on ${new Date().toLocaleDateString('en-IN')}`,
           };
         }
         return tx;
@@ -3740,6 +3849,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     triggerConfetti();
     showToast(`✓ Payment Deposit ₹${deposit.amount.toLocaleString('en-IN')} Approved successfully!`);
+    } finally {
+      approvingDepositIdsRef.current.delete(depositId);
+    }
   };
 
   const rejectPaymentDeposit = async (depositId: string, reason?: string) => {
@@ -4039,9 +4151,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('❌ Your account is blocked by administration. Withdrawal requests cannot be submitted.');
       return { success: false, message: 'Account is blocked by admin' };
     }
-    if (amount < 1000) {
-      showToast('Minimum withdrawal amount is ₹1,000');
-      return { success: false, message: 'Minimum withdrawal amount is ₹1,000' };
+    const minWithdrawalLimit = Math.max(100, Number(adminSettingsRef.current?.minWithdrawal || 1000));
+    if (amount < minWithdrawalLimit) {
+      showToast(`Minimum withdrawal amount is ₹${minWithdrawalLimit.toLocaleString('en-IN')}`);
+      return { success: false, message: `Minimum withdrawal amount is ₹${minWithdrawalLimit.toLocaleString('en-IN')}` };
     }
     if (amount > user.balance) {
       showToast('Insufficient balance for withdrawal');
@@ -4238,7 +4351,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const sortedPurchased = validPurchased.sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0));
+    const dedupedPurchased: PlanItem[] = [];
+    const seenPurchasedLevels = new Set<number>();
+    for (const p of [...validPurchased].sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0))) {
+      const lv = Number(p?.level ?? 0);
+      if (!seenPurchasedLevels.has(lv)) {
+        seenPurchasedLevels.add(lv);
+        dedupedPurchased.push(p);
+      }
+    }
+    const sortedPurchased = dedupedPurchased;
     const level0FreePlan = safePlans.find((p) => p && p.level === 0) || safePlans[0] || defaultLevel0Plan;
     // Free task is strictly only available for 2 days from registration date:
     const includeLevel0 = isFreeTrialActive && user.freeTrialOverride !== 'disabled';
@@ -4366,6 +4488,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           setAdminSettings(merged);
           localStorage.setItem('taskvibe_admin_settings', JSON.stringify(merged));
+          if (
+            Array.isArray(cloudSettings.plans) &&
+            cloudSettings.plans.length > 0 &&
+            cloudSettings.plansLockedRevision === PLANS_LOCK_REVISION
+          ) {
+            const cleanPlans = sanitizePlansList(cloudSettings.plans);
+            setPlans(cleanPlans);
+            localStorage.setItem('taskvibe_plans', JSON.stringify(cleanPlans));
+            localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+          }
         }
       } catch (e) {
         console.warn(e);
@@ -5209,16 +5341,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addVIPPlan = async (newPlan: PlanItem): Promise<boolean> => {
     try {
-      await setDoc(doc(db, 'vip_plans', newPlan.id), newPlan, { merge: true });
-      const filtered = plans.filter((p) => p.id !== newPlan.id);
-      const next = [...filtered, newPlan].sort((a, b) => (a.level || 0) - (b.level || 0));
+      const currentList = sanitizePlansList(plansRef.current || plans);
+      const duplicateByLevel = currentList.find((p) => p.level === newPlan.level && p.id !== newPlan.id);
+      if (duplicateByLevel) {
+        showToast(`❌ VIP Level ${newPlan.level} already exists ("${duplicateByLevel.levelTag || duplicateByLevel.title}"). Use Edit Plan instead!`);
+        return false;
+      }
+      const duplicateByPrice = newPlan.price > 0
+        ? currentList.find((p) => p.level > 0 && p.price === newPlan.price && p.id !== newPlan.id)
+        : undefined;
+      if (duplicateByPrice) {
+        showToast(`❌ A ₹${newPlan.price.toLocaleString('en-IN')} plan already exists (LV ${duplicateByPrice.level}). Use a unique price!`);
+        return false;
+      }
+      const filtered = currentList.filter((p) => p.id !== newPlan.id);
+      const next = sanitizePlansList([...filtered, newPlan]);
       setPlans(next);
+      plansRef.current = next;
       try {
         localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
-      } catch (backupErr) {
-        console.warn('Backup plans to settings/admin warning:', backupErr);
-      }
+        localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+      } catch {}
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        cleanFirestoreData({ plans: next, plansLockedRevision: PLANS_LOCK_REVISION }),
+        { merge: true }
+      );
+      setDoc(doc(db, 'vip_plans', newPlan.id), cleanFirestoreData(newPlan), { merge: true }).catch(() => {});
       showToast(`✓ VIP Plan "${newPlan.title}" added & saved permanently!`);
       return true;
     } catch (err) {
@@ -5230,15 +5379,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateVIPPlan = async (planId: string, updates: Partial<PlanItem>): Promise<boolean> => {
     try {
-      await setDoc(doc(db, 'vip_plans', planId), updates, { merge: true });
-      const next = plans.map((p) => (p.id === planId ? { ...p, ...updates } : p));
+      const currentList = sanitizePlansList(plansRef.current || plans);
+      const existing = currentList.find((p) => p.id === planId);
+      const fullPlan: PlanItem = { ...(existing || ({} as PlanItem)), ...updates, id: planId };
+      const next = sanitizePlansList(currentList.map((p) => (p.id === planId ? fullPlan : p)));
       setPlans(next);
+      plansRef.current = next;
+      setSelectedPlan((prev) => (prev && prev.id === planId ? fullPlan : prev));
       try {
         localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
-      } catch (backupErr) {
-        console.warn('Backup plans to settings/admin warning:', backupErr);
-      }
+        localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+      } catch {}
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        cleanFirestoreData({ plans: next, plansLockedRevision: PLANS_LOCK_REVISION }),
+        { merge: true }
+      );
+      setDoc(doc(db, 'vip_plans', planId), cleanFirestoreData(fullPlan), { merge: true }).catch(() => {});
       showToast('✓ VIP Plan updated & saved permanently in Cloud!');
       return true;
     } catch (err) {
@@ -5250,15 +5407,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteVIPPlan = async (planId: string): Promise<boolean> => {
     try {
-      await deleteDoc(doc(db, 'vip_plans', planId));
-      const next = plans.filter((p) => p.id !== planId);
+      const currentList = plansRef.current || plans;
+      const next = sanitizePlansList(currentList.filter((p) => p.id !== planId));
       setPlans(next);
+      plansRef.current = next;
       try {
         localStorage.setItem('taskvibe_plans', JSON.stringify(next));
-        await setDoc(doc(db, 'settings', 'admin'), { plans: next }, { merge: true });
-      } catch (backupErr) {
-        console.warn('Backup plans to settings/admin warning:', backupErr);
-      }
+        localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
+      } catch {}
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        cleanFirestoreData({ plans: next, plansLockedRevision: PLANS_LOCK_REVISION }),
+        { merge: true }
+      );
+      deleteDoc(doc(db, 'vip_plans', planId)).catch(() => {});
+      cleanupOrphanVipPlanDocs(next);
       showToast('✓ VIP Plan deleted from cloud database.');
       return true;
     } catch (err) {
@@ -5269,16 +5432,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const saveAllVIPPlans = async (customPlans?: PlanItem[]): Promise<boolean> => {
-    const listToSave = customPlans || plans;
+    const rawList = customPlans || plansRef.current || plans;
+    const listToSave = sanitizePlansList(rawList);
     try {
-      for (const p of listToSave) {
-        await setDoc(doc(db, 'vip_plans', p.id), p, { merge: true });
-      }
-      await setDoc(doc(db, 'settings', 'admin'), { plans: listToSave }, { merge: true });
       setPlans(listToSave);
+      plansRef.current = listToSave;
       try {
         localStorage.setItem('taskvibe_plans', JSON.stringify(listToSave));
+        localStorage.setItem('zorotask_plans_lock_rev', PLANS_LOCK_REVISION);
       } catch {}
+      await setDoc(
+        doc(db, 'settings', 'admin'),
+        cleanFirestoreData({ plans: listToSave, plansLockedRevision: PLANS_LOCK_REVISION }),
+        { merge: true }
+      );
+      for (const p of listToSave) {
+        setDoc(doc(db, 'vip_plans', p.id), cleanFirestoreData(p), { merge: true }).catch(() => {});
+      }
+      cleanupOrphanVipPlanDocs(listToSave);
       showToast('✓ All VIP Plans synchronized & permanently saved to Cloud!');
       return true;
     } catch (err) {
@@ -5670,8 +5841,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('taskvibe_txs', JSON.stringify(data.transactions));
       }
       if (data.plans && Array.isArray(data.plans)) {
-        setPlans(data.plans);
-        localStorage.setItem('taskvibe_plans', JSON.stringify(data.plans));
+        const cleanImportedPlans = sanitizePlansList(data.plans);
+        setPlans(cleanImportedPlans);
+        localStorage.setItem('taskvibe_plans', JSON.stringify(cleanImportedPlans));
       }
       if (data.surveys && Array.isArray(data.surveys)) {
         setSurveys(data.surveys);
@@ -5700,17 +5872,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateAdminSettings = async (newSettings: Partial<AdminSettings>) => {
     const wa = newSettings.supportWhatsapp !== undefined ? newSettings.supportWhatsapp : newSettings.whatsappSupportNumber;
-    const synced = {
+    const synced: Partial<AdminSettings> = {
       ...newSettings,
       ...(wa !== undefined ? { supportWhatsapp: wa, whatsappSupportNumber: wa } : {}),
-      // CRITICAL: Always keep active VIP plans safely preserved in settings/admin!
-      ...(plans && plans.length > 0 ? { plans } : {}),
     };
-    const updated = { ...adminSettings, ...synced };
+    // Never overwrite settings/admin.plans from stale closure state unless plans were explicitly passed
+    const { plans: _ignoredPlans, ...settingsWithoutPlans } = adminSettings;
+    const payloadToWrite = cleanFirestoreData(synced);
+    const updated: AdminSettings = {
+      ...settingsWithoutPlans,
+      ...synced,
+      plans: newSettings.plans || plansRef.current || plans,
+    };
     setAdminSettings(updated);
     try {
       localStorage.setItem('taskvibe_admin_settings', JSON.stringify(updated));
-      await setDoc(doc(db, 'settings', 'admin'), updated, { merge: true });
+      await setDoc(doc(db, 'settings', 'admin'), payloadToWrite, { merge: true });
     } catch (e) {
       console.warn('Could not save settings to Firestore:', e);
     }
@@ -5851,6 +6028,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newBal = (user.balance || 0) + reward;
     const newToday = (user.todayEarnings || 0) + reward;
     const newTotal = (user.totalEarnings || 0) + reward;
+    const newTotalEarned = (user.totalEarned || 0) + reward;
     const newCompletedList = [...completedTasks, taskId];
 
     const newTx: TransactionItem = {
@@ -5875,6 +6053,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       balance: newBal,
       todayEarnings: newToday,
       totalEarnings: newTotal,
+      totalEarned: newTotalEarned,
       completedCustomTasks: newCompletedList,
     };
 
@@ -5888,6 +6067,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           balance: newBal,
           todayEarnings: newToday,
           totalEarnings: newTotal,
+          totalEarned: newTotalEarned,
           completedCustomTasks: newCompletedList,
           transactions: [newTx, ...transactions],
         }, { merge: true });
@@ -6730,9 +6910,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const orderId = `ORD_${directUtr}`;
       const depositId = `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-      // Only create upfront in-process deposit in Firestore for general add_money.
-      // For plan purchases, keep pending metadata in memory ref so UPIPaymentModal polling can still
-      // approve & distribute commissions once paid without polluting Admin "In Process" before UTR.
+      // Save BOTH add_money and plan_purchase QO Pay checkouts to Firestore with status 'gateway_pending'
+      // so background auto-detection can activate VIP plans or credit wallet balance the moment QO Pay
+      // marks the order SUCCESS — without cluttering Admin "Pending Review" (which shows 'in_process').
       const activeUser = userRef.current?.mobile ? userRef.current : user;
       const draftDeposit: PaymentDeposit = {
         id: depositId,
@@ -6749,37 +6929,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         utrNumber: directUtr,
         submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         timestamp: Date.now(),
-        status: 'in_process',
+        status: 'gateway_pending',
         gateway: 'qopay',
         gatewayOrderId: orderId,
         qopayOrderId: orderId,
       };
-      let newDeposit: PaymentDeposit | null = null;
-      if (depositType !== 'plan_purchase') {
-        newDeposit = draftDeposit;
-        setPaymentDeposits((prev) => [draftDeposit, ...prev]);
-        try {
-          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(draftDeposit)).catch((e) => {
-            console.warn('Background saving deposit to Firestore:', e);
-          });
-        } catch (e) {
-          console.warn('Background setDoc initiation error:', e);
-        }
-      } else {
-        pendingQoPayDepositsRef.current[depositId] = draftDeposit;
+      const newDeposit: PaymentDeposit = draftDeposit;
+      pendingQoPayDepositsRef.current[depositId] = draftDeposit;
+      setPaymentDeposits((prev) => [draftDeposit, ...prev.filter((d) => d.id !== depositId)]);
+      try {
+        setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(draftDeposit)).catch((e) => {
+          console.warn('Background saving QO Pay deposit to Firestore:', e);
+        });
+      } catch (e) {
+        console.warn('Background setDoc initiation error:', e);
       }
 
       // Construct the absolute public return callback URL for QO Pay cashier
       // When the user inputs their UTR on QO Pay and clicks 'Submit UTR', the cashier immediately
       // redirects the browser to this callback URL, which redirects back to ZoroTask with the order ID.
       const publicBaseUrl =
-        (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
         (typeof window !== 'undefined' &&
           window.location.origin &&
           !window.location.origin.includes('localhost') &&
           !window.location.origin.includes('capacitor:')
           ? window.location.origin
-          : 'https://ais-pre-3cfwnkafats6ngxztw372a-555131316104.asia-southeast1.run.app');
+          : (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
+            'https://ais-pre-fmi4s2bjfzbh4c7xdqawda-555131316104.asia-southeast1.run.app');
       const returnCallbackUrl = `${publicBaseUrl.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(orderId)}`;
 
       // Single authoritative create-order call via backend proxy first (avoids duplicate order spam that drops success rate).
@@ -6847,22 +7023,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (data?.success && (data.paymentUrl || data.deeplinks || data.upiIntent || data.qrCode)) {
         const resolvedQr = data.qrCode || data.upiIntent || data.paymentUrl;
-        if (newDeposit) {
-          const updatedDeposit: PaymentDeposit = {
-            ...newDeposit,
-            gatewayPayUrl: data.paymentUrl,
-            gatewayDeeplink: data.upiIntent || data.deeplink || resolvedQr,
-            qopayPaymentUrl: data.paymentUrl,
-          };
-          setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
-          try {
-            setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch(() => {});
-          } catch {}
-        }
+        const resolvedOrderId = String(data.orderId || orderId);
+        const updatedDeposit: PaymentDeposit = {
+          ...newDeposit,
+          gatewayOrderId: resolvedOrderId,
+          qopayOrderId: resolvedOrderId,
+          gatewayPayUrl: data.paymentUrl,
+          gatewayDeeplink: data.upiIntent || data.deeplink || resolvedQr,
+          qopayPaymentUrl: data.paymentUrl,
+        };
+        pendingQoPayDepositsRef.current[depositId] = updatedDeposit;
+        setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
+        try {
+          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch(() => {});
+        } catch {}
 
         return {
           success: true,
-          orderId: data.orderId || orderId,
+          orderId: resolvedOrderId,
           paymentUrl: data.paymentUrl,
           deeplink: data.deeplink,
           upiIntent: data.upiIntent || resolvedQr,
@@ -6944,15 +7122,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         normStatus === 'SETTLED'
       ) {
         const utr = data.utr || formatDisplayUtr((orderId || '').replace(/^ORD_/i, ''));
-        if (!skipAutoApprove && currentSettings.qopayAutoApprove === true) {
-          let pendingOverride = pendingQoPayDepositsRef.current[depositId];
-          if (pendingOverride) {
-            pendingOverride = { ...pendingOverride, utrNumber: utr, userSubmittedUtr: utr };
-            delete pendingQoPayDepositsRef.current[depositId];
-          }
-          await approvePaymentDeposit(depositId, pendingOverride);
+        const shouldAutoApprove = currentSettings.qopayAutoApprove !== false;
+        if (!skipAutoApprove && shouldAutoApprove) {
+          const existingDep =
+            pendingQoPayDepositsRef.current[depositId] ||
+            paymentDepositsRef.current.find(
+              (d) => d.id === depositId || d.qopayOrderId === orderId || d.gatewayOrderId === orderId
+            );
+          const pendingOverride = existingDep
+            ? {
+                ...existingDep,
+                utrNumber: utr || existingDep.utrNumber,
+                userSubmittedUtr: utr || existingDep.userSubmittedUtr,
+                gatewayOrderId: orderId,
+                qopayOrderId: orderId,
+              }
+            : undefined;
+          delete pendingQoPayDepositsRef.current[depositId];
+          await approvePaymentDeposit(depositId, pendingOverride, 'Verified Automatically via QO Pay Gateway');
+          try {
+            const rawSaved = localStorage.getItem('taskvibe_pending_qopay_order');
+            if (rawSaved) {
+              const savedParsed = JSON.parse(rawSaved);
+              if (savedParsed?.orderId === orderId || savedParsed?.depositId === depositId) {
+                localStorage.removeItem('taskvibe_pending_qopay_order');
+                localStorage.removeItem('taskvibe_pending_plan');
+              }
+            }
+          } catch {}
         }
-        if (currentSettings.qopayAutoApprove === true) {
+        if (shouldAutoApprove) {
           return {
             success: true,
             isPaid: true,
@@ -6968,6 +7167,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           utr,
           message: 'UTR submitted! Payment is In Process awaiting Admin approval.',
         };
+      }
+
+      if (
+        normStatus === 'FAILED' ||
+        normStatus === 'CANCELLED' ||
+        normStatus === 'CANCELED' ||
+        normStatus === 'EXPIRED'
+      ) {
+        const matchedDep = paymentDepositsRef.current.find((d) => d.id === depositId);
+        if (matchedDep && matchedDep.status === 'gateway_pending') {
+          setPaymentDeposits((prev) =>
+            prev.map((d) =>
+              d.id === depositId
+                ? { ...d, status: 'rejected', rejectionReason: `QO Pay status: ${normStatus}` }
+                : d
+            )
+          );
+          setDoc(
+            doc(db, 'deposits', depositId),
+            { status: 'rejected', rejectionReason: `QO Pay status: ${normStatus}` },
+            { merge: true }
+          ).catch(() => {});
+        }
       }
 
       return {
@@ -7091,6 +7313,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await initiateQoPayment(amount, bonus, depositType, plan);
       if (res.success && (res.paymentUrl || res.upiIntent || res.qrCode)) {
         try {
+          localStorage.setItem('taskvibe_auth', 'true');
+          localStorage.setItem(
+            'taskvibe_screen',
+            depositType === 'plan_purchase' ? 'plan_detail' : 'add_money'
+          );
           localStorage.setItem(
             'taskvibe_pending_qopay_order',
             JSON.stringify({
@@ -7113,50 +7340,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         } catch {}
 
-        let isEmbeddedIframe = false;
-        try {
-          isEmbeddedIframe = typeof window !== 'undefined' && window.self !== window.top;
-        } catch {
-          isEmbeddedIframe = true;
+        const directCashierUrl =
+          res.paymentUrl ||
+          (typeof res.upiIntent === 'string' && /^https?:\/\//i.test(res.upiIntent) ? res.upiIntent : null) ||
+          (typeof res.qrCode === 'string' && /^https?:\/\//i.test(res.qrCode) ? res.qrCode : null);
+
+        if (typeof window !== 'undefined' && directCashierUrl) {
+          setIsUPIModalOpen(false);
+          window.location.href = directCashierUrl;
+          return { success: true, paymentUrl: directCashierUrl };
         }
 
-        if (isEmbeddedIframe) {
-          // Inside an embedded preview iframe, cross-origin framing of qo-pay.com is blocked by X-Frame-Options.
-          // Launch the QO Pay Cashier Page immediately in a new tab AND keep UPIPaymentModal open with a prominent
-          // "Open QO Pay Cashier Page" button + live auto-polling in case the browser blocks the automatic new tab.
-          if (typeof document !== 'undefined' && res.paymentUrl) {
-            try {
-              const link = document.createElement('a');
-              link.href = res.paymentUrl;
-              link.target = '_blank';
-              link.rel = 'noopener noreferrer';
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            } catch {}
-          }
-          setPrefetchedQoPaySession({
-            amount,
-            depositType,
-            success: true,
-            order: res,
-            timestamp: Date.now(),
-          });
-          setPendingUPIAmount(amount);
-          setPendingUPIBonus(bonus);
-          setPendingDepositType(depositType);
-          setPendingPlanForUPI(plan || null);
-          setIsUPIModalOpen(true);
-          return { success: true, paymentUrl: res.paymentUrl, openedModal: true };
-        }
-
-        if (typeof window !== 'undefined' && res.paymentUrl) {
-          window.location.href = res.paymentUrl;
-          return { success: true, paymentUrl: res.paymentUrl };
-        }
-
-        // If QO Pay succeeded without a paymentUrl (only upiIntent/qrCode), show UPIPaymentModal
+        // Only if QO Pay responded without any hosted cashier URL (UPI intent/QR only), open UPIPaymentModal
         setPrefetchedQoPaySession({
           amount,
           depositType,
@@ -7307,20 +7502,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
 
     if (!isPaymentConfirmed) {
-      try {
-        localStorage.removeItem('taskvibe_pending_qopay_order');
-        localStorage.removeItem('taskvibe_pending_plan');
-      } catch {}
       const isCancelledOrFailed =
         verifyStatus === 'FAILED' ||
         verifyStatus === 'CANCELLED' ||
         verifyStatus === 'CANCELED' ||
         verifyStatus === 'EXPIRED';
-      showToast(
-        isCancelledOrFailed
-          ? '❌ Payment cancelled or failed. Your plan was not placed in review.'
-          : '⚠️ Payment not completed. Please complete UPI payment to proceed.'
-      );
+      const isExpiredLocally =
+        typeof pendingOrder?.timestamp === 'number' && Date.now() - pendingOrder.timestamp > 2 * 60 * 60 * 1000;
+
+      // Only clear pending tracker if explicitly FAILED/CANCELLED/EXPIRED or >2h old.
+      // If still PENDING on QO Pay dashboard, keep tracking so background poller auto-credits as soon as SUCCESS hits!
+      if (isCancelledOrFailed || isExpiredLocally) {
+        try {
+          localStorage.removeItem('taskvibe_pending_qopay_order');
+          localStorage.removeItem('taskvibe_pending_plan');
+        } catch {}
+      }
+      if (orderIdFromUrl || returnedFromUrl || isCancelledOrFailed) {
+        showToast(
+          isCancelledOrFailed
+            ? '❌ Payment cancelled or failed on QO Pay.'
+            : '⏳ Payment still pending on QO Pay — we will auto-activate as soon as it succeeds.'
+        );
+      }
       isVerifyingQoPayReturnRef.current = false;
       return;
     }
@@ -7396,14 +7600,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
     }
 
-    if (isPaidNow && adminSettingsRef.current.qopayAutoApprove === true) {
-      await approvePaymentDeposit(depositId, ensuredDeposit);
+    if (isPaidNow && adminSettingsRef.current.qopayAutoApprove !== false) {
+      await approvePaymentDeposit(depositId, ensuredDeposit, 'Verified Automatically via QO Pay Gateway');
       try {
         localStorage.removeItem('taskvibe_pending_qopay_order');
         localStorage.removeItem('taskvibe_pending_plan');
       } catch {}
+      setIsUPIModalOpen(false);
       triggerConfetti();
-      showToast('🎉 Payment Successful! ₹' + (amount || '') + ' verified & credited!');
+      showToast(
+        depositType === 'plan_purchase'
+          ? `🎉 QO Pay Payment Success! VIP Level ${pendingOrder?.planLevel || ensuredDeposit?.planLevel || 1} Plan Activated!`
+          : `🎉 QO Pay Payment Success! ₹${amount || ''} credited to your wallet!`
+      );
       navigate(depositType === 'plan_purchase' ? 'member_plans' : 'record');
       isVerifyingQoPayReturnRef.current = false;
       return;
@@ -7477,6 +7686,120 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, []);
+
+  // Automatic Background QO Pay Dashboard Sync Poller:
+  // Continuously detects when any pending QO Pay checkout (Buy Plan or Add Money) becomes SUCCESS
+  // on QO Pay's dashboard and immediately activates the VIP plan or credits the wallet — even if
+  // the user closed the payment modal, navigated away, or did not return via callback redirect.
+  const isBgPollingQoPayRef = useRef(false);
+  useEffect(() => {
+    if (!isLoggedIn && currentScreen !== 'admin') return;
+
+    const pollPendingQoPayOrders = async () => {
+      if (isBgPollingQoPayRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (adminSettingsRef.current?.qopayAutoApprove === false) return;
+
+      isBgPollingQoPayRef.current = true;
+      try {
+        const now = Date.now();
+        const activeMob = normalizeMobile(userRef.current?.mobile);
+        const candidates: { depositId: string; orderId: string; depositType: 'add_money' | 'plan_purchase'; amount: number; planLevel?: number }[] = [];
+        const seenOrderIds = new Set<string>();
+
+        const allKnownDeposits = [
+          ...Object.values(pendingQoPayDepositsRef.current),
+          ...(paymentDepositsRef.current || []),
+        ];
+
+        for (const dep of allKnownDeposits) {
+          if (!dep || dep.gateway !== 'qopay') continue;
+          if (dep.status !== 'gateway_pending' && dep.status !== 'in_process') continue;
+          const orderId = dep.qopayOrderId || dep.gatewayOrderId;
+          if (!orderId || seenOrderIds.has(orderId)) continue;
+          const ageMs = dep.timestamp ? now - dep.timestamp : 0;
+          if (ageMs > 24 * 60 * 60 * 1000) continue;
+          if (currentScreen !== 'admin' && activeMob && normalizeMobile(dep.userMobile) !== activeMob) {
+            continue;
+          }
+          seenOrderIds.add(orderId);
+          candidates.push({
+            depositId: dep.id,
+            orderId,
+            depositType: dep.depositType || 'add_money',
+            amount: dep.amount,
+            planLevel: dep.planLevel,
+          });
+        }
+
+        try {
+          const rawSaved = localStorage.getItem('taskvibe_pending_qopay_order');
+          if (rawSaved) {
+            const saved = JSON.parse(rawSaved);
+            if (
+              saved?.orderId &&
+              !seenOrderIds.has(saved.orderId) &&
+              typeof saved.timestamp === 'number' &&
+              now - saved.timestamp < 2 * 60 * 60 * 1000
+            ) {
+              const savedDepId = saved.depositId || `DEP_${saved.timestamp}`;
+              const alreadyApproved = (paymentDepositsRef.current || []).some(
+                (d) =>
+                  (d.id === savedDepId || d.qopayOrderId === saved.orderId || d.gatewayOrderId === saved.orderId) &&
+                  d.status === 'approved'
+              );
+              if (!alreadyApproved) {
+                seenOrderIds.add(saved.orderId);
+                candidates.push({
+                  depositId: savedDepId,
+                  orderId: saved.orderId,
+                  depositType: saved.depositType || 'add_money',
+                  amount: Number(saved.amount) || 0,
+                  planLevel: saved.planLevel,
+                });
+              }
+            }
+          }
+        } catch {}
+
+        // Poll up to 4 most recent pending QO Pay orders per cycle
+        for (const item of candidates.slice(0, 4)) {
+          if (approvingDepositIdsRef.current.has(item.depositId)) continue;
+          const res = await checkQoPayStatus(item.depositId, item.orderId);
+          if (res.isPaid) {
+            setIsUPIModalOpen(false);
+            triggerConfetti();
+            showToast(
+              item.depositType === 'plan_purchase'
+                ? `🎉 QO Pay Confirmed! VIP Level ${item.planLevel || 1} Plan Activated automatically!`
+                : `🎉 QO Pay Confirmed! ₹${item.amount.toLocaleString('en-IN')} added to your wallet automatically!`
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('[QO-Pay] Background auto-detection notice:', err);
+      } finally {
+        isBgPollingQoPayRef.current = false;
+      }
+    };
+
+    const initialTimer = setTimeout(pollPendingQoPayOrders, 2500);
+    const interval = setInterval(pollPendingQoPayOrders, 5000);
+    const handleFocusPoll = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        pollPendingQoPayOrders();
+      }
+    };
+    window.addEventListener('focus', handleFocusPoll);
+    document.addEventListener('visibilitychange', handleFocusPoll);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocusPoll);
+      document.removeEventListener('visibilitychange', handleFocusPoll);
+    };
+  }, [isLoggedIn, currentScreen]);
 
   const dismissAdminAlert = async (): Promise<void> => {
     setUser((prev) => ({

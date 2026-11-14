@@ -169,8 +169,15 @@ export const RegisterScreen: React.FC = () => {
       if (res?.fallbackLink) {
         setWhatsappFallbackUrl(res?.fallbackLink);
       }
+      if (res?.success || res?.deliveredByGateway) {
+        showToast(`✓ WhatsApp OTP sent to +91 ${cleanMobile}`);
+      } else if (res?.gatewayMessage || res?.message) {
+        setGatewayError(res.gatewayMessage || res.message);
+        showToast(`⚠️ ${res.gatewayMessage || res.message}`);
+      }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
+      setGatewayError('WhatsApp OTP gateway unreachable. Please check your internet and retry.');
     } finally {
       setIsSendingOtp(false);
     }
@@ -512,6 +519,11 @@ export const RegisterScreen: React.FC = () => {
               {otpError && (
                 <p className="text-[11px] text-rose-600 font-bold px-3 text-center animate-in fade-in">
                   {otpError}
+                </p>
+              )}
+              {gatewayError && !otpError && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl py-1.5 px-3 text-center font-semibold animate-in fade-in">
+                  {gatewayError}
                 </p>
               )}
             </div>

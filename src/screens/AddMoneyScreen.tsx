@@ -36,14 +36,22 @@ export const AddMoneyScreen: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<AmountOption>(defaultSelected);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
+  React.useEffect(() => {
+    setSelectedOption((curr) => {
+      const matched = options.find((o) => o.amount === curr.amount);
+      return matched || options.find((o) => o.popular) || options[0] || curr;
+    });
+  }, [adminSettings?.addMoneyTiers]);
+
   const isQoPayActive = Boolean(
+    adminSettings.paymentGatewayProvider !== 'drampay' &&
     (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
     (adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c')
   );
 
   const handleProceed = async () => {
-    // Only skip QO Pay when QO Pay is OFF and Manual Payment is ON
-    if (adminSettings.manualPaymentEnabled === true && !isQoPayActive) {
+    // If QO Pay is NOT active (e.g. DramPay selected or Manual enabled while QO Pay is off), open payment modal directly
+    if (!isQoPayActive) {
       addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
       return;
     }

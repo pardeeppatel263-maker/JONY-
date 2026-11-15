@@ -55,6 +55,7 @@ import {
   callDirectQoPayCreateOrder,
   callDirectQoPayStatusCheck,
   callDirectQoPayPayout,
+  isQoPayLowSuccessRateMessage,
 } from '../utils/qopay';
 import { cleanFirestoreData } from '../utils/cleanFirestoreData';
 import { generateDirectUtr, formatDisplayUtr } from '../utils/utrUtils';
@@ -318,6 +319,7 @@ interface AppContextType {
     collectName?: string;
     deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string; bhim?: string };
     depositId?: string;
+    isLowSuccessRateHold?: boolean;
     message?: string;
   }>;
   checkQoPayStatus: (
@@ -335,8 +337,24 @@ interface AppContextType {
     amount: number,
     bonus: number,
     depositType: 'add_money' | 'plan_purchase',
-    plan?: PlanItem
-  ) => Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; message?: string }>;
+    plan?: PlanItem,
+    options?: { silent?: boolean }
+  ) => Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; isLowSuccessRateHold?: boolean; message?: string }>;
+  qopayAutoRetryState: {
+    active: boolean;
+    isLowSuccessRateHold: boolean;
+    checkingNow: boolean;
+    attemptCount: number;
+    startedAt: number;
+    lastCheckedAt: number;
+    nextCheckInSec: number;
+    amount: number;
+    bonus: number;
+    depositType: 'add_money' | 'plan_purchase';
+    plan?: PlanItem;
+    reason?: string;
+  };
+  cancelQoPayAutoRetry: () => void;
   prefetchedQoPaySession: {
     amount: number;
     depositType: 'add_money' | 'plan_purchase';
@@ -975,6 +993,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     timestamp: number;
   } | null>(null);
   const clearPrefetchedQoPaySession = () => setPrefetchedQoPaySession(null);
+  const defaultQoPayAutoRetryState = {
+    active: false,
+    isLowSuccessRateHold: false,
+    checkingNow: false,
+    attemptCount: 0,
+    startedAt: 0,
+    lastCheckedAt: 0,
+    nextCheckInSec: 0,
+    amount: 0,
+    bonus: 0,
+    depositType: 'add_money' as 'add_money' | 'plan_purchase',
+    plan: undefined as PlanItem | undefined,
+    reason: '',
+  };
+  const [qopayAutoRetryState, setQopayAutoRetryState] = useState(defaultQoPayAutoRetryState);
+  const qopayAutoRetryRef = useRef(qopayAutoRetryState);
+  useEffect(() => {
+    qopayAutoRetryRef.current = qopayAutoRetryState;
+  }, [qopayAutoRetryState]);
+  const cancelQoPayAutoRetry = () => setQopayAutoRetryState(defaultQoPayAutoRetryState);
+  const isStartingDirectQoPayRef = useRef(false);
   const pendingQoPayDepositsRef = useRef<Record<string, PaymentDeposit>>({});
   const approvingDepositIdsRef = useRef<Set<string>>(new Set());
   const [pendingUPIAmount, setPendingUPIAmount] = useState(1000);
@@ -6991,6 +7030,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     collectName?: string;
     deeplinks?: { upi?: string; gpay?: string; phonepe?: string; paytm?: string; bhim?: string };
     depositId?: string;
+    isLowSuccessRateHold?: boolean;
     message?: string;
   }> => {
     if (adminSettings.qopayEnabled === false && adminSettings.paymentGatewayProvider !== 'qopay') {
@@ -7090,6 +7130,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
               const errLower = String(parsed?.message || '').toLowerCase();
               isExplicitConfigError =
+                Boolean(parsed?.isLowSuccessRateHold) ||
+                isQoPayLowSuccessRateMessage(parsed?.message) ||
                 errLower.includes('invalid api token') ||
                 errLower.includes('invalid token') ||
                 errLower.includes('minimum');
@@ -7195,11 +7237,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : '';
         return {
           success: false,
+          isLowSuccessRateHold: Boolean(
+            data?.isLowSuccessRateHold || isQoPayLowSuccessRateMessage(cleanMsg)
+          ),
           message: cleanMsg,
         };
       }
     } catch (err: any) {
-      return { success: false, message: err?.message || '' };
+      return {
+        success: false,
+        isLowSuccessRateHold: isQoPayLowSuccessRateMessage(err?.message),
+        message: err?.message || '',
+      };
     }
   };
 
@@ -7543,9 +7592,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     amount: number,
     bonus: number,
     depositType: 'add_money' | 'plan_purchase',
-    plan?: PlanItem
-  ): Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; message?: string }> => {
+    plan?: PlanItem,
+    options?: { silent?: boolean }
+  ): Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; isLowSuccessRateHold?: boolean; message?: string }> => {
+    const isSilent = Boolean(options?.silent);
+    if (isStartingDirectQoPayRef.current) {
+      return { success: false, openedModal: false, message: 'Payment request already in progress.' };
+    }
+    isStartingDirectQoPayRef.current = true;
     setIsUPIModalOpen(false);
+    if (isSilent) {
+      setQopayAutoRetryState((prev) => (prev.active ? { ...prev, checkingNow: true } : prev));
+    }
+
     try {
       const res = await initiateQoPayment(amount, bonus, depositType, plan);
       if (res.success && (res.paymentUrl || res.upiIntent || res.qrCode)) {
@@ -7585,28 +7644,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (typeof res.qrCode === 'string' && /^https?:\/\//i.test(res.qrCode) ? res.qrCode : null);
 
         if (typeof window !== 'undefined' && directCashierUrl) {
+          cancelQoPayAutoRetry();
           setIsUPIModalOpen(false);
+          if (isSilent) {
+            showToast('✓ QO Pay active! Opening cashier page...');
+          }
           window.location.href = directCashierUrl;
           return { success: true, paymentUrl: directCashierUrl };
         }
-
-        const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
-        console.warn('[QO-Pay] Cashier URL unavailable:', res.message);
-        showToast(msg);
-        return { success: false, openedModal: false, message: msg };
-      } else {
-        const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
-        console.warn('[QO-Pay] Create order failed:', res.message);
-        showToast(msg);
-        return { success: false, openedModal: false, message: msg };
       }
+
+      const holdDetected = Boolean(res.isLowSuccessRateHold || isQoPayLowSuccessRateMessage(res.message));
+      const nowTs = Date.now();
+      const nextDelaySec = holdDetected ? 15 : 20;
+      setQopayAutoRetryState((prev) => ({
+        active: true,
+        isLowSuccessRateHold: holdDetected || prev.isLowSuccessRateHold,
+        checkingNow: false,
+        attemptCount: prev.active ? prev.attemptCount + 1 : 1,
+        startedAt: prev.active && prev.startedAt ? prev.startedAt : nowTs,
+        lastCheckedAt: nowTs,
+        nextCheckInSec: nextDelaySec,
+        amount,
+        bonus,
+        depositType,
+        plan,
+        reason: res.message || prev.reason || '',
+      }));
+
+      const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
+      console.warn('[QO-Pay] Cashier unavailable:', res.message, { holdDetected });
+      if (!isSilent) {
+        showToast(msg);
+      }
+      return { success: false, openedModal: false, isLowSuccessRateHold: holdDetected, message: msg };
     } catch (err: any) {
+      const holdDetected = isQoPayLowSuccessRateMessage(err?.message);
+      const nowTs = Date.now();
+      setQopayAutoRetryState((prev) => ({
+        active: true,
+        isLowSuccessRateHold: holdDetected || prev.isLowSuccessRateHold,
+        checkingNow: false,
+        attemptCount: prev.active ? prev.attemptCount + 1 : 1,
+        startedAt: prev.active && prev.startedAt ? prev.startedAt : nowTs,
+        lastCheckedAt: nowTs,
+        nextCheckInSec: holdDetected ? 15 : 20,
+        amount,
+        bonus,
+        depositType,
+        plan,
+        reason: err?.message || prev.reason || '',
+      }));
       const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
       console.error('[QO-Pay] startDirectQoPayPayment error:', err);
-      showToast(msg);
-      return { success: false, openedModal: false, message: msg };
+      if (!isSilent) {
+        showToast(msg);
+      }
+      return { success: false, openedModal: false, isLowSuccessRateHold: holdDetected, message: msg };
+    } finally {
+      isStartingDirectQoPayRef.current = false;
     }
   };
+
+  // Automatic background detector: when QO Pay has low success rate / temporary hold,
+  // auto-probe while user is on payment screen and open QO Pay cashier page immediately once recovered.
+  useEffect(() => {
+    if (!qopayAutoRetryState.active) return;
+    if (!isLoggedIn || (currentScreen !== 'add_money' && currentScreen !== 'plan_detail')) {
+      cancelQoPayAutoRetry();
+      return;
+    }
+
+    const MAX_AUTO_RETRY_MS = 45 * 60 * 1000;
+    const tickId = setInterval(() => {
+      const state = qopayAutoRetryRef.current;
+      if (!state.active || state.checkingNow) return;
+      if (Date.now() - state.startedAt > MAX_AUTO_RETRY_MS) {
+        cancelQoPayAutoRetry();
+        return;
+      }
+      if (state.nextCheckInSec <= 1) {
+        startDirectQoPayPayment(
+          state.amount,
+          state.bonus,
+          state.depositType,
+          state.plan,
+          { silent: true }
+        );
+      } else {
+        setQopayAutoRetryState((prev) =>
+          prev.active ? { ...prev, nextCheckInSec: Math.max(0, prev.nextCheckInSec - 1) } : prev
+        );
+      }
+    }, 1000);
+
+    const handleResumeProbe = () => {
+      const state = qopayAutoRetryRef.current;
+      if (!state.active || state.checkingNow) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (Date.now() - state.lastCheckedAt < 4000) return;
+      startDirectQoPayPayment(
+        state.amount,
+        state.bonus,
+        state.depositType,
+        state.plan,
+        { silent: true }
+      );
+    };
+
+    window.addEventListener('focus', handleResumeProbe);
+    window.addEventListener('online', handleResumeProbe);
+    document.addEventListener('visibilitychange', handleResumeProbe);
+
+    return () => {
+      clearInterval(tickId);
+      window.removeEventListener('focus', handleResumeProbe);
+      window.removeEventListener('online', handleResumeProbe);
+      document.removeEventListener('visibilitychange', handleResumeProbe);
+    };
+  }, [qopayAutoRetryState.active, isLoggedIn, currentScreen]);
 
   // Real-time automatic listener: verifies QO Pay orders upon return or callback
   const isVerifyingQoPayReturnRef = useRef(false);
@@ -8242,6 +8398,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         checkQoPayStatus,
         disburseQoPayout,
         startDirectQoPayPayment,
+        qopayAutoRetryState,
+        cancelQoPayAutoRetry,
         prefetchedQoPaySession,
         clearPrefetchedQoPaySession,
       }}

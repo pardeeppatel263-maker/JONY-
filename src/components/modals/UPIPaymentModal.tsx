@@ -141,6 +141,8 @@ export const UPIPaymentModal: React.FC = () => {
   const [qopaySuccess, setQopaySuccess] = useState(false);
   const [qopayUtrInput, setQopayUtrInput] = useState('');
   const [isSubmittingQopayUtr, setIsSubmittingQopayUtr] = useState(false);
+  const [qopayAutoRetrySec, setQopayAutoRetrySec] = useState<number>(0);
+  const [qopayHoldDetected, setQopayHoldDetected] = useState(false);
   const hasInitializedQoPayForOpenRef = useRef(false);
 
   // Active admin UPI ID & merchant from backend / settings
@@ -234,6 +236,8 @@ export const UPIPaymentModal: React.FC = () => {
       setQopaySuccess(false);
       setQopayUtrInput('');
       setIsSubmittingQopayUtr(false);
+      setQopayAutoRetrySec(0);
+      setQopayHoldDetected(false);
       setDrampayOrder(null);
       setDrampayError(null);
       setDrampayStatus('0');
@@ -272,11 +276,12 @@ export const UPIPaymentModal: React.FC = () => {
           // Gateway was in cooldown/timeout — do NOT fall back to manual QR
           setQopayOrder(null);
           setQopayError('Try again after some time or contact support.');
+          setQopayAutoRetrySec(15);
         }
         clearPrefetchedQoPaySession();
       } else if (!hasInitializedQoPayForOpenRef.current) {
         hasInitializedQoPayForOpenRef.current = true;
-        createQoPaySession();
+        createQoPaySession(false);
       }
     } else if (paymentMode === 'drampay') {
       createDramPaySession();
@@ -292,9 +297,11 @@ export const UPIPaymentModal: React.FC = () => {
   };
 
   // Create QO Pay order on demand
-  const createQoPaySession = async () => {
-    setQopayLoading(true);
-    setQopayError(null);
+  const createQoPaySession = async (silent = false) => {
+    if (!silent) {
+      setQopayLoading(true);
+      setQopayError(null);
+    }
     try {
       const res = await initiateQoPayment(
         pendingUPIAmount,
@@ -303,6 +310,9 @@ export const UPIPaymentModal: React.FC = () => {
         pendingPlanForUPI || undefined
       );
       if (res.success) {
+        setQopayError(null);
+        setQopayHoldDetected(false);
+        setQopayAutoRetrySec(0);
         setQopayOrder({
           orderId: res.orderId,
           paymentUrl: res.paymentUrl,
@@ -320,14 +330,37 @@ export const UPIPaymentModal: React.FC = () => {
       } else {
         setQopayOrder(null);
         setQopayError('Try again after some time or contact support.');
+        const isHold = Boolean(res.isLowSuccessRateHold);
+        if (isHold) setQopayHoldDetected(true);
+        setQopayAutoRetrySec(isHold ? 15 : 20);
       }
     } catch {
       setQopayOrder(null);
       setQopayError('Try again after some time or contact support.');
+      setQopayAutoRetrySec(20);
     } finally {
-      setQopayLoading(false);
+      if (!silent) {
+        setQopayLoading(false);
+      }
     }
   };
+
+  // Auto-probe QO Pay when cashier unavailable / low success rate hold is active inside modal
+  useEffect(() => {
+    if (!isUPIModalOpen || paymentMode !== 'qopay' || qopayLoading || qopaySuccess || qopayOrder || !qopayError) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setQopayAutoRetrySec((prev) => {
+        if (prev <= 1) {
+          createQoPaySession(true);
+          return qopayHoldDetected ? 15 : 20;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isUPIModalOpen, paymentMode, qopayLoading, qopaySuccess, qopayOrder, qopayError, qopayHoldDetected]);
 
   // Auto-polling QO Pay status every 3.5 seconds while order is pending
   useEffect(() => {
@@ -853,24 +886,34 @@ export const UPIPaymentModal: React.FC = () => {
               </div>
             )}
 
-            {/* NOTICE WHEN QO PAY CASHIER FAILS TO OPEN — NO MANUAL FALLBACK */}
+            {/* NOTICE WHEN QO PAY CASHIER FAILS TO OPEN — NO MANUAL FALLBACK + AUTO-DETECT */}
             {(qopayError || (!qopayLoading && !qopaySuccess && !qopayOrder)) && !qopayLoading && !qopaySuccess && (
               <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-left space-y-3">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="space-y-0.5">
+                  <div className="space-y-1 flex-1">
                     <h4 className="text-xs font-black text-amber-950">
                       QO Pay Cashier Unavailable
                     </h4>
                     <p className="text-[11px] text-amber-900 font-semibold leading-snug">
                       Try again after some time or contact support.
                     </p>
+                    {qopayAutoRetrySec > 0 && (
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-800 bg-indigo-50/90 border border-indigo-200 rounded-lg px-2 py-1 mt-1">
+                        <Loader2 className="w-3 h-3 animate-spin text-indigo-600 shrink-0" />
+                        <span>
+                          {qopayHoldDetected
+                            ? `Low success rate hold detected • Auto-opening cashier in ${qopayAutoRetrySec}s once cleared`
+                            : `Auto-checking gateway in ${qopayAutoRetrySec}s to open cashier automatically`}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-0.5">
                   <button
                     type="button"
-                    onClick={createQoPaySession}
+                    onClick={() => createQoPaySession(false)}
                     className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />

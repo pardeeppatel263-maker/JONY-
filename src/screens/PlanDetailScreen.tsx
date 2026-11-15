@@ -29,6 +29,8 @@ export const PlanDetailScreen: React.FC = () => {
     buyPlanWithWallet,
     buyPlanWithUPI,
     startDirectQoPayPayment,
+    qopayAutoRetryState,
+    cancelQoPayAutoRetry,
     adminSettings,
     showToast,
     navigate,
@@ -513,32 +515,47 @@ export const PlanDetailScreen: React.FC = () => {
                 </div>
               )}
 
-              {cashierUnavailable && isQoPayActive && (
+              {(cashierUnavailable || qopayAutoRetryState.active) && isQoPayActive && (
                 <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
+                    <div className="space-y-1 flex-1">
                       <h4 className="text-xs font-black text-amber-950">
                         QO Pay Cashier Unavailable
                       </h4>
                       <p className="text-[11px] font-semibold text-amber-900 leading-snug">
                         Try again after some time or contact support.
                       </p>
+                      {qopayAutoRetryState.active && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-800 bg-indigo-50/90 border border-indigo-200 rounded-lg px-2 py-1 mt-1">
+                          <Loader2 className="w-3 h-3 animate-spin text-indigo-600 shrink-0" />
+                          <span>
+                            {qopayAutoRetryState.checkingNow
+                              ? 'Checking QO Pay cashier availability...'
+                              : qopayAutoRetryState.isLowSuccessRateHold
+                              ? `Low success rate hold detected • Auto-opening cashier in ${qopayAutoRetryState.nextCheckInSec}s once cleared`
+                              : `Auto-checking gateway in ${qopayAutoRetryState.nextCheckInSec}s to open cashier automatically`}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={handleUPIPay}
-                      disabled={isRedirectingToUPI}
-                      className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                      disabled={isRedirectingToUPI || qopayAutoRetryState.checkingNow}
+                      className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-60"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
+                      <RefreshCw className={`w-3.5 h-3.5 ${qopayAutoRetryState.checkingNow ? 'animate-spin' : ''}`} />
                       <span>Try Again</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => navigate('help_center')}
+                      onClick={() => {
+                        cancelQoPayAutoRetry();
+                        navigate('help_center');
+                      }}
                       className="py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />

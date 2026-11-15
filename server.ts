@@ -1160,6 +1160,47 @@ async function startServer() {
     });
   });
 
+  // Track QO Pay low-success-rate hold & recovery status
+  let qopayGatewayHealth: {
+    isLowSuccessRateHold: boolean;
+    reason: string;
+    detectedAt: number;
+    lastRecoveredAt: number;
+    lastCheckedAt: number;
+  } = {
+    isLowSuccessRateHold: false,
+    reason: '',
+    detectedAt: 0,
+    lastRecoveredAt: 0,
+    lastCheckedAt: 0,
+  };
+
+  function isQoPayLowSuccessRateMsg(msg?: string | null): boolean {
+    const lower = String(msg || '').toLowerCase();
+    if (!lower) return false;
+    return (
+      lower.includes('low success') ||
+      lower.includes('success rate') ||
+      lower.includes('6 hour') ||
+      lower.includes('6-hour') ||
+      lower.includes('temporarily blocked') ||
+      lower.includes('temporarily suspended') ||
+      lower.includes('temporarily hold') ||
+      lower.includes('on hold') ||
+      lower.includes('rate limit') ||
+      lower.includes('too many request') ||
+      lower.includes('try again after') ||
+      lower.includes('try after')
+    );
+  }
+
+  app.get('/api/qopay/health', (_req, res) => {
+    res.json({
+      ...qopayGatewayHealth,
+      timestamp: Date.now(),
+    });
+  });
+
   // 3. Test QO Pay Connection (Uses non-destructive order-status check so test clicks never degrade merchant success rate)
   app.post('/api/qopay/test', async (req, res) => {
     try {
@@ -1348,6 +1389,13 @@ async function startServer() {
       }
 
       if (data?.status === true || Boolean(paymentUrl)) {
+        if (qopayGatewayHealth.isLowSuccessRateHold) {
+          qopayGatewayHealth.lastRecoveredAt = Date.now();
+        }
+        qopayGatewayHealth.isLowSuccessRateHold = false;
+        qopayGatewayHealth.reason = '';
+        qopayGatewayHealth.lastCheckedAt = Date.now();
+
         // Persist pending deposit to Firestore (race with 1.5s so slow Firestore never delays cashier redirect)
         await Promise.race([
           persistPendingQoPayDeposit({
@@ -1384,8 +1432,19 @@ async function startServer() {
         });
       }
 
+      const holdDetected = isQoPayLowSuccessRateMsg(data?.message);
+      qopayGatewayHealth.lastCheckedAt = Date.now();
+      if (holdDetected) {
+        if (!qopayGatewayHealth.isLowSuccessRateHold) {
+          qopayGatewayHealth.detectedAt = Date.now();
+        }
+        qopayGatewayHealth.isLowSuccessRateHold = true;
+        qopayGatewayHealth.reason = data?.message || 'Low success rate hold';
+      }
+
       return res.status(httpStatus >= 400 ? httpStatus : 400).json({
         success: false,
+        isLowSuccessRateHold: holdDetected,
         message: data?.message || 'Failed to create QO Pay order',
         data,
       });

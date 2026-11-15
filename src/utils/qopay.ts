@@ -38,8 +38,28 @@ export interface QoPayCreateOrderResult {
     paytm?: string;
     bhim?: string;
   };
+  isLowSuccessRateHold?: boolean;
   message?: string;
   raw?: any;
+}
+
+export function isQoPayLowSuccessRateMessage(message?: string | null): boolean {
+  const msg = String(message || '').toLowerCase();
+  if (!msg) return false;
+  return (
+    msg.includes('low success') ||
+    msg.includes('success rate') ||
+    msg.includes('6 hour') ||
+    msg.includes('6-hour') ||
+    msg.includes('temporarily blocked') ||
+    msg.includes('temporarily suspended') ||
+    msg.includes('temporarily hold') ||
+    msg.includes('on hold') ||
+    msg.includes('rate limit') ||
+    msg.includes('too many request') ||
+    msg.includes('try again after') ||
+    msg.includes('try after')
+  );
 }
 
 export interface QoPayStatusResult {
@@ -232,6 +252,7 @@ export async function callDirectQoPayCreateOrder(
   return {
     success: false,
     orderId,
+    isLowSuccessRateHold: isQoPayLowSuccessRateMessage(data?.message),
     message: data?.message || 'QO Pay failed to generate order. Please verify your token.',
     raw: data,
   };

@@ -17,6 +17,7 @@ import {
   query,
   where,
   limit,
+  runTransaction,
 } from 'firebase/firestore';
 import {
   ScreenType,
@@ -1348,6 +1349,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
           if (cloudList.length > 0) {
             cloudList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            // Detect real-time server/webhook approval of any previously pending QO Pay order
+            try {
+              const rawPending = localStorage.getItem('taskvibe_pending_qopay_order');
+              const savedPending = rawPending ? JSON.parse(rawPending) : null;
+              const prevMap = new Map((paymentDepositsRef.current || []).map((d) => [d.id, d]));
+              for (const dep of cloudList) {
+                if (dep.gateway !== 'qopay' || dep.status !== 'approved') continue;
+                const prevDep = prevMap.get(dep.id);
+                const wasPendingInState = prevDep && (prevDep.status === 'gateway_pending' || prevDep.status === 'in_process');
+                const matchesSavedPending =
+                  savedPending &&
+                  (savedPending.depositId === dep.id ||
+                    (savedPending.orderId && (savedPending.orderId === dep.qopayOrderId || savedPending.orderId === dep.gatewayOrderId)));
+
+                if ((wasPendingInState || matchesSavedPending) && !approvingDepositIdsRef.current.has(dep.id)) {
+                  if (matchesSavedPending) {
+                    localStorage.removeItem('taskvibe_pending_qopay_order');
+                    localStorage.removeItem('taskvibe_pending_plan');
+                  }
+                  setIsUPIModalOpen(false);
+                  triggerConfetti();
+                  showToast(
+                    dep.depositType === 'plan_purchase'
+                      ? `🎉 QO Pay Confirmed! VIP Level ${dep.planLevel || 1} Plan Activated automatically!`
+                      : `🎉 QO Pay Confirmed! ₹${Number(dep.amount || 0).toLocaleString('en-IN')} added to your wallet!`
+                  );
+                }
+              }
+            } catch {}
+
             setPaymentDeposits(cloudList);
             try {
               localStorage.setItem('taskvibe_payment_deposits', JSON.stringify(cloudList));
@@ -3590,36 +3622,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     approvingDepositIdsRef.current.add(depositId);
     try {
     let deposit = overrideDeposit || paymentDepositsRef.current.find((d) => d.id === depositId);
+    let claimedAtomically = false;
     try {
-      const depSnap = await getDoc(doc(db, 'deposits', depositId));
-      if (depSnap.exists()) {
-        const cloudDep = depSnap.data() as PaymentDeposit;
-        // Strict cross-tab / cross-device idempotency guard: never double-credit an already approved deposit!
-        if (cloudDep.status === 'approved') {
+      const depRef = doc(db, 'deposits', depositId);
+      const txOutcome = await runTransaction(db, async (tx) => {
+        const depSnap = await tx.get(depRef);
+        const cloudDep = depSnap.exists() ? (depSnap.data() as any) : null;
+        if (cloudDep && (cloudDep.status === 'approved' || cloudDep.creditedAt)) {
+          return { alreadyApproved: true, cloudDep };
+        }
+        const mergedDep = cloudDep
+          ? (overrideDeposit ? { ...cloudDep, ...overrideDeposit } : cloudDep)
+          : deposit;
+        if (!mergedDep || mergedDep.status === 'approved') {
+          return { alreadyApproved: true, cloudDep: mergedDep };
+        }
+        const claimedRecord = cleanFirestoreData({
+          ...mergedDep,
+          status: 'approved',
+          creditedAt: Date.now(),
+          creditedBy: approvalSource || 'client_approval',
+        });
+        tx.set(depRef, claimedRecord, { merge: true });
+        return { alreadyApproved: false, claimedRecord };
+      });
+      if (txOutcome.alreadyApproved) {
+        if (txOutcome.cloudDep) {
           setPaymentDeposits((prev) => {
             const exists = prev.some((d) => d.id === depositId);
             return exists
-              ? prev.map((d) => (d.id === depositId ? { ...d, ...cloudDep, status: 'approved' } : d))
-              : [cloudDep, ...prev];
+              ? prev.map((d) => (d.id === depositId ? { ...d, ...txOutcome.cloudDep, status: 'approved' } : d))
+              : [txOutcome.cloudDep, ...prev];
           });
-          return;
         }
-        deposit = overrideDeposit ? { ...cloudDep, ...overrideDeposit } : cloudDep;
+        return;
       }
+      deposit = txOutcome.claimedRecord;
+      claimedAtomically = true;
     } catch (e) {
-      console.warn('Deposit cloud verification notice:', e);
+      console.warn('Deposit cloud atomic verification notice:', e);
     }
-    if (!deposit || deposit.status === 'approved') return;
+    if (!deposit || (!claimedAtomically && deposit.status === 'approved')) return;
 
-    // 1. Update deposit in Firestore immediately as approved
+    // 1. Ensure approved deposit object
     const approvedDepRecord: PaymentDeposit = {
       ...deposit,
       status: 'approved',
     };
-    try {
-      await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(approvedDepRecord), { merge: true });
-    } catch (err) {
-      console.warn('Failed to update deposit in Firestore:', err);
+    if (!claimedAtomically) {
+      try {
+        await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(approvedDepRecord), { merge: true });
+      } catch (err) {
+        console.warn('Failed to update deposit in Firestore:', err);
+      }
     }
 
     // 2. Mark deposit as approved in local state
@@ -6996,6 +7051,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               baseUrl: activeBaseUrl,
               amount,
               orderId,
+              depositId,
+              userMobile: activeUser.mobile || cleanMob,
+              userName: cleanName,
+              userReferralCode: activeUser.referralCode || '',
+              depositType,
+              bonus,
+              ...(plan?.id ? { planId: plan.id } : {}),
+              ...(plan?.level !== undefined ? { planLevel: plan.level } : {}),
+              ...(plan ? { planTitle: plan.levelTag || plan.title || `Level ${plan.level}` } : {}),
+              utrNumber: directUtr,
               customerMobile: cleanMob,
               customerName: cleanName,
               customerEmail: cleanEmail,
@@ -7070,9 +7135,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pendingQoPayDepositsRef.current[depositId] = updatedDeposit;
         setPaymentDeposits((prev) => [updatedDeposit, ...prev.filter((d) => d.id !== depositId)]);
         try {
-          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch((e) => {
-            console.warn('Background saving QO Pay deposit to Firestore:', e);
-          });
+          await Promise.race([
+            setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch((e) => {
+              console.warn('Background saving QO Pay deposit to Firestore:', e);
+            }),
+            new Promise((r) => setTimeout(r, 1500)),
+          ]);
         } catch {}
 
         return {
@@ -7111,30 +7179,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     depositId: string,
     orderId: string,
     skipAutoApprove = false
-  ): Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string }> => {
+  ): Promise<{ success: boolean; isPaid: boolean; status?: string; utr?: string; message?: string; creditedByServer?: boolean }> => {
     try {
       const currentSettings = adminSettingsRef.current;
       const activeUserToken = (currentSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
       const activeBaseUrl = (currentSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
+      let savedLocalOrder: any = null;
+      try {
+        const rawSaved = localStorage.getItem('taskvibe_pending_qopay_order');
+        if (rawSaved) {
+          const parsed = JSON.parse(rawSaved);
+          if (parsed?.orderId === orderId || parsed?.depositId === depositId) {
+            savedLocalOrder = parsed;
+          }
+        }
+      } catch {}
+
+      const knownDep =
+        pendingQoPayDepositsRef.current[depositId] ||
+        paymentDepositsRef.current.find(
+          (d) => d.id === depositId || d.qopayOrderId === orderId || d.gatewayOrderId === orderId
+        );
+
+      const fallbackMeta = {
+        amount: knownDep?.amount ?? savedLocalOrder?.amount,
+        bonus: knownDep?.bonus ?? savedLocalOrder?.bonus ?? 0,
+        depositType: knownDep?.depositType ?? savedLocalOrder?.depositType ?? 'add_money',
+        planId: knownDep?.planId ?? savedLocalOrder?.planId,
+        planLevel: knownDep?.planLevel ?? savedLocalOrder?.planLevel,
+        planTitle: knownDep?.planTitle ?? savedLocalOrder?.planTitle,
+        userMobile: knownDep?.userMobile || savedLocalOrder?.userMobile || userRef.current?.mobile || '',
+        userName: knownDep?.userName || savedLocalOrder?.userName || userRef.current?.name || 'Member',
+        userReferralCode: knownDep?.userId || savedLocalOrder?.userReferralCode || userRef.current?.referralCode || '',
+      };
+
       let data: any = {};
       try {
-        const res = await fetch(getApiUrl('/api/qopay/payin/status'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userToken: activeUserToken,
-            baseUrl: activeBaseUrl,
-            orderId,
-          }),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        try {
+          const res = await fetch(getApiUrl('/api/qopay/payin/status'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              userToken: activeUserToken,
+              baseUrl: activeBaseUrl,
+              orderId,
+              depositId,
+              fallbackMeta,
+            }),
+          });
 
-        const rawText = await res.text();
-        const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
-        if (!isHtml) {
-          try {
-            data = rawText ? JSON.parse(rawText) : {};
-          } catch {}
+          const rawText = await res.text();
+          const isHtml = rawText.trim().startsWith('<') || rawText.includes('<html');
+          if (!isHtml) {
+            try {
+              data = rawText ? JSON.parse(rawText) : {};
+            } catch {}
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
       } catch (err) {
         console.warn('[QO-Pay] Server status check failed, falling back to direct check:', err);
@@ -7160,17 +7266,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ) {
         const utr = data.utr || formatDisplayUtr((orderId || '').replace(/^ORD_/i, ''));
         const shouldAutoApprove = currentSettings.qopayAutoApprove !== false;
+        const creditedByServer = Boolean(data.creditedByServer || data.deposit?.status === 'approved');
+
+        if (creditedByServer) {
+          // Server already credited atomically in Firestore; sync local state cleanly without double-crediting
+          delete pendingQoPayDepositsRef.current[depositId];
+          if (data.deposit) {
+            setPaymentDeposits((prev) => {
+              const exists = prev.some((d) => d.id === data.deposit.id);
+              return exists
+                ? prev.map((d) => (d.id === data.deposit.id ? data.deposit : d))
+                : [data.deposit, ...prev];
+            });
+          }
+          const activeMob = normalizeMobile(fallbackMeta.userMobile || userRef.current?.mobile);
+          if (activeMob && activeMob.length >= 10) {
+            try {
+              const userSnap = await getDocFromServer(doc(db, 'users', activeMob)).catch(() =>
+                getDoc(doc(db, 'users', activeMob))
+              );
+              if (userSnap.exists()) {
+                const cloudUser = userSnap.data() as RegisteredUserAccount;
+                skipNextFirestorePushRef.current = true;
+                setUser((curr) => ({ ...curr, ...cloudUser }));
+                if (Array.isArray(cloudUser.transactions)) {
+                  setTransactions(cloudUser.transactions);
+                }
+                try {
+                  localStorage.setItem('taskvibe_user', JSON.stringify({ ...userRef.current, ...cloudUser }));
+                } catch {}
+              }
+            } catch {}
+          }
+          try {
+            if (savedLocalOrder) {
+              localStorage.removeItem('taskvibe_pending_qopay_order');
+              localStorage.removeItem('taskvibe_pending_plan');
+            }
+          } catch {}
+          return {
+            success: true,
+            isPaid: true,
+            status: 'SUCCESS',
+            utr,
+            creditedByServer: true,
+            message: 'Payment confirmed via QO Pay and credited!',
+          };
+        }
+
         if (!skipAutoApprove && shouldAutoApprove) {
-          const existingDep =
-            pendingQoPayDepositsRef.current[depositId] ||
-            paymentDepositsRef.current.find(
-              (d) => d.id === depositId || d.qopayOrderId === orderId || d.gatewayOrderId === orderId
-            );
-          const pendingOverride = existingDep
+          const baseDeposit: PaymentDeposit | undefined =
+            knownDep ||
+            (fallbackMeta.amount && fallbackMeta.userMobile
+              ? {
+                  id: depositId,
+                  userId: fallbackMeta.userReferralCode || fallbackMeta.userMobile,
+                  userName: fallbackMeta.userName || 'Member',
+                  userMobile: fallbackMeta.userMobile,
+                  amount: Number(fallbackMeta.amount),
+                  bonus: Number(fallbackMeta.bonus) || 0,
+                  depositType: fallbackMeta.depositType || 'add_money',
+                  ...(fallbackMeta.planId ? { planId: fallbackMeta.planId } : {}),
+                  ...(fallbackMeta.planLevel !== undefined ? { planLevel: fallbackMeta.planLevel } : {}),
+                  ...(fallbackMeta.planTitle ? { planTitle: fallbackMeta.planTitle } : {}),
+                  adminUpiId: currentSettings.adminUpiId || 'qopay@upi',
+                  utrNumber: utr,
+                  userSubmittedUtr: utr,
+                  submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                  timestamp: Date.now(),
+                  status: 'gateway_pending',
+                  gateway: 'qopay',
+                  gatewayOrderId: orderId,
+                  qopayOrderId: orderId,
+                }
+              : undefined);
+          const pendingOverride = baseDeposit
             ? {
-                ...existingDep,
-                utrNumber: utr || existingDep.utrNumber,
-                userSubmittedUtr: utr || existingDep.userSubmittedUtr,
+                ...baseDeposit,
+                utrNumber: utr || baseDeposit.utrNumber,
+                userSubmittedUtr: utr || baseDeposit.userSubmittedUtr,
                 gatewayOrderId: orderId,
                 qopayOrderId: orderId,
               }
@@ -7178,13 +7352,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           delete pendingQoPayDepositsRef.current[depositId];
           await approvePaymentDeposit(depositId, pendingOverride, 'Verified Automatically via QO Pay Gateway');
           try {
-            const rawSaved = localStorage.getItem('taskvibe_pending_qopay_order');
-            if (rawSaved) {
-              const savedParsed = JSON.parse(rawSaved);
-              if (savedParsed?.orderId === orderId || savedParsed?.depositId === depositId) {
-                localStorage.removeItem('taskvibe_pending_qopay_order');
-                localStorage.removeItem('taskvibe_pending_plan');
-              }
+            if (savedLocalOrder) {
+              localStorage.removeItem('taskvibe_pending_qopay_order');
+              localStorage.removeItem('taskvibe_pending_plan');
             }
           } catch {}
         }
@@ -7194,6 +7364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isPaid: true,
             status: 'SUCCESS',
             utr,
+            creditedByServer: false,
             message: 'Payment confirmed via QO Pay and credited!',
           };
         }
@@ -7414,6 +7585,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let orderIdFromUrl: string | null = null;
     let utrFromUrl: string | null = null;
     let returnedFromUrl = false;
+    let paidFromUrl = false;
 
     try {
       const fullHref = window.location.href;
@@ -7421,6 +7593,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orderIdFromUrl = urlObj.searchParams.get('qopay_order') || urlObj.searchParams.get('order_id');
       utrFromUrl = urlObj.searchParams.get('utr') || urlObj.searchParams.get('bank_ref_no');
       returnedFromUrl = urlObj.searchParams.get('returned') === 'true';
+      paidFromUrl = urlObj.searchParams.get('paid') === 'true';
 
       if (!orderIdFromUrl && window.location.hash.includes('qopay_order')) {
         const hashParts = window.location.hash.split('?');
@@ -7429,6 +7602,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           orderIdFromUrl = hp.get('qopay_order') || hp.get('order_id');
           utrFromUrl = utrFromUrl || hp.get('utr') || hp.get('bank_ref_no');
           returnedFromUrl = returnedFromUrl || hp.get('returned') === 'true';
+          paidFromUrl = paidFromUrl || hp.get('paid') === 'true';
         }
       }
     } catch (e) {
@@ -7446,13 +7620,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    // Trigger when user returns via callback URL OR resumes app after paying on QO Pay cashier
+    const isExplicitCallbackReturn = Boolean(orderIdFromUrl || returnedFromUrl);
+
+    // Trigger silent check when user resumes app after opening QO Pay cashier
     const hasResumedPendingOrder =
       Boolean(pendingOrder?.orderId) &&
       typeof pendingOrder?.timestamp === 'number' &&
       Date.now() - pendingOrder.timestamp > 4000;
 
-    if (!orderIdFromUrl && !returnedFromUrl && !hasResumedPendingOrder) {
+    if (!isExplicitCallbackReturn && !hasResumedPendingOrder) {
       return;
     }
 
@@ -7468,204 +7644,251 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const depositId = matchingDep?.id || pendingOrder?.depositId || `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
     // Clean URL query parameters so user is not re-prompted on every refresh
-    if (orderIdFromUrl || returnedFromUrl) {
+    if (isExplicitCallbackReturn) {
       try {
         const cleanHash = window.location.hash.split('?')[0] || '#/wallet';
         window.history.replaceState({}, '', window.location.pathname + cleanHash);
       } catch {}
     }
 
-    isVerifyingQoPayReturnRef.current = true;
-    showToast('🔄 Checking UTR & payment status...');
-
-    let isPaidNow = false;
-    let verifyStatus = '';
-    let verifiedUtr = utrFromUrl || '';
-    let gatewayConfirmed = false;
-    try {
-      const verifyRes = await checkQoPayStatus(depositId, activeOrderId, true);
-      verifyStatus = String(verifyRes.status || '').toUpperCase();
-      if (verifyRes.utr) verifiedUtr = verifyRes.utr;
-      if (
-        verifyRes.isPaid ||
-        verifyStatus === 'SUCCESS' ||
-        verifyStatus === 'PAID' ||
-        verifyStatus === 'COMPLETED' ||
-        verifyStatus === 'TXN_SUCCESS' ||
-        verifyStatus === 'CAPTURED' ||
-        verifyStatus === 'SETTLED'
-      ) {
-        isPaidNow = true;
-        gatewayConfirmed = true;
-      } else if (verifyStatus === 'IN_PROCESS') {
-        gatewayConfirmed = true;
-      }
-    } catch (vErr) {
-      console.warn('[QO-Pay] Return verification notice:', vErr);
-    }
-
-    const hasExplicitUtr = Boolean(utrFromUrl?.trim()) || Boolean(verifiedUtr?.trim());
-    const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
-
-    if (!isPaymentConfirmed) {
-      const isCancelledOrFailed =
-        verifyStatus === 'FAILED' ||
-        verifyStatus === 'CANCELLED' ||
-        verifyStatus === 'CANCELED' ||
-        verifyStatus === 'EXPIRED';
-      const isExpiredLocally =
-        typeof pendingOrder?.timestamp === 'number' && Date.now() - pendingOrder.timestamp > 2 * 60 * 60 * 1000;
-
-      // Only clear pending tracker if explicitly FAILED/CANCELLED/EXPIRED or >2h old.
-      // If still PENDING on QO Pay dashboard, keep tracking so background poller auto-credits as soon as SUCCESS hits!
-      if (isCancelledOrFailed || isExpiredLocally) {
-        try {
-          localStorage.removeItem('taskvibe_pending_qopay_order');
-          localStorage.removeItem('taskvibe_pending_plan');
-        } catch {}
-      }
-      if (orderIdFromUrl || returnedFromUrl || isCancelledOrFailed) {
-        showToast(
-          isCancelledOrFailed
-            ? '❌ Payment cancelled or failed on QO Pay.'
-            : '⏳ Payment still pending on QO Pay — we will auto-activate as soon as it succeeds.'
-        );
-      }
-      isVerifyingQoPayReturnRef.current = false;
-      return;
-    }
-
-    const userEnteredUtr = verifiedUtr ? formatDisplayUtr(verifiedUtr) : '';
-    const orderNo = activeOrderId;
-    const finalUtr = userEnteredUtr || formatDisplayUtr((activeOrderId || '').replace(/^ORD_/i, ''));
-
-    const amount = matchingDep?.amount || pendingOrder?.amount || 0;
-    const bonus = matchingDep?.bonus || pendingOrder?.bonus || 0;
-    const depositType: 'add_money' | 'plan_purchase' =
-      matchingDep?.depositType || pendingOrder?.depositType || 'add_money';
-    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-    let ensuredDeposit: PaymentDeposit | undefined = matchingDep;
-    if (matchingDep && userEnteredUtr && !matchingDep.userSubmittedUtr) {
-      ensuredDeposit = {
-        ...matchingDep,
-        userSubmittedUtr: userEnteredUtr,
-        utrNumber: userEnteredUtr,
-        gatewayOrderId: orderNo,
-        qopayOrderId: orderNo,
-      };
-      setPaymentDeposits((prev) => prev.map((d) => (d.id === matchingDep.id ? ensuredDeposit! : d)));
-      try {
-        await setDoc(doc(db, 'deposits', matchingDep.id), cleanFirestoreData(ensuredDeposit), { merge: true });
-      } catch {}
-    }
-
-    if (!ensuredDeposit && amount > 0) {
-      let resolvedUser = userRef.current;
-      if (!resolvedUser?.mobile) {
-        try {
-          const savedRaw = localStorage.getItem('taskvibe_user');
-          if (savedRaw) resolvedUser = JSON.parse(savedRaw);
-        } catch {}
-      }
-      const activeUserMobile = resolvedUser?.mobile || pendingOrder?.userMobile || localStorage.getItem('taskvibe_active_mobile') || '';
-      const activeUserName =
-        (resolvedUser?.name && resolvedUser.name !== 'Member' ? resolvedUser.name : '') ||
-        pendingOrder?.userName ||
-        'Member';
-      const activeUserId =
-        resolvedUser?.referralCode ||
-        pendingOrder?.userReferralCode ||
-        activeUserMobile ||
-        'Member';
-
-      ensuredDeposit = {
-        id: depositId,
-        userId: activeUserId,
-        userName: activeUserName,
-        userMobile: activeUserMobile,
-        amount,
-        bonus,
-        depositType,
-        planId: pendingOrder?.planId,
-        planLevel: pendingOrder?.planLevel,
-        planTitle: pendingOrder?.planTitle,
-        adminUpiId: adminSettingsRef.current.adminUpiId || 'qopay@upi',
-        utrNumber: finalUtr,
-        userSubmittedUtr: userEnteredUtr || undefined,
-        submittedAt: nowTime,
-        timestamp: Date.now(),
-        status: 'in_process',
-        gateway: 'qopay',
-        gatewayOrderId: orderNo,
-        qopayOrderId: orderNo,
-      };
-      setPaymentDeposits((prev) => [ensuredDeposit!, ...prev.filter((d) => d.id !== depositId)]);
-      try {
-        await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(ensuredDeposit));
-      } catch {}
-    }
-
-    if (isPaidNow && adminSettingsRef.current.qopayAutoApprove !== false) {
-      await approvePaymentDeposit(depositId, ensuredDeposit, 'Verified Automatically via QO Pay Gateway');
+    // If deposit is already approved in Firestore state, clean up local trackers and return immediately
+    if (matchingDep?.status === 'approved') {
       try {
         localStorage.removeItem('taskvibe_pending_qopay_order');
         localStorage.removeItem('taskvibe_pending_plan');
       } catch {}
-      setIsUPIModalOpen(false);
-      triggerConfetti();
-      showToast(
-        depositType === 'plan_purchase'
-          ? `🎉 QO Pay Payment Success! VIP Level ${pendingOrder?.planLevel || ensuredDeposit?.planLevel || 1} Plan Activated!`
-          : `🎉 QO Pay Payment Success! ₹${amount || ''} credited to your wallet!`
-      );
-      navigate(depositType === 'plan_purchase' ? 'member_plans' : 'record');
-      isVerifyingQoPayReturnRef.current = false;
+      if (isExplicitCallbackReturn) {
+        setIsUPIModalOpen(false);
+        triggerConfetti();
+        showToast(
+          matchingDep.depositType === 'plan_purchase'
+            ? `🎉 QO Pay Payment Success! VIP Level ${matchingDep.planLevel || pendingOrder?.planLevel || 1} Plan Activated!`
+            : `🎉 QO Pay Payment Success! ₹${matchingDep.amount || pendingOrder?.amount || ''} credited to your wallet!`
+        );
+        navigate(matchingDep.depositType === 'plan_purchase' ? 'member_plans' : 'record');
+      }
       return;
     }
 
-    // Ensure a matching Transaction exists in Record & History when placed in review
-    const existingTx = transactions.find(
-      (t) =>
-        t.id === `tx_${depositId}` ||
-        (t.utrNumber && finalUtr && t.utrNumber.trim().toLowerCase() === finalUtr.trim().toLowerCase()) ||
-        t.orderId === activeOrderId
-    );
-    if (!existingTx && amount > 0) {
-      const reviewTx: TransactionItem = {
-        id: `tx_${depositId}`,
-        type: depositType === 'plan_purchase' ? 'purchase' : 'add_money',
-        title:
-          depositType === 'plan_purchase'
-            ? `VIP Level ${pendingOrder?.planLevel || 1} Plan (In Process)`
-            : `Wallet Deposit ₹${amount} (In Review)`,
-        amount,
-        isCredit: depositType !== 'plan_purchase',
-        status: 'in_process',
-        date: 'Today',
-        timestamp: Date.now(),
-        orderId: activeOrderId,
-        utrNumber: finalUtr,
-        note:
-          depositType === 'plan_purchase'
-            ? `UTR: ${finalUtr} • In Process (Awaiting Admin Approval)`
-            : `UTR: ${finalUtr} • Submitted & In Review`,
-      };
-      setTransactions((prev) => [reviewTx, ...prev]);
+    isVerifyingQoPayReturnRef.current = true;
+    // Show spinner toast only when returning explicitly from gateway redirect and not already confirmed paid
+    if (isExplicitCallbackReturn && !paidFromUrl) {
+      showToast('🔄 Verifying payment status...');
     }
 
     try {
-      localStorage.removeItem('taskvibe_pending_qopay_order');
-      localStorage.removeItem('taskvibe_pending_plan');
-    } catch {}
+      let isPaidNow = false;
+      let creditedByServer = false;
+      let verifyStatus = '';
+      let verifiedUtr = utrFromUrl || '';
+      let gatewayConfirmed = false;
+      try {
+        const verifyRes = await checkQoPayStatus(depositId, activeOrderId, true);
+        verifyStatus = String(verifyRes.status || '').toUpperCase();
+        creditedByServer = Boolean(verifyRes.creditedByServer);
+        if (verifyRes.utr) verifiedUtr = verifyRes.utr;
+        if (
+          verifyRes.isPaid ||
+          verifyStatus === 'SUCCESS' ||
+          verifyStatus === 'PAID' ||
+          verifyStatus === 'COMPLETED' ||
+          verifyStatus === 'TXN_SUCCESS' ||
+          verifyStatus === 'CAPTURED' ||
+          verifyStatus === 'SETTLED'
+        ) {
+          isPaidNow = true;
+          gatewayConfirmed = true;
+        } else if (verifyStatus === 'IN_PROCESS') {
+          gatewayConfirmed = true;
+        }
+      } catch (vErr) {
+        console.warn('[QO-Pay] Return verification notice:', vErr);
+      }
 
-    if (depositType === 'plan_purchase') {
-      showToast(`⏳ UTR ${finalUtr} submitted! VIP Plan is now In Process until Admin approves.`);
-      navigate('member_plans');
-    } else {
-      navigate('record');
+      const hasExplicitUtr = Boolean(utrFromUrl?.trim()) || Boolean(verifiedUtr?.trim());
+      const isPaymentConfirmed = isPaidNow || gatewayConfirmed || hasExplicitUtr;
+
+      if (!isPaymentConfirmed) {
+        const isCancelledOrFailed =
+          verifyStatus === 'FAILED' ||
+          verifyStatus === 'CANCELLED' ||
+          verifyStatus === 'CANCELED' ||
+          verifyStatus === 'EXPIRED';
+        const isExpiredLocally =
+          typeof pendingOrder?.timestamp === 'number' && Date.now() - pendingOrder.timestamp > 2 * 60 * 60 * 1000;
+
+        // Only clear pending tracker if explicitly FAILED/CANCELLED/EXPIRED or >2h old.
+        // If still PENDING on QO Pay dashboard, keep tracking so background poller auto-credits as soon as SUCCESS hits!
+        if (isCancelledOrFailed || isExpiredLocally) {
+          try {
+            localStorage.removeItem('taskvibe_pending_qopay_order');
+            localStorage.removeItem('taskvibe_pending_plan');
+          } catch {}
+        } else if (isExplicitCallbackReturn && !pendingOrder?.orderId) {
+          // Ensure background poller tracks callback order even if localStorage was empty
+          try {
+            localStorage.setItem(
+              'taskvibe_pending_qopay_order',
+              JSON.stringify({
+                orderId: activeOrderId,
+                depositId,
+                amount: matchingDep?.amount || 0,
+                bonus: matchingDep?.bonus || 0,
+                depositType: matchingDep?.depositType || 'add_money',
+                planId: matchingDep?.planId,
+                planLevel: matchingDep?.planLevel,
+                planTitle: matchingDep?.planTitle,
+                userMobile: matchingDep?.userMobile || userRef.current?.mobile || '',
+                userName: matchingDep?.userName || userRef.current?.name || 'Member',
+                userReferralCode: matchingDep?.userId || userRef.current?.referralCode || '',
+                timestamp: Date.now(),
+              })
+            );
+          } catch {}
+        }
+
+        if (isCancelledOrFailed) {
+          showToast('❌ Payment cancelled or failed on QO Pay.');
+        } else if (isExplicitCallbackReturn) {
+          showToast('⏳ Payment is confirming — wallet/plan will activate automatically in a moment.');
+        }
+        return;
+      }
+
+      const userEnteredUtr = verifiedUtr ? formatDisplayUtr(verifiedUtr) : '';
+      const orderNo = activeOrderId;
+      const finalUtr = userEnteredUtr || formatDisplayUtr((activeOrderId || '').replace(/^ORD_/i, ''));
+
+      const amount = matchingDep?.amount || pendingOrder?.amount || 0;
+      const bonus = matchingDep?.bonus || pendingOrder?.bonus || 0;
+      const depositType: 'add_money' | 'plan_purchase' =
+        matchingDep?.depositType || pendingOrder?.depositType || 'add_money';
+      const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+      let ensuredDeposit: PaymentDeposit | undefined = matchingDep;
+      if (matchingDep && userEnteredUtr && !matchingDep.userSubmittedUtr && !creditedByServer) {
+        ensuredDeposit = {
+          ...matchingDep,
+          userSubmittedUtr: userEnteredUtr,
+          utrNumber: userEnteredUtr,
+          gatewayOrderId: orderNo,
+          qopayOrderId: orderNo,
+        };
+        setPaymentDeposits((prev) => prev.map((d) => (d.id === matchingDep.id ? ensuredDeposit! : d)));
+        try {
+          await setDoc(doc(db, 'deposits', matchingDep.id), cleanFirestoreData(ensuredDeposit), { merge: true });
+        } catch {}
+      }
+
+      if (!ensuredDeposit && amount > 0 && !creditedByServer) {
+        let resolvedUser = userRef.current;
+        if (!resolvedUser?.mobile) {
+          try {
+            const savedRaw = localStorage.getItem('taskvibe_user');
+            if (savedRaw) resolvedUser = JSON.parse(savedRaw);
+          } catch {}
+        }
+        const activeUserMobile = resolvedUser?.mobile || pendingOrder?.userMobile || localStorage.getItem('taskvibe_active_mobile') || '';
+        const activeUserName =
+          (resolvedUser?.name && resolvedUser.name !== 'Member' ? resolvedUser.name : '') ||
+          pendingOrder?.userName ||
+          'Member';
+        const activeUserId =
+          resolvedUser?.referralCode ||
+          pendingOrder?.userReferralCode ||
+          activeUserMobile ||
+          'Member';
+
+        ensuredDeposit = {
+          id: depositId,
+          userId: activeUserId,
+          userName: activeUserName,
+          userMobile: activeUserMobile,
+          amount,
+          bonus,
+          depositType,
+          planId: pendingOrder?.planId,
+          planLevel: pendingOrder?.planLevel,
+          planTitle: pendingOrder?.planTitle,
+          adminUpiId: adminSettingsRef.current.adminUpiId || 'qopay@upi',
+          utrNumber: finalUtr,
+          userSubmittedUtr: userEnteredUtr || undefined,
+          submittedAt: nowTime,
+          timestamp: Date.now(),
+          status: 'in_process',
+          gateway: 'qopay',
+          gatewayOrderId: orderNo,
+          qopayOrderId: orderNo,
+        };
+        setPaymentDeposits((prev) => [ensuredDeposit!, ...prev.filter((d) => d.id !== depositId)]);
+        try {
+          await setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(ensuredDeposit));
+        } catch {}
+      }
+
+      if (isPaidNow && adminSettingsRef.current.qopayAutoApprove !== false) {
+        if (!creditedByServer) {
+          await approvePaymentDeposit(depositId, ensuredDeposit, 'Verified Automatically via QO Pay Gateway');
+        }
+        try {
+          localStorage.removeItem('taskvibe_pending_qopay_order');
+          localStorage.removeItem('taskvibe_pending_plan');
+        } catch {}
+        setIsUPIModalOpen(false);
+        triggerConfetti();
+        showToast(
+          depositType === 'plan_purchase'
+            ? `🎉 QO Pay Payment Success! VIP Level ${pendingOrder?.planLevel || ensuredDeposit?.planLevel || 1} Plan Activated!`
+            : `🎉 QO Pay Payment Success! ₹${amount || ''} credited to your wallet!`
+        );
+        navigate(depositType === 'plan_purchase' ? 'member_plans' : 'record');
+        return;
+      }
+
+      // Ensure a matching Transaction exists in Record & History when placed in review
+      const existingTx = transactions.find(
+        (t) =>
+          t.id === `tx_${depositId}` ||
+          (t.utrNumber && finalUtr && t.utrNumber.trim().toLowerCase() === finalUtr.trim().toLowerCase()) ||
+          t.orderId === activeOrderId
+      );
+      if (!existingTx && amount > 0) {
+        const reviewTx: TransactionItem = {
+          id: `tx_${depositId}`,
+          type: depositType === 'plan_purchase' ? 'purchase' : 'add_money',
+          title:
+            depositType === 'plan_purchase'
+              ? `VIP Level ${pendingOrder?.planLevel || 1} Plan (In Process)`
+              : `Wallet Deposit ₹${amount} (In Review)`,
+          amount,
+          isCredit: depositType !== 'plan_purchase',
+          status: 'in_process',
+          date: 'Today',
+          timestamp: Date.now(),
+          orderId: activeOrderId,
+          utrNumber: finalUtr,
+          note:
+            depositType === 'plan_purchase'
+              ? `UTR: ${finalUtr} • In Process (Awaiting Admin Approval)`
+              : `UTR: ${finalUtr} • Submitted & In Review`,
+        };
+        setTransactions((prev) => [reviewTx, ...prev]);
+      }
+
+      try {
+        localStorage.removeItem('taskvibe_pending_qopay_order');
+        localStorage.removeItem('taskvibe_pending_plan');
+      } catch {}
+
+      if (depositType === 'plan_purchase') {
+        showToast(`⏳ UTR ${finalUtr} submitted! VIP Plan is now In Process until Admin approves.`);
+        navigate('member_plans');
+      } else {
+        navigate('record');
+      }
+    } finally {
+      isVerifyingQoPayReturnRef.current = false;
     }
-    isVerifyingQoPayReturnRef.current = false;
   };
   const checkActiveReturnOrderRef = useRef(checkActiveReturnOrder);
   checkActiveReturnOrderRef.current = checkActiveReturnOrder;

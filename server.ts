@@ -5,6 +5,12 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import {
+  persistPendingQoPayDeposit,
+  fulfillQoPayOrder,
+  getPendingQoPayDepositsFromFirestore,
+  markQoPayDepositFailed,
+} from './server/qopayService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1218,6 +1224,16 @@ async function startServer() {
         redirectUrl,
         remark1 = 'ZoroTask Add Money',
         remark2,
+        depositId,
+        userMobile,
+        userName,
+        userReferralCode,
+        depositType = 'add_money',
+        bonus = 0,
+        planId,
+        planLevel,
+        planTitle,
+        utrNumber,
       } = req.body || {};
 
       const activeToken = String(userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
@@ -1236,6 +1252,7 @@ async function startServer() {
       }
 
       const activeOrderId = String(orderId || `QO_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`);
+      const activeDepositId = String(depositId || remark2 || `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`);
 
       const defaultHost =
         process.env.APP_URL ||
@@ -1248,7 +1265,8 @@ async function startServer() {
         (redirectUrl.includes('localhost') ||
           redirectUrl.includes('127.0.0.1') ||
           redirectUrl.includes('capacitor:') ||
-          redirectUrl.includes('ais-pre-fmi4s2bjfzbh4c7xdqawda'));
+          redirectUrl.includes('ais-pre-fmi4s2bjfzbh4c7xdqawda') ||
+          redirectUrl.includes('ais-pre-gzm4s3l75rngwbd4hdcsz3'));
       const effectiveRedirectUrl =
         redirectUrl && !isLocalOrStaleCallback
           ? redirectUrl
@@ -1296,17 +1314,29 @@ async function startServer() {
 
       const resolvedOrderId = String(data?.order_id || resultObj?.order_id || activeOrderId);
 
-      // Cache order in memory for status checks and webhook tracking
+      // Cache order in memory for status checks, webhook tracking & background poller
       const cachedOrderObj = {
         orderId: resolvedOrderId,
+        depositId: activeDepositId,
         amount: numAmount,
+        bonus: Number(bonus) || 0,
+        depositType: depositType === 'plan_purchase' ? 'plan_purchase' : 'add_money',
+        planId,
+        planLevel,
+        planTitle,
         status: data?.status ? 'PENDING' : 'FAILED',
         createdAt: Date.now(),
+        lastPolledAt: 0,
         paymentUrl,
         deeplinks,
         upiIntent,
         qrCode: qrCodeString,
         customerMobile,
+        userMobile: userMobile || customerMobile,
+        userName: userName || customerName,
+        userReferralCode,
+        userToken: activeToken,
+        baseUrl: activeBase,
         raw: data,
       };
       qopayOrders.set(resolvedOrderId, cachedOrderObj);
@@ -1315,9 +1345,28 @@ async function startServer() {
       }
 
       if (data?.status === true || Boolean(paymentUrl)) {
+        // Persist pending deposit to Firestore BEFORE responding so navigating away never drops the record
+        await persistPendingQoPayDeposit({
+          depositId: activeDepositId,
+          orderId: resolvedOrderId,
+          userMobile: String(userMobile || customerMobile || ''),
+          userName: String(userName || customerName || 'Member'),
+          userReferralCode: userReferralCode ? String(userReferralCode) : undefined,
+          amount: numAmount,
+          bonus: Number(bonus) || 0,
+          depositType: depositType === 'plan_purchase' ? 'plan_purchase' : 'add_money',
+          planId,
+          planLevel: planLevel !== undefined ? Number(planLevel) : undefined,
+          planTitle,
+          utrNumber,
+          paymentUrl: paymentUrl || undefined,
+          upiIntent: upiIntent || undefined,
+        });
+
         return res.json({
           success: true,
           orderId: resolvedOrderId,
+          depositId: activeDepositId,
           paymentUrl,
           deeplinks,
           upiIntent,
@@ -1339,117 +1388,202 @@ async function startServer() {
     }
   });
 
-  // 5. Check Payin Order Status (Calls GET https://qo-pay.com/api/order-status)
+  // Helper to check QO Pay order-status and atomically credit wallet / activate VIP plan when PAID
+  async function checkAndFulfillQoPayOrder(
+    orderId: string,
+    opts: {
+      userToken?: string;
+      baseUrl?: string;
+      depositId?: string;
+      source?: string;
+      fallbackMeta?: any;
+    } = {}
+  ) {
+    const cached = qopayOrders.get(orderId);
+    const activeToken = String(opts.userToken || cached?.userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
+    const activeBase = String(opts.baseUrl || cached?.baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
+    const depositId = opts.depositId || cached?.depositId;
+
+    if (cached && (cached.status === 'SUCCESS' || cached.isPaid === true)) {
+      const fulfillRes = await fulfillQoPayOrder({
+        orderId,
+        depositId,
+        utr: cached.utr || cached.bankRefNo || '',
+        source: opts.source || 'webhook_cache',
+        fallbackMeta: opts.fallbackMeta || cached,
+      });
+      return {
+        success: true,
+        isPaid: true,
+        status: 'SUCCESS',
+        utr: cached.utr || cached.bankRefNo || '',
+        message: 'Payment confirmed',
+        creditedByServer: Boolean(fulfillRes.credited || fulfillRes.alreadyApproved),
+        alreadyApproved: Boolean(fulfillRes.alreadyApproved),
+        autoApprovedDisabled: Boolean(fulfillRes.autoApprovedDisabled),
+        deposit: fulfillRes.deposit,
+        depositId: fulfillRes.depositId || depositId,
+        depositType: fulfillRes.depositType,
+        amount: fulfillRes.amount,
+        bonus: fulfillRes.bonus,
+        planLevel: fulfillRes.planLevel,
+        data: cached,
+      };
+    }
+
+    const endpoint = `${activeBase}/api/order-status`;
+    const { data } = await callQoPayApi(
+      endpoint,
+      {
+        user_token: activeToken,
+        order_id: orderId,
+      },
+      'GET',
+      12000
+    );
+
+    const resultObj = data?.result || data?.data || data || {};
+    const rawStatus = String(
+      resultObj.payment_status ||
+      data?.payment_status ||
+      resultObj.txnStatus ||
+      data?.txnStatus ||
+      resultObj.order_status ||
+      data?.order_status ||
+      resultObj.status ||
+      data?.status ||
+      ''
+    ).toUpperCase();
+
+    const rawUtr =
+      resultObj.utr ||
+      resultObj.bank_ref_no ||
+      resultObj.bank_txn_id ||
+      resultObj.rrn ||
+      resultObj.ref_no ||
+      data?.utr ||
+      '';
+    const utr = rawUtr && String(rawUtr).toLowerCase() !== 'null' ? String(rawUtr) : '';
+
+    const isPaid =
+      rawStatus === 'SUCCESS' ||
+      rawStatus === 'COMPLETED' ||
+      rawStatus === 'PAID' ||
+      rawStatus === 'TXN_SUCCESS' ||
+      rawStatus === 'CAPTURED' ||
+      rawStatus === 'SETTLED' ||
+      rawStatus === '1' ||
+      (Boolean(utr && utr.length >= 8) && rawStatus !== 'FAILED' && rawStatus !== 'PENDING' && rawStatus !== 'FALSE');
+
+    if (isPaid) {
+      const existing = qopayOrders.get(orderId) || {};
+      qopayOrders.set(orderId, {
+        ...existing,
+        orderId,
+        isPaid: true,
+        status: 'SUCCESS',
+        utr: utr || existing.utr,
+        updatedAt: Date.now(),
+      });
+
+      const fulfillRes = await fulfillQoPayOrder({
+        orderId,
+        depositId,
+        utr,
+        source: opts.source || 'order_status_api',
+        fallbackMeta: opts.fallbackMeta || existing,
+      });
+
+      return {
+        success: true,
+        isPaid: true,
+        status: 'SUCCESS',
+        utr,
+        message: fulfillRes.message || 'Payment successful',
+        creditedByServer: Boolean(fulfillRes.credited || fulfillRes.alreadyApproved),
+        alreadyApproved: Boolean(fulfillRes.alreadyApproved),
+        autoApprovedDisabled: Boolean(fulfillRes.autoApprovedDisabled),
+        deposit: fulfillRes.deposit,
+        depositId: fulfillRes.depositId || depositId,
+        depositType: fulfillRes.depositType,
+        amount: fulfillRes.amount,
+        bonus: fulfillRes.bonus,
+        planLevel: fulfillRes.planLevel,
+        data,
+      };
+    }
+
+    if (rawStatus === 'FAILED' || rawStatus === 'CANCELLED' || rawStatus === 'CANCELED' || rawStatus === 'EXPIRED') {
+      const existing = qopayOrders.get(orderId) || {};
+      qopayOrders.set(orderId, {
+        ...existing,
+        orderId,
+        isPaid: false,
+        status: rawStatus,
+        updatedAt: Date.now(),
+      });
+      await markQoPayDepositFailed(orderId, depositId, rawStatus);
+    }
+
+    return {
+      success: data?.status !== false,
+      isPaid: false,
+      status: rawStatus || 'PENDING',
+      utr,
+      creditedByServer: false,
+      message: data?.message || 'Payment pending',
+      data,
+    };
+  }
+
+  // 5. Check Payin Order Status (Calls GET https://qo-pay.com/api/order-status & auto-credits if PAID)
   app.post('/api/qopay/payin/status', async (req, res) => {
     try {
       const {
         userToken = qopayConfig.userToken,
         baseUrl = qopayConfig.baseUrl,
         orderId,
+        depositId,
+        fallbackMeta,
       } = req.body || {};
-
-      const activeToken = String(userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!orderId) {
         return res.status(400).json({ success: false, message: 'orderId is required' });
       }
 
-      // 1. Check in-memory webhook cache
-      const cached = qopayOrders.get(orderId);
-      if (cached && (cached.status === 'SUCCESS' || cached.isPaid === true)) {
-        return res.json({
-          success: true,
-          isPaid: true,
-          status: 'SUCCESS',
-          utr: cached.utr || cached.bankRefNo,
-          message: 'Payment confirmed via webhook',
-          data: cached,
-        });
-      }
-
-      // 2. Query QO Pay live order-status GET endpoint
-      const endpoint = `${activeBase}/api/order-status`;
-      const { data } = await callQoPayApi(
-        endpoint,
-        {
-          user_token: activeToken,
-          order_id: orderId,
-        },
-        'GET',
-        12000
-      );
-
-      const resultObj = data?.result || data?.data || data || {};
-      const rawStatus = String(
-        resultObj.payment_status ||
-        data?.payment_status ||
-        resultObj.txnStatus ||
-        data?.txnStatus ||
-        resultObj.order_status ||
-        data?.order_status ||
-        resultObj.status ||
-        data?.status ||
-        ''
-      ).toUpperCase();
-
-      const rawUtr =
-        resultObj.utr ||
-        resultObj.bank_ref_no ||
-        resultObj.bank_txn_id ||
-        resultObj.rrn ||
-        resultObj.ref_no ||
-        data?.utr ||
-        '';
-      const utr = rawUtr && String(rawUtr).toLowerCase() !== 'null' ? String(rawUtr) : '';
-
-      const isPaid =
-        rawStatus === 'SUCCESS' ||
-        rawStatus === 'COMPLETED' ||
-        rawStatus === 'PAID' ||
-        rawStatus === 'TXN_SUCCESS' ||
-        rawStatus === 'CAPTURED' ||
-        rawStatus === 'SETTLED' ||
-        rawStatus === '1' ||
-        (Boolean(utr && utr.length >= 8) && rawStatus !== 'FAILED' && rawStatus !== 'PENDING' && rawStatus !== 'FALSE');
-
-      if (isPaid) {
-        const existing = qopayOrders.get(orderId) || {};
-        qopayOrders.set(orderId, {
-          ...existing,
-          isPaid: true,
-          status: 'SUCCESS',
-          utr,
-          updatedAt: Date.now(),
-        });
-      }
-
-      return res.json({
-        success: data?.status !== false || isPaid,
-        isPaid,
-        status: rawStatus || (isPaid ? 'SUCCESS' : 'PENDING'),
-        utr,
-        message: data?.message || (isPaid ? 'Payment successful' : 'Payment pending'),
-        data,
+      const result = await checkAndFulfillQoPayOrder(String(orderId), {
+        userToken,
+        baseUrl,
+        depositId,
+        source: 'payin_status_endpoint',
+        fallbackMeta,
       });
+
+      return res.json(result);
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  // 6. QO Pay Webhook & Callback Notifications
-  app.post(['/api/qopay/notify', '/api/qopay/webhook', '/api/qopay/callback', '/api/qopay/callback/:orderId'], (req, res) => {
+  // 6. QO Pay Webhook & Callback Notifications (Verifies with QO Pay API & credits wallet/VIP plan automatically)
+  app.all(['/api/qopay/notify', '/api/qopay/webhook', '/api/qopay/callback', '/api/qopay/callback/:orderId'], async (req, res, next) => {
+    // Let GET requests on /api/qopay/callback/:orderId fall through to the browser redirect handler below
+    if (req.method === 'GET' && (req.path.startsWith('/api/qopay/callback') || req.path.startsWith('/api/qopay/return'))) {
+      return next();
+    }
     try {
-      const payload = req.body || {};
+      const payload = { ...(req.query || {}), ...(req.body || {}) };
       console.log('[QO-Pay-Webhook]', JSON.stringify(payload));
 
-      const orderId =
+      const orderId = String(
         req.params.orderId ||
         payload.order_id ||
         payload.orderId ||
         payload.client_txn_id ||
         payload.merchant_order_id ||
-        (payload.result && (payload.result.order_id || payload.result.orderId));
+        (payload.result && (payload.result.order_id || payload.result.orderId)) ||
+        ''
+      ).trim();
 
       const rawStatus = String(
         payload.payment_status ||
@@ -1460,7 +1594,7 @@ async function startServer() {
         ''
       ).toUpperCase();
 
-      const utr =
+      const utr = String(
         payload.utr ||
         payload.bank_ref_no ||
         payload.bank_txn_id ||
@@ -1476,9 +1610,10 @@ async function startServer() {
             payload.result.rrn ||
             payload.result.ref_no ||
             payload.result.bank_txn_id)) ||
-        '';
+        ''
+      );
 
-      const isPaid =
+      const isPaidClaimed =
         rawStatus === 'SUCCESS' ||
         rawStatus === 'PAID' ||
         rawStatus === 'COMPLETED' ||
@@ -1489,26 +1624,42 @@ async function startServer() {
         payload.status === true;
 
       if (orderId) {
-        const existing = qopayOrders.get(orderId) || {};
-        qopayOrders.set(orderId, {
-          ...existing,
-          orderId,
-          isPaid: isPaid || existing.isPaid,
-          status: isPaid ? 'SUCCESS' : rawStatus,
-          utr: utr || existing.utr,
-          webhookReceivedAt: Date.now(),
-          payload,
-        });
+        // Verify live with QO Pay order-status API before crediting
+        const checkRes = await checkAndFulfillQoPayOrder(orderId, { source: 'webhook_verified' });
+        if (!checkRes.isPaid && isPaidClaimed) {
+          // If QO Pay order-status lags slightly behind webhook, update cache & re-check after 1.5s
+          await new Promise((r) => setTimeout(r, 1500));
+          const retryRes = await checkAndFulfillQoPayOrder(orderId, { source: 'webhook_retry_verified' });
+          if (!retryRes.isPaid && qopayOrders.has(orderId)) {
+            const existing = qopayOrders.get(orderId) || {};
+            qopayOrders.set(orderId, {
+              ...existing,
+              orderId,
+              isPaid: true,
+              status: 'SUCCESS',
+              utr: utr || existing.utr,
+              webhookReceivedAt: Date.now(),
+              payload,
+            });
+            await fulfillQoPayOrder({
+              orderId,
+              depositId: existing.depositId,
+              utr: utr || existing.utr,
+              source: 'webhook_known_order',
+              fallbackMeta: existing,
+            });
+          }
+        }
       }
 
-      return res.status(200).json({ status: true, message: 'Webhook received successfully' });
+      return res.status(200).json({ status: true, message: 'Webhook received and processed' });
     } catch {
       return res.status(200).json({ status: true, message: 'Webhook acknowledged' });
     }
   });
 
-  // 7. QO Pay Browser Callback Redirect Route (Returns user back to app after UTR submit)
-  app.get(['/api/qopay/callback/:orderId?', '/api/qopay/return/:orderId?'], (req, res) => {
+  // 7. QO Pay Browser Callback Redirect Route (Auto-verifies & credits BEFORE redirecting user back to app)
+  app.get(['/api/qopay/callback/:orderId?', '/api/qopay/return/:orderId?'], async (req, res) => {
     let rawOrderId = String(
       req.params.orderId ||
         req.query.order_id ||
@@ -1546,13 +1697,29 @@ async function startServer() {
       }
     }
 
-    console.log('[QO-Pay-Browser-Callback]', { orderId: rawOrderId, status: rawStatus, utr: rawUtr });
+    let verifiedPaid = false;
+    let verifiedUtr = rawUtr;
+    if (rawOrderId) {
+      try {
+        const checkRes = await checkAndFulfillQoPayOrder(rawOrderId, { source: 'browser_callback' });
+        if (checkRes.isPaid) {
+          verifiedPaid = true;
+          rawStatus = 'SUCCESS';
+          if (checkRes.utr) verifiedUtr = checkRes.utr;
+        }
+      } catch (err) {
+        console.warn('[QO-Pay-Browser-Callback] Verification notice:', err);
+      }
+    }
+
+    console.log('[QO-Pay-Browser-Callback]', { orderId: rawOrderId, status: rawStatus, utr: verifiedUtr, verifiedPaid });
     const params = new URLSearchParams({
       qopay_order: rawOrderId,
       status: rawStatus,
       returned: 'true',
     });
-    if (rawUtr) params.set('utr', rawUtr);
+    if (verifiedPaid) params.set('paid', 'true');
+    if (verifiedUtr) params.set('utr', verifiedUtr);
     return res.redirect(`/?${params.toString()}`);
   });
 
@@ -1681,8 +1848,75 @@ async function startServer() {
     });
   }
 
+  // Server-side background poller: detects QO Pay payments even if user closed browser or skipped callback
+  let isServerPollerRunning = false;
+  const runServerQoPayPoller = async () => {
+    if (isServerPollerRunning) return;
+    isServerPollerRunning = true;
+    try {
+      const now = Date.now();
+      const pendingTargets = new Map<string, { orderId: string; depositId?: string; createdAt: number; userToken?: string; baseUrl?: string }>();
+
+      // 1. In-memory pending orders
+      for (const [oid, entry] of qopayOrders.entries()) {
+        if (!entry || entry.isPaid || entry.status === 'SUCCESS') continue;
+        if (entry.status === 'FAILED' || entry.status === 'CANCELLED' || entry.status === 'CANCELED' || entry.status === 'EXPIRED') continue;
+        if (entry.createdAt && now - entry.createdAt > 12 * 60 * 60 * 1000) continue;
+        const pollCooldown = entry.createdAt && now - entry.createdAt > 10 * 60 * 1000 ? 25000 : 5000;
+        if (entry.lastPolledAt && now - entry.lastPolledAt < pollCooldown) continue;
+        pendingTargets.set(oid, {
+          orderId: oid,
+          depositId: entry.depositId,
+          createdAt: entry.createdAt || now,
+          userToken: entry.userToken,
+          baseUrl: entry.baseUrl,
+        });
+      }
+
+      // 2. Firestore pending deposits (survives server restarts)
+      const firestorePending = await getPendingQoPayDepositsFromFirestore();
+      for (const dep of firestorePending) {
+        const oid = dep.qopayOrderId || dep.gatewayOrderId;
+        if (!oid || pendingTargets.has(oid)) continue;
+        const cached = qopayOrders.get(oid);
+        if (cached?.isPaid || cached?.status === 'SUCCESS') continue;
+        if (cached?.status === 'FAILED' || cached?.status === 'CANCELLED' || cached?.status === 'EXPIRED') continue;
+        const createdAt = Number(dep.timestamp) || now;
+        const pollCooldown = now - createdAt > 10 * 60 * 1000 ? 25000 : 5000;
+        if (cached?.lastPolledAt && now - cached.lastPolledAt < pollCooldown) continue;
+        pendingTargets.set(oid, {
+          orderId: oid,
+          depositId: dep.id,
+          createdAt,
+        });
+      }
+
+      const batch = Array.from(pendingTargets.values())
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 5);
+
+      for (const target of batch) {
+        const existing = qopayOrders.get(target.orderId) || {};
+        qopayOrders.set(target.orderId, { ...existing, orderId: target.orderId, lastPolledAt: Date.now() });
+        await checkAndFulfillQoPayOrder(target.orderId, {
+          userToken: target.userToken,
+          baseUrl: target.baseUrl,
+          depositId: target.depositId,
+          source: 'server_auto_poller',
+        });
+      }
+    } catch (err) {
+      console.warn('[QO-Pay-Server-Poller] Cycle warning:', err);
+    } finally {
+      isServerPollerRunning = false;
+    }
+  };
+
+  setInterval(runServerQoPayPoller, 6000);
+
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running at http://0.0.0.0:${PORT}`);
+    setTimeout(runServerQoPayPoller, 4000);
   });
 }
 

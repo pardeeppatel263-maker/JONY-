@@ -17,7 +17,7 @@ if (typeof window !== 'undefined') {
     const originalFetch = window.fetch.bind(window);
     const backendBase =
       (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
-      'https://ais-pre-gzm4s3l75rngwbd4hdcsz3-300326017780.asia-east1.run.app';
+      'https://ais-pre-w7ww3rkwg7vuoezqjbka24-757268806718.asia-northeast1.run.app';
 
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       if (typeof input === 'string' && input.startsWith('/api/')) {

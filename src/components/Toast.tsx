@@ -1,11 +1,17 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, Star, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, Star, X } from 'lucide-react';
 
 export const Toast: React.FC = () => {
   const { toastMessage, hideToast } = useApp();
 
   if (!toastMessage) return null;
+
+  const isLoading =
+    toastMessage.startsWith('🔄') ||
+    toastMessage.startsWith('⏳') ||
+    toastMessage.toLowerCase().includes('checking') ||
+    toastMessage.toLowerCase().includes('verifying');
 
   const isError =
     toastMessage.startsWith('❌') ||
@@ -15,20 +21,26 @@ export const Toast: React.FC = () => {
     toastMessage.toLowerCase().includes('galat');
 
   const isWarning =
-    toastMessage.startsWith('⚠️') ||
-    toastMessage.toLowerCase().includes('slow') ||
-    toastMessage.toLowerCase().includes('offline') ||
-    toastMessage.toLowerCase().includes('warning') ||
-    toastMessage.toLowerCase().includes('check');
+    !isLoading &&
+    (toastMessage.startsWith('⚠️') ||
+      toastMessage.toLowerCase().includes('slow') ||
+      toastMessage.toLowerCase().includes('offline') ||
+      toastMessage.toLowerCase().includes('warning') ||
+      toastMessage.toLowerCase().includes('pending') ||
+      toastMessage.toLowerCase().includes('insufficient'));
 
   const isSuccess =
-    toastMessage.startsWith('✓') ||
-    toastMessage.toLowerCase().includes('success') ||
-    toastMessage.toLowerCase().includes('safal') ||
-    toastMessage.toLowerCase().includes('copied');
+    !isLoading &&
+    (toastMessage.startsWith('✓') ||
+      toastMessage.startsWith('🎉') ||
+      toastMessage.toLowerCase().includes('success') ||
+      toastMessage.toLowerCase().includes('safal') ||
+      toastMessage.toLowerCase().includes('copied') ||
+      toastMessage.toLowerCase().includes('activated') ||
+      toastMessage.toLowerCase().includes('credited'));
 
   // Clean decorative emoji prefix if already rendered by icon
-  const cleanMessage = toastMessage.replace(/^[❌⚠️✓ℹ️]\s*/, '');
+  const cleanMessage = toastMessage.replace(/^[❌⚠️✓ℹ️🔄⏳]\s*/, '');
 
   return (
     <div
@@ -62,6 +74,10 @@ export const Toast: React.FC = () => {
             ) : isSuccess ? (
               <div className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
                 <CheckCircle2 className="w-4 h-4" />
+              </div>
+            ) : isLoading ? (
+              <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
               </div>
             ) : (
               <div className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">

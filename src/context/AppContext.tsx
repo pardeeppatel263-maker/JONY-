@@ -7008,7 +7008,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const latestSettings = adminSettingsRef.current || adminSettings;
       const activeUserToken = (latestSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBaseUrl = (latestSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+      let activeBaseUrl = (latestSettings.qopayBaseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
+      if (activeBaseUrl.startsWith('http://')) {
+        activeBaseUrl = activeBaseUrl.replace(/^http:\/\//i, 'https://');
+      }
+      if (!/^https:\/\//i.test(activeBaseUrl)) {
+        activeBaseUrl = 'https://qo-pay.com';
+      }
 
       const directUtr = generateDirectUtr();
       const orderId = `ORD_${directUtr}`;
@@ -7042,10 +7048,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const cleanName = ((activeUser.name && activeUser.name !== 'Member' ? activeUser.name : 'ZoroTask Member') || 'ZoroTask Member').trim();
         const cleanEmail = (activeUser.email || 'member@zorotask.com').trim() || 'member@zorotask.com';
 
+        const apiUrl = getApiUrl('/api/qopay/payin/create');
+        const isRemoteFallbackCall = apiUrl.startsWith('http');
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), isRemoteFallbackCall ? 8000 : 20000);
         try {
-          const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
+          const res = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             signal: controller.signal,
@@ -7590,8 +7598,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(msg);
         return { success: false, openedModal: false, message: msg };
       }
-    } catch {
-      const msg = 'Unable to connect to payment gateway. Please try again.';
+    } catch (err: any) {
+      const msg = err?.message || 'Unable to connect to payment gateway. Please try again.';
       showToast(msg);
       return { success: false, openedModal: false, message: msg };
     }

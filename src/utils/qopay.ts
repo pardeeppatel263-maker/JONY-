@@ -120,17 +120,16 @@ export async function callDirectQoPayCreateOrder(
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        ...(mode === 'json'
-          ? {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(payload),
-            }
-          : {
-              // URLSearchParams uses application/x-www-form-urlencoded (CORS-simple request, no preflight)
-              body: new URLSearchParams(payload),
-            }),
+        headers: {
+          'Content-Type':
+            mode === 'json'
+              ? 'application/json'
+              : 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body:
+          mode === 'json'
+            ? JSON.stringify(payload)
+            : new URLSearchParams(payload).toString(),
         signal: t.signal,
       });
 
@@ -156,10 +155,27 @@ export async function callDirectQoPayCreateOrder(
     }
   };
 
+  const hasValidGatewayUrl = (d: any) => {
+    if (!d || typeof d !== 'object') return false;
+    const r = d.result || d.data || d;
+    return Boolean(
+      d.status === true ||
+        d.payment_url ||
+        d.paymentUrl ||
+        d.url ||
+        d.pay_url ||
+        d.checkout_url ||
+        d.cashier_url ||
+        r?.payment_url ||
+        r?.paymentUrl ||
+        r?.url
+    );
+  };
+
   let attempt = await attemptCreate('form');
-  if (!attempt.parsed) {
+  if (!hasValidGatewayUrl(attempt.parsed)) {
     const jsonAttempt = await attemptCreate('json');
-    if (jsonAttempt.parsed || !attempt.errorMsg) {
+    if (hasValidGatewayUrl(jsonAttempt.parsed) || (!attempt.parsed && jsonAttempt.parsed) || !attempt.errorMsg) {
       attempt = jsonAttempt;
     }
   }

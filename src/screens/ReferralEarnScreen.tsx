@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
 import { BottomNav } from '../components/BottomNav';
+import { buildTeamHierarchy } from '../utils/referralUtils';
 import {
   Copy,
   Share2,
@@ -29,16 +30,10 @@ export const ReferralEarnScreen: React.FC = () => {
       ? `${window.location.origin}${window.location.pathname}?invite=${referralCode}`
       : `https://zorotask.app/?invite=${referralCode}`;
 
-  // Calculate live team numbers with case-insensitive normalization
-  const cleanCode = referralCode.trim().toUpperCase();
-  const directTeam = registeredUsers.filter(
-    (u) => u.referredBy && u.referredBy.trim().toUpperCase() === cleanCode
+  const { directTeam, tier2Team, tier3PlusTeam, totalMembers: totalTeamCount } = useMemo(
+    () => buildTeamHierarchy({ referralCode, mobile: user.mobile }, registeredUsers),
+    [referralCode, user.mobile, registeredUsers]
   );
-  const directCodes = directTeam.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
-  const tier2Team = registeredUsers.filter(
-    (u) => u.referredBy && directCodes.includes(u.referredBy.trim().toUpperCase())
-  );
-  const totalTeamCount = directTeam.length + tier2Team.length;
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -113,6 +108,9 @@ export const ReferralEarnScreen: React.FC = () => {
               <p className="text-xl font-black text-purple-900 mt-0.5">
                 {totalTeamCount} Members
               </p>
+              <span className="text-[9px] text-slate-500 font-semibold block">
+                L1: {directTeam.length} • L2: {tier2Team.length} • L3+: {tier3PlusTeam.length}
+              </span>
               <span className="text-[9px] text-purple-500 underline font-medium">
                 View Full Team Report →
               </span>

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { buildTeamHierarchy } from '../utils/referralUtils';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -1315,40 +1316,6 @@ export const AdminPanelScreen: React.FC = () => {
     return sortedPurchased;
   };
 
-  // Derived KPI calculations
-  const pendingDepositsList = useMemo(
-    () => paymentDeposits.filter((d) => d.status === 'in_process'),
-    [paymentDeposits]
-  );
-
-  const pendingDepositsAmount = useMemo(
-    () => pendingDepositsList.reduce((acc, curr) => acc + (curr.amount || 0), 0),
-    [pendingDepositsList]
-  );
-
-  const pendingWithdrawalsList = useMemo(
-    () => transactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending'),
-    [transactions]
-  );
-
-  const pendingWithdrawalsAmount = useMemo(
-    () => pendingWithdrawalsList.reduce((acc, curr) => acc + (curr.amount || 0), 0),
-    [pendingWithdrawalsList]
-  );
-
-  const totalPlatformBalance = useMemo(
-    () => registeredUsers.reduce((acc, u) => acc + (u.balance || 0), 0),
-    [registeredUsers]
-  );
-
-  const totalApprovedDepositsAmount = useMemo(
-    () =>
-      paymentDeposits
-        .filter((d) => d.status === 'approved')
-        .reduce((acc, curr) => acc + (curr.amount || 0), 0),
-    [paymentDeposits]
-  );
-
   // All platform withdrawals across all users and global transactions
   const allPlatformWithdrawals = useMemo<AggregatedWithdrawal[]>(() => {
     const map = new Map<string, AggregatedWithdrawal>();
@@ -1408,6 +1375,40 @@ export const AdminPanelScreen: React.FC = () => {
 
     return Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [registeredUsers, transactions, user]);
+
+  // Derived KPI calculations
+  const pendingDepositsList = useMemo(
+    () => paymentDeposits.filter((d) => d.status === 'in_process'),
+    [paymentDeposits]
+  );
+
+  const pendingDepositsAmount = useMemo(
+    () => pendingDepositsList.reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [pendingDepositsList]
+  );
+
+  const pendingWithdrawalsList = useMemo(
+    () => allPlatformWithdrawals.filter((w) => w.status === 'pending'),
+    [allPlatformWithdrawals]
+  );
+
+  const pendingWithdrawalsAmount = useMemo(
+    () => pendingWithdrawalsList.reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [pendingWithdrawalsList]
+  );
+
+  const totalPlatformBalance = useMemo(
+    () => registeredUsers.reduce((acc, u) => acc + (u.balance || 0), 0),
+    [registeredUsers]
+  );
+
+  const totalApprovedDepositsAmount = useMemo(
+    () =>
+      paymentDeposits
+        .filter((d) => d.status === 'approved')
+        .reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [paymentDeposits]
+  );
 
   const totalPaidWithdrawalsAmount = useMemo(() => {
     return allPlatformWithdrawals
@@ -1616,14 +1617,16 @@ export const AdminPanelScreen: React.FC = () => {
     });
   }, [paymentDeposits, depositFilter, depositSearch]);
 
-  // Filtered withdrawals
+  // Filtered withdrawals (across ALL platform users in Firestore)
   const filteredWithdrawals = useMemo(() => {
-    return transactions.filter((t) => {
-      if (t.type !== 'withdrawal') return false;
-      if (withdrawalFilter !== 'all' && t.status !== withdrawalFilter) return false;
+    return allPlatformWithdrawals.filter((w) => {
+      if (withdrawalFilter === 'verified') {
+        return w.status === 'verified' || w.status === 'completed';
+      }
+      if (withdrawalFilter !== 'all' && w.status !== withdrawalFilter) return false;
       return true;
     });
-  }, [transactions, withdrawalFilter]);
+  }, [allPlatformWithdrawals, withdrawalFilter]);
 
   // Filtered users
   const filteredUsers = useMemo(() => {
@@ -3803,7 +3806,7 @@ export const AdminPanelScreen: React.FC = () => {
                       : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  Pending Payouts ({transactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending').length})
+                  Pending Payouts ({allPlatformWithdrawals.filter((w) => w.status === 'pending').length})
                 </button>
                 <button
                   onClick={() => setWithdrawalFilter('verified')}
@@ -3813,7 +3816,7 @@ export const AdminPanelScreen: React.FC = () => {
                       : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  Completed ({transactions.filter((t) => t.type === 'withdrawal' && t.status === 'verified').length})
+                  Completed ({allPlatformWithdrawals.filter((w) => w.status === 'verified' || w.status === 'completed').length})
                 </button>
                 <button
                   onClick={() => setWithdrawalFilter('all')}
@@ -3823,7 +3826,7 @@ export const AdminPanelScreen: React.FC = () => {
                       : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  All ({transactions.filter((t) => t.type === 'withdrawal').length})
+                  All ({allPlatformWithdrawals.length})
                 </button>
               </div>
             </div>
@@ -3847,30 +3850,43 @@ export const AdminPanelScreen: React.FC = () => {
                           className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
                             tx.status === 'pending'
                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : tx.status === 'verified'
+                              : tx.status === 'verified' || tx.status === 'completed'
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : 'bg-red-500/20 text-red-400 border border-red-500/30'
                           }`}
                         >
-                          {tx.status}
+                          {tx.status === 'verified' ? 'Paid / Verified' : tx.status}
                         </span>
                       </div>
                       <div className="text-2xl font-black text-white mt-1">
                         ₹{tx.amount.toLocaleString('en-IN')}
                       </div>
 
+                      {/* Member Info Box */}
+                      <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs mt-2 space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-white">{tx.userName || 'Member'}</span>
+                          <span className="font-mono text-[11px] text-slate-400">+91 {tx.userMobile || 'N/A'}</span>
+                        </div>
+                        {tx.utrNumber && (
+                          <div className="text-[10px] font-mono text-emerald-400">
+                            Payout UTR: {tx.utrNumber}
+                          </div>
+                        )}
+                      </div>
+
                       {tx.payoutMethod === 'bank' || (tx.note && tx.note.includes('Bank:')) ? (
-                        <div className="mt-1.5 space-y-1">
+                        <div className="mt-2 space-y-1">
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-400 bg-cyan-950/70 px-2 py-0.5 rounded border border-cyan-800/60">
                             <Building2 className="w-3 h-3 text-cyan-400" />
                             <span>Bank Account Transfer</span>
                           </span>
                           <div className="text-xs text-slate-300 font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
                             <span className="break-all pr-2 text-[11px] leading-relaxed">
-                              {tx.note || 'Bank Details'}
+                              {tx.note || tx.payoutDetails || 'Bank Details'}
                             </span>
                             <button
-                              onClick={() => copyText(tx.note || '', 'Bank Details')}
+                              onClick={() => copyText(tx.note || tx.payoutDetails || '', 'Bank Details')}
                               className="p-1.5 text-slate-400 hover:text-white shrink-0 bg-slate-900 rounded-lg border border-slate-700 hover:bg-slate-800 transition-all cursor-pointer"
                               title="Copy Bank Details"
                             >
@@ -3879,15 +3895,15 @@ export const AdminPanelScreen: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="text-xs text-slate-400 font-mono mt-1 bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                          <span>{tx.note || 'UPI Payout'}</span>
+                        <div className="text-xs text-slate-400 font-mono mt-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                          <span className="break-all pr-2">{tx.note || (tx.userUpiId ? `UPI: ${tx.userUpiId}` : 'UPI Payout')}</span>
                           <button
                             onClick={() => {
-                              const upiMatch = tx.note?.match(/UPI:\s*([^\s]+)/);
+                              const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/);
                               if (upiMatch && upiMatch[1]) copyText(upiMatch[1], 'UPI ID');
-                              else copyText(tx.note || '', 'Details');
+                              else copyText(tx.userUpiId || tx.note || '', 'Details');
                             }}
-                            className="p-1 text-slate-400 hover:text-white"
+                            className="p-1 text-slate-400 hover:text-white shrink-0"
                             title="Copy UPI"
                           >
                             <Copy className="w-3.5 h-3.5" />
@@ -3903,24 +3919,23 @@ export const AdminPanelScreen: React.FC = () => {
                           <button
                             type="button"
                             onClick={async () => {
-                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
                               setProcessingPayoutId(tx.id);
 
                               let upiId = '';
-                              let account = '';
-                              let ifsc = '';
-                              let holderName = u?.name || 'Member';
+                              let account = tx.bankAccountNumber || '';
+                              let ifsc = tx.bankIfsc || '';
+                              let holderName = tx.bankAccountHolder || tx.userName || 'Member';
 
                               if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
                                 const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
                                 const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
                                 const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
-                                account = accMatch ? accMatch[1].trim() : '';
-                                ifsc = ifscMatch ? ifscMatch[1].trim() : '';
+                                if (accMatch) account = accMatch[1].trim();
+                                if (ifscMatch) ifsc = ifscMatch[1].trim();
                                 if (holderMatch) holderName = holderMatch[1].trim();
                               } else {
                                 const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
-                                upiId = upiMatch ? upiMatch[1].trim() : ((tx.note || '').replace('UPI:', '').trim() || u?.upiId || '');
+                                upiId = upiMatch ? upiMatch[1].trim() : ((tx.note || '').replace('UPI:', '').trim() || tx.userUpiId || '');
                               }
 
                               await disburseQoPayout(
@@ -3932,7 +3947,7 @@ export const AdminPanelScreen: React.FC = () => {
                                   account,
                                   ifsc,
                                   name: holderName,
-                                  mobile: u?.mobile,
+                                  mobile: tx.userMobile,
                                 }
                               );
                               setProcessingPayoutId(null);
@@ -3959,25 +3974,23 @@ export const AdminPanelScreen: React.FC = () => {
                           <button
                             type="button"
                             onClick={async () => {
-                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
                               setProcessingPayoutId(tx.id);
-                              
-                              // Extract payout credentials from transaction note
+
                               let upiId = '';
-                              let account = '';
-                              let ifsc = '';
-                              let holderName = u?.name || 'Member';
-                              
+                              let account = tx.bankAccountNumber || '';
+                              let ifsc = tx.bankIfsc || '';
+                              let holderName = tx.bankAccountHolder || tx.userName || 'Member';
+
                               if (tx.payoutMethod === 'bank' || tx.note?.includes('Bank:')) {
                                 const accMatch = tx.note?.match(/A\/C:\s*([A-Za-z0-9]+)/i);
                                 const ifscMatch = tx.note?.match(/IFSC:\s*([A-Za-z0-9]+)/i);
                                 const holderMatch = tx.note?.match(/Holder:\s*([^|]+)/i);
-                                account = accMatch ? accMatch[1].trim() : '';
-                                ifsc = ifscMatch ? ifscMatch[1].trim() : '';
+                                if (accMatch) account = accMatch[1].trim();
+                                if (ifscMatch) ifsc = ifscMatch[1].trim();
                                 if (holderMatch) holderName = holderMatch[1].trim();
                               } else {
                                 const upiMatch = tx.note?.match(/UPI:\s*([^\s|]+)/i);
-                                upiId = upiMatch ? upiMatch[1].trim() : ((tx.note || '').replace('UPI:', '').trim() || u?.upiId || '');
+                                upiId = upiMatch ? upiMatch[1].trim() : ((tx.note || '').replace('UPI:', '').trim() || tx.userUpiId || '');
                               }
 
                               await disburseDramPayPayout(
@@ -3989,7 +4002,7 @@ export const AdminPanelScreen: React.FC = () => {
                                   account,
                                   ifsc,
                                   name: holderName,
-                                  mobile: u?.mobile,
+                                  mobile: tx.userMobile,
                                 }
                               );
                               setProcessingPayoutId(null);
@@ -4020,14 +4033,13 @@ export const AdminPanelScreen: React.FC = () => {
                           </button>
                           <button
                             onClick={() => {
-                              const u = registeredUsers.find((user) => (user.transactions || []).some((t) => t.id === tx.id));
                               setRejectModalData({
                                 isOpen: true,
                                 type: 'withdrawal',
                                 id: tx.id,
-                                targetMobile: u?.mobile || '',
+                                targetMobile: tx.userMobile || '',
                                 amount: tx.amount,
-                                userTitle: `${u?.name || 'User'} (+91 ${u?.mobile || 'Unknown'})`,
+                                userTitle: `${tx.userName || 'User'} (+91 ${tx.userMobile || 'Unknown'})`,
                                 reason: 'Payout verification issue / Account details mismatch',
                               });
                             }}
@@ -4182,14 +4194,34 @@ export const AdminPanelScreen: React.FC = () => {
                         </button>
                       </div>
 
-                      <div className="text-[11px] text-slate-400 flex items-center justify-between flex-wrap gap-1">
-                        <span>Ref Code: <b className="text-emerald-300 font-mono font-bold">{u.referralCode || `ZT${(u.mobile || '').replace(/\D/g, '').slice(-6)}`}</b></span>
-                        {u.referredBy ? (
-                          <span>Invited By: <b className="text-sky-300 font-mono">{u.referredBy}</b></span>
-                        ) : (
-                          <span className="text-slate-500 text-[10px]">Direct User</span>
+                      <div className="text-[11px] text-slate-400 space-y-1 bg-slate-950/60 p-2 rounded-xl border border-slate-800/80">
+                        <div className="flex items-center justify-between flex-wrap gap-1">
+                          <span>Ref Code: <b className="text-emerald-300 font-mono font-bold">{u.referralCode || `ZT${(u.mobile || '').replace(/\D/g, '').slice(-6)}`}</b></span>
+                          {u.referredBy ? (
+                            <span>Invited By: <b className="text-sky-300 font-mono">{u.referredBy}</b></span>
+                          ) : (
+                            <span className="text-slate-500 text-[10px]">Direct User</span>
+                          )}
+                          <span>Pass: <b className="text-amber-400 font-mono">{u.password || '******'}</b></span>
+                        </div>
+                        <div className="flex items-center justify-between flex-wrap gap-1 text-[10px] pt-1 border-t border-slate-800/70">
+                          <span className="truncate max-w-[160px]" title={u.email || ''}>
+                            Email: <b className="text-slate-300">{u.email || 'N/A'}</b>
+                          </span>
+                          <span>
+                            Team: <b className="text-purple-300 font-mono">{buildTeamHierarchy(u, registeredUsers).totalMembers}</b>
+                          </span>
+                          <span>
+                            Withdrawn: <b className="text-indigo-300 font-mono">₹{(u.withdrawn || 0).toLocaleString('en-IN')}</b>
+                          </span>
+                        </div>
+                        {(u.upiId || u.bankAccountNumber || u.joinedDate) && (
+                          <div className="flex items-center justify-between flex-wrap gap-1 text-[10px] text-slate-500">
+                            {u.upiId && <span className="font-mono truncate max-w-[150px]">UPI: <b className="text-teal-300">{u.upiId}</b></span>}
+                            {u.bankAccountNumber && <span className="font-mono">A/C: <b className="text-cyan-300">{u.bankAccountNumber}</b> ({u.bankIfsc || 'IFSC'})</span>}
+                            {u.joinedDate && <span>Joined: {u.joinedDate}</span>}
+                          </div>
                         )}
-                        <span>Pass: <b className="text-amber-400 font-mono">{u.password || '******'}</b></span>
                       </div>
                     </div>
 
@@ -9278,6 +9310,47 @@ export const AdminPanelScreen: React.FC = () => {
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-amber-300 font-mono outline-none focus:border-amber-400"
                   />
                 </div>
+
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={editingUser.email || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-200 outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">UPI ID</label>
+                  <input
+                    type="text"
+                    value={editingUser.upiId || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, upiId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-teal-300 font-mono outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">Referral Code</label>
+                  <input
+                    type="text"
+                    value={editingUser.referralCode || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, referralCode: e.target.value.toUpperCase().replace(/\s/g, '') })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-emerald-300 font-mono outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-400 font-semibold block mb-1">Invited By (Code)</label>
+                  <input
+                    type="text"
+                    value={editingUser.referredBy || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, referredBy: e.target.value.toUpperCase().replace(/\s/g, '') })}
+                    placeholder="None"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sky-300 font-mono outline-none focus:border-amber-400"
+                  />
+                </div>
               </div>
 
               {/* Account Access Status (Block / Active) */}
@@ -9548,6 +9621,9 @@ export const AdminPanelScreen: React.FC = () => {
                       await adminUpdateUser(editingUser.mobile, {
                         name: editingUser.name,
                         password: editingUser.password,
+                        email: editingUser.email || '',
+                        upiId: editingUser.upiId || '',
+                        referredBy: editingUser.referredBy || '',
                         purchasedPlanIds: selectedIds,
                         vipLevel: computedLevel,
                         vipTag: computedTag,

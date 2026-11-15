@@ -1263,11 +1263,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     curr.vipLevel === cloudSelf.vipLevel &&
                     curr.vipTag === cloudSelf.vipTag &&
                     curr.referralCode === cloudSelf.referralCode &&
+                    curr.referredBy === cloudSelf.referredBy &&
                     curr.freeTrialOverride === cloudSelf.freeTrialOverride &&
                     curr.totalEarned === cloudSelf.totalEarned &&
                     curr.todayVideosWatched === cloudSelf.todayVideosWatched &&
                     curr.isBlocked === cloudSelf.isBlocked &&
                     curr.name === cloudSelf.name &&
+                    curr.email === cloudSelf.email &&
+                    curr.upiId === cloudSelf.upiId &&
+                    curr.bankName === cloudSelf.bankName &&
+                    curr.bankAccountNumber === cloudSelf.bankAccountNumber &&
+                    curr.bankIfsc === cloudSelf.bankIfsc &&
+                    curr.bankAccountHolder === cloudSelf.bankAccountHolder &&
                     curr.password === cloudSelf.password &&
                     curr.withdrawn === cloudSelf.withdrawn &&
                     curr.referralEarnings === cloudSelf.referralEarnings &&
@@ -1860,11 +1867,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 curr.vipLevel === cloudData.vipLevel &&
                 curr.vipTag === cloudData.vipTag &&
                 curr.referralCode === cloudData.referralCode &&
+                curr.referredBy === cloudData.referredBy &&
                 curr.freeTrialOverride === cloudData.freeTrialOverride &&
                 curr.totalEarned === cloudData.totalEarned &&
                 curr.todayVideosWatched === cloudData.todayVideosWatched &&
                 curr.isBlocked === cloudData.isBlocked &&
                 curr.name === cloudData.name &&
+                curr.email === cloudData.email &&
+                curr.upiId === cloudData.upiId &&
+                curr.bankName === cloudData.bankName &&
+                curr.bankAccountNumber === cloudData.bankAccountNumber &&
+                curr.bankIfsc === cloudData.bankIfsc &&
+                curr.bankAccountHolder === cloudData.bankAccountHolder &&
                 curr.password === cloudData.password &&
                 curr.withdrawn === cloudData.withdrawn &&
                 curr.referralEarnings === cloudData.referralEarnings &&
@@ -1920,8 +1934,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               current.balance === user.balance &&
               current.vipLevel === user.vipLevel &&
               current.name === user.name &&
+              current.email === user.email &&
+              current.upiId === user.upiId &&
               current.totalEarned === user.totalEarned &&
-              current.todayVideosWatched === user.todayVideosWatched
+              current.todayVideosWatched === user.todayVideosWatched &&
+              (current.transactions?.length || 0) === transactions.length
             ) {
               return prev;
             }
@@ -1942,7 +1959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     }
-  }, [user?.balance, user?.vipLevel, user?.totalEarned, user?.name, user?.todayVideosWatched, user?.mobile, isLoggedIn]);
+  }, [user?.balance, user?.vipLevel, user?.totalEarned, user?.name, user?.email, user?.upiId, user?.todayVideosWatched, user?.mobile, transactions.length, isLoggedIn]);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -3352,89 +3369,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }
 
-            // 3. Level 3+ Upline (Referrer of upline2) - 1.0%
-            if (upline2.referredBy) {
-              const upline3Data = await findUserByReferralCode(upline2.referredBy);
-              if (upline3Data && upline3Data.docId && !visitedUplines.has(upline3Data.docId)) {
-                const upline3 = upline3Data.user;
-                const u3Clean = upline3Data.docId;
-                visitedUplines.add(u3Clean);
-                const comm3 = Math.round(planPrice * 0.01 * 100) / 100;
-                if (comm3 > 0) {
-                  const now3 = Date.now();
-                  const dayInfo3 = getFormattedDayInfo(now3);
-                  const u3Tx: TransactionItem = {
-                    id: `tx_ref3_${now3}_${Math.random().toString(36).substring(2, 6)}`,
-                    type: 'referral_reward',
-                    title: `Level 3 Team Referral Commission (1.0%)`,
-                    date: dayInfo3.displayString,
-                    timestamp: now3,
-                    amount: comm3,
-                    isCredit: true,
-                    status: 'verified',
-                    note: `Tier-3 downstream referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 1.0% multi-tier commission credited (+₹${comm3})!`,
-                  };
+            // 3. Level 3+ Uplines (Downstream Team up to 10 levels) - 1.0%
+            let currentParentCode: string | undefined = upline2.referredBy;
+            let tier = 3;
+            while (currentParentCode && tier <= 10) {
+              const nextUplineData = await findUserByReferralCode(currentParentCode);
+              if (!nextUplineData || !nextUplineData.docId || visitedUplines.has(nextUplineData.docId)) {
+                break;
+              }
+              const uplineN = nextUplineData.user;
+              const uNClean = nextUplineData.docId;
+              visitedUplines.add(uNClean);
+              const commN = Math.round(planPrice * 0.01 * 100) / 100;
+              if (commN > 0) {
+                const nowN = Date.now();
+                const dayInfoN = getFormattedDayInfo(nowN);
+                const uNTx: TransactionItem = {
+                  id: `tx_ref${tier}_${nowN}_${Math.random().toString(36).substring(2, 6)}`,
+                  type: 'referral_reward',
+                  title: `Level ${tier} Team Referral Commission (1.0%)`,
+                  date: dayInfoN.displayString,
+                  timestamp: nowN,
+                  amount: commN,
+                  isCredit: true,
+                  status: 'verified',
+                  note: `Tier-${tier} downstream referral ${buyerUser.name} purchased Level ${planLevel} VIP plan (₹${planPrice}). 1.0% multi-tier commission credited (+₹${commN})!`,
+                };
 
-                  setRegisteredUsers((prev) => {
-                    let found = false;
-                    const updated = prev.map((u) => {
-                      if (normalizeMobile(u.mobile) === u3Clean) {
-                        found = true;
-                        return {
-                          ...u,
-                          balance: (u.balance || 0) + comm3,
-                          totalEarned: (u.totalEarned || 0) + comm3,
-                          referralEarnings: (u.referralEarnings || 0) + comm3,
-                          transactions: [u3Tx, ...(u.transactions || [])].slice(0, 200),
-                        };
-                      }
-                      return u;
-                    });
-                    if (!found) {
-                      updated.push({
-                        ...upline3,
-                        balance: (upline3.balance || 0) + comm3,
-                        totalEarned: (upline3.totalEarned || 0) + comm3,
-                        referralEarnings: (upline3.referralEarnings || 0) + comm3,
-                        transactions: [u3Tx, ...(upline3.transactions || [])].slice(0, 200),
-                      });
+                setRegisteredUsers((prev) => {
+                  let found = false;
+                  const updated = prev.map((u) => {
+                    if (normalizeMobile(u.mobile) === uNClean) {
+                      found = true;
+                      return {
+                        ...u,
+                        balance: (u.balance || 0) + commN,
+                        totalEarned: (u.totalEarned || 0) + commN,
+                        referralEarnings: (u.referralEarnings || 0) + commN,
+                        transactions: [uNTx, ...(u.transactions || [])].slice(0, 200),
+                      };
                     }
-                    try {
-                      localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
-                    } catch {}
-                    return updated;
+                    return u;
                   });
-
-                  if (normalizeMobile(userRef.current.mobile) === u3Clean) {
-                    setUser((curr) => ({
-                      ...curr,
-                      balance: (curr.balance || 0) + comm3,
-                      totalEarned: (curr.totalEarned || 0) + comm3,
-                      referralEarnings: (curr.referralEarnings || 0) + comm3,
-                    }));
-                    setTransactions((prev) => [u3Tx, ...prev]);
+                  if (!found) {
+                    updated.push({
+                      ...uplineN,
+                      balance: (uplineN.balance || 0) + commN,
+                      totalEarned: (uplineN.totalEarned || 0) + commN,
+                      referralEarnings: (uplineN.referralEarnings || 0) + commN,
+                      transactions: [uNTx, ...(uplineN.transactions || [])].slice(0, 200),
+                    });
                   }
-
                   try {
-                    const u3Ref = doc(db, 'users', u3Clean);
-                    const u3Snap = await getDocFromServer(u3Ref).catch(() => getDoc(u3Ref));
-                    const existingU3Txs: TransactionItem[] =
-                      u3Snap.exists() && Array.isArray(u3Snap.data().transactions) ? u3Snap.data().transactions : [];
-                    await setDoc(
-                      u3Ref,
-                      cleanFirestoreData({
-                        balance: increment(comm3),
-                        totalEarned: increment(comm3),
-                        referralEarnings: increment(comm3),
-                        transactions: [u3Tx, ...existingU3Txs].slice(0, 200),
-                      }),
-                      { merge: true }
-                    );
-                  } catch (e) {
-                    console.warn('Failed to update Level 3 upline in Firestore:', e);
-                  }
+                    localStorage.setItem('taskvibe_registered_users', JSON.stringify(updated));
+                  } catch {}
+                  return updated;
+                });
+
+                if (normalizeMobile(userRef.current.mobile) === uNClean) {
+                  setUser((curr) => ({
+                    ...curr,
+                    balance: (curr.balance || 0) + commN,
+                    totalEarned: (curr.totalEarned || 0) + commN,
+                    referralEarnings: (curr.referralEarnings || 0) + commN,
+                  }));
+                  setTransactions((prev) => [uNTx, ...prev]);
+                }
+
+                try {
+                  const uNRef = doc(db, 'users', uNClean);
+                  const uNSnap = await getDocFromServer(uNRef).catch(() => getDoc(uNRef));
+                  const existingUNTxs: TransactionItem[] =
+                    uNSnap.exists() && Array.isArray(uNSnap.data().transactions) ? uNSnap.data().transactions : [];
+                  await setDoc(
+                    uNRef,
+                    cleanFirestoreData({
+                      balance: increment(commN),
+                      totalEarned: increment(commN),
+                      referralEarnings: increment(commN),
+                      transactions: [uNTx, ...existingUNTxs].slice(0, 200),
+                    }),
+                    { merge: true }
+                  );
+                } catch (e) {
+                  console.warn(`Failed to update Level ${tier} upline in Firestore:`, e);
                 }
               }
+              currentParentCode = uplineN.referredBy;
+              tier += 1;
             }
           }
         }
@@ -3986,7 +4008,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     triggerConfetti();
-    showToast(`✓ Payment Deposit ₹${deposit.amount.toLocaleString('en-IN')} Approved successfully!`);
+    if (!cleanMobile) {
+      showToast(`✓ Payment Deposit ₹${deposit.amount.toLocaleString('en-IN')} Approved successfully!`);
+    }
     } finally {
       approvingDepositIdsRef.current.delete(depositId);
     }
@@ -4353,6 +4377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'withdrawal',
       title: isBank ? 'Bank Account Withdrawal' : 'UPI Withdrawal Request',
       date: 'Just Now (Pending)',
+      timestamp: Date.now(),
       amount: amount,
       isCredit: false,
       status: 'pending',
@@ -4363,6 +4388,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newTxs = [newTx, ...transactions];
     setTransactions(newTxs);
+    const cleanSelf = normalizeMobile(user.mobile);
+    if (cleanSelf) {
+      setRegisteredUsers((prev) => {
+        const next = prev.map((u) =>
+          normalizeMobile(u.mobile) === cleanSelf
+            ? { ...u, ...updatedUser, transactions: newTxs }
+            : u
+        );
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
     syncUserToFirestore(updatedUser, newTxs);
 
     showToast(`Withdrawal of ₹${amount.toLocaleString('en-IN')} requested via ${isBank ? 'Bank Account' : 'UPI'}!`);
@@ -5097,15 +5136,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Data reset successfully');
   };
 
-  const updateUserProfile = (name: string, email: string, upiId: string) => {
-    setUser((prev) => ({
-      ...prev,
-      name: name || prev.name,
-      email: email || prev.email,
-      upiId: upiId || prev.upiId,
-    }));
+  const updateUserProfile = async (name: string, email: string, upiId: string) => {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+    const cleanUpi = upiId.trim();
+    const nextName = cleanName || user.name;
+    const nextEmail = cleanEmail || user.email;
+    const nextUpi = cleanUpi || user.upiId;
+    const cleanMobile = normalizeMobile(user.mobile);
+
+    const updatedProfile: UserProfile = {
+      ...user,
+      name: nextName,
+      email: nextEmail,
+      upiId: nextUpi,
+    };
+
+    setUser(updatedProfile);
+    try {
+      localStorage.setItem('taskvibe_user', JSON.stringify(updatedProfile));
+    } catch {}
+
+    if (cleanMobile && cleanMobile.length >= 10) {
+      setRegisteredUsers((prev) => {
+        const next = prev.map((u) =>
+          normalizeMobile(u.mobile) === cleanMobile
+            ? { ...u, name: nextName, email: nextEmail, upiId: nextUpi }
+            : u
+        );
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      try {
+        await setDoc(
+          doc(db, 'users', cleanMobile),
+          cleanFirestoreData({
+            name: nextName,
+            email: nextEmail,
+            upiId: nextUpi,
+          }),
+          { merge: true }
+        );
+      } catch (err) {
+        console.warn('Failed to persist profile update to Firestore:', err);
+      }
+    }
+
     setIsEditProfileOpen(false);
-    showToast('Profile updated successfully!');
+    showToast('✓ Profile updated & saved to cloud!');
   };
 
   // Admin Actions
@@ -5126,7 +5206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           prev.map((usr) => (normalizeMobile(usr.mobile) === cleanM ? { ...usr, transactions: updatedTxs } : usr))
         );
         try {
-          await setDoc(doc(db, 'users', cleanM), { transactions: updatedTxs }, { merge: true });
+          await setDoc(doc(db, 'users', cleanM), { transactions: cleanFirestoreData(updatedTxs) }, { merge: true });
         } catch (e) {
           console.warn('Failed to update approved withdrawal in Firestore:', e);
         }
@@ -5137,7 +5217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       {
         id: `notif_${Date.now()}`,
         title: 'Withdrawal Approved! 🎉',
-        message: 'Your withdrawal request has been approved and sent to your UPI ID.',
+        message: 'Your withdrawal request has been approved and sent to your UPI/Bank account.',
         time: 'Just now',
         read: false,
         type: 'withdrawal',
@@ -5148,52 +5228,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const rejectWithdrawal = async (txId: string, reason = 'Verification issue') => {
-    const tx = transactions.find((t) => t.id === txId);
-    if (tx && tx.status === 'pending') {
-      // Refund balance
+    // Look up withdrawal across ALL registered users as well as current active transactions
+    const targetOwner = registeredUsers.find((u) =>
+      (u.transactions || []).some((t) => t.id === txId && t.status === 'pending')
+    );
+    const localTx = transactions.find((t) => t.id === txId && t.status === 'pending');
+    const targetTx =
+      (targetOwner?.transactions || []).find((t) => t.id === txId && t.status === 'pending') || localTx;
+
+    if (!targetTx) {
+      showToast('Withdrawal request is already processed or not found.');
+      return;
+    }
+
+    const ownerMobile = normalizeMobile(targetOwner?.mobile || (localTx ? user.mobile : ''));
+    const refundAmount = Number(targetTx.amount) || 0;
+
+    // Update current browser user state if it matches the owner (or local tx)
+    if (localTx || (ownerMobile && ownerMobile === normalizeMobile(userRef.current?.mobile))) {
       setUser((u) => ({
         ...u,
-        balance: u.balance + tx.amount,
-        withdrawn: Math.max(0, u.withdrawn - tx.amount),
+        balance: (u.balance || 0) + refundAmount,
+        withdrawn: Math.max(0, (u.withdrawn || 0) - refundAmount),
       }));
       setTransactions((prev) =>
         prev.map((t) =>
-          t.id === txId ? { ...t, status: 'failed', note: `Rejected: ${reason}` } : t
+          t.id === txId ? { ...t, status: 'failed' as const, note: `Rejected: ${reason}` } : t
         )
       );
+    }
 
-      for (const u of registeredUsers) {
-        if ((u.transactions || []).some((t) => t.id === txId)) {
-          const cleanM = normalizeMobile(u.mobile);
-          const newBal = (u.balance || 0) + tx.amount;
-          const newWithdrawn = Math.max(0, (u.withdrawn || 0) - tx.amount);
-          const updatedTxs = (u.transactions || []).map((t) =>
+    if (ownerMobile && ownerMobile.length >= 10) {
+      let updatedTxsForOwner: TransactionItem[] = [];
+      let refundedBalance = (targetOwner?.balance || 0) + refundAmount;
+      let updatedWithdrawn = Math.max(0, (targetOwner?.withdrawn || 0) - refundAmount);
+
+      try {
+        const ownerRef = doc(db, 'users', ownerMobile);
+        const ownerSnap = await getDocFromServer(ownerRef).catch(() => getDoc(ownerRef));
+        if (ownerSnap.exists()) {
+          const cloudOwner = ownerSnap.data() as RegisteredUserAccount;
+          const cloudTxs = Array.isArray(cloudOwner.transactions) ? cloudOwner.transactions : [];
+          const cloudPendingTx = cloudTxs.find((t) => t.id === txId && t.status === 'pending');
+          if (!cloudPendingTx && cloudTxs.some((t) => t.id === txId)) {
+            showToast('Withdrawal was already processed.');
+            return;
+          }
+          refundedBalance = (Number(cloudOwner.balance) || 0) + refundAmount;
+          updatedWithdrawn = Math.max(0, (Number(cloudOwner.withdrawn) || 0) - refundAmount);
+          updatedTxsForOwner = cloudTxs.map((t) =>
             t.id === txId ? { ...t, status: 'failed' as const, note: `Rejected: ${reason}` } : t
           );
-          setRegisteredUsers((prev) =>
-            prev.map((usr) => (normalizeMobile(usr.mobile) === cleanM ? { ...usr, balance: newBal, withdrawn: newWithdrawn, transactions: updatedTxs } : usr))
+          await setDoc(
+            ownerRef,
+            cleanFirestoreData({
+              balance: refundedBalance,
+              withdrawn: updatedWithdrawn,
+              transactions: updatedTxsForOwner,
+            }),
+            { merge: true }
           );
-          try {
-            await setDoc(doc(db, 'users', cleanM), { balance: newBal, withdrawn: newWithdrawn, transactions: updatedTxs }, { merge: true });
-          } catch (e) {
-            console.warn('Failed to update rejected withdrawal in Firestore:', e);
-          }
         }
+      } catch (e) {
+        console.warn('Failed to update rejected withdrawal in Firestore:', e);
       }
 
-      setNotifications((prev) => [
-        {
-          id: `notif_${Date.now()}`,
-          title: 'Withdrawal Request Refunded',
-          message: `Your withdrawal of ₹${tx.amount} was rejected (${reason}). Balance has been refunded to your wallet.`,
-          time: 'Just now',
-          read: false,
-          type: 'system',
-        },
-        ...prev,
-      ]);
-      showToast(`Withdrawal rejected. ₹${tx.amount} refunded to user.`);
+      setRegisteredUsers((prev) => {
+        const next = prev.map((usr) => {
+          if (normalizeMobile(usr.mobile) === ownerMobile) {
+            const nextTxs =
+              updatedTxsForOwner.length > 0
+                ? updatedTxsForOwner
+                : (usr.transactions || []).map((t) =>
+                    t.id === txId ? { ...t, status: 'failed' as const, note: `Rejected: ${reason}` } : t
+                  );
+            return { ...usr, balance: refundedBalance, withdrawn: updatedWithdrawn, transactions: nextTxs };
+          }
+          return usr;
+        });
+        try {
+          localStorage.setItem('taskvibe_registered_users', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
     }
+
+    setNotifications((prev) => [
+      {
+        id: `notif_${Date.now()}`,
+        title: 'Withdrawal Request Refunded',
+        message: `Your withdrawal of ₹${refundAmount} was rejected (${reason}). Balance has been refunded to your wallet.`,
+        time: 'Just now',
+        read: false,
+        type: 'system',
+      },
+      ...prev,
+    ]);
+    showToast(`Withdrawal rejected. ₹${refundAmount} refunded to user.`);
   };
 
   const adjustUserBalance = async (amount: number, isCredit: boolean, reason: string, targetMobile?: string) => {
@@ -6999,10 +7130,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTransactions((prev) =>
           prev.map((t) =>
             t.id === txId
-              ? { ...t, status: 'verified', note: approvedNote, gatewayPayoutId: data?.data?.payoutId }
+              ? { ...t, status: 'verified', note: approvedNote, utrNumber: data?.data?.utr || t.utrNumber, gatewayPayoutId: data?.data?.payoutId || payoutId }
               : t
           )
         );
+        const ownerUser = registeredUsers.find((u) => (u.transactions || []).some((t) => t.id === txId));
+        const targetMob = normalizeMobile(details.mobile || ownerUser?.mobile);
+        if (targetMob && targetMob.length >= 10) {
+          const baseTxs = ownerUser?.transactions || [];
+          const updatedOwnerTxs = baseTxs.map((t) =>
+            t.id === txId
+              ? { ...t, status: 'verified' as const, note: approvedNote, utrNumber: data?.data?.utr || t.utrNumber, gatewayPayoutId: data?.data?.payoutId || payoutId }
+              : t
+          );
+          setRegisteredUsers((prev) =>
+            prev.map((usr) =>
+              normalizeMobile(usr.mobile) === targetMob ? { ...usr, transactions: updatedOwnerTxs } : usr
+            )
+          );
+          try {
+            const ownerRef = doc(db, 'users', targetMob);
+            const ownerSnap = await getDocFromServer(ownerRef).catch(() => getDoc(ownerRef));
+            const cloudTxs: TransactionItem[] =
+              ownerSnap.exists() && Array.isArray(ownerSnap.data().transactions) ? ownerSnap.data().transactions : updatedOwnerTxs;
+            const mergedTxs = cloudTxs.map((t) =>
+              t.id === txId
+                ? { ...t, status: 'verified' as const, note: approvedNote, utrNumber: data?.data?.utr || t.utrNumber, gatewayPayoutId: data?.data?.payoutId || payoutId }
+                : t
+            );
+            await setDoc(ownerRef, { transactions: cleanFirestoreData(mergedTxs) }, { merge: true });
+          } catch (e) {
+            console.warn('Failed to persist DramPay payout to target user Firestore:', e);
+          }
+        }
         showToast(`✓ Payout of ₹${amount} initiated via DramPay!`);
         return { success: true, message: 'Payout submitted successfully', data: data.data };
       } else {
@@ -7553,28 +7713,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (data.success) {
         const utr = data.utr || data.data?.utr || `QO_PO_${Date.now()}`;
-        const approvedNote = `Disbursed via QO Pay Payout API (UTR: ${utr}, PayoutID: ${data.payoutId || payoutOrderId})`;
+        const payoutGatewayId = data.payoutId || payoutOrderId;
+        const approvedNote = `Disbursed via QO Pay Payout API (UTR: ${utr}, PayoutID: ${payoutGatewayId})`;
 
         setTransactions((prev) =>
           prev.map((t) =>
             t.id === txId
-              ? { ...t, status: 'verified', note: approvedNote, utrNumber: utr, gatewayPayoutId: data.payoutId || payoutOrderId }
+              ? { ...t, status: 'verified', note: approvedNote, utrNumber: utr, gatewayPayoutId: payoutGatewayId }
               : t
           )
         );
 
-        const cleanMob = normalizeMobile(user.mobile);
-        if (cleanMob) {
+        const ownerUser = registeredUsers.find((u) => (u.transactions || []).some((t) => t.id === txId));
+        const cleanMob = normalizeMobile(details.mobile || ownerUser?.mobile || user.mobile);
+        if (cleanMob && cleanMob.length >= 10) {
+          const baseTxs = ownerUser?.transactions || [];
+          const updatedOwnerTxs = baseTxs.map((t) =>
+            t.id === txId
+              ? { ...t, status: 'verified' as const, note: approvedNote, utrNumber: utr, gatewayPayoutId: payoutGatewayId }
+              : t
+          );
+          setRegisteredUsers((prev) =>
+            prev.map((usr) =>
+              normalizeMobile(usr.mobile) === cleanMob ? { ...usr, transactions: updatedOwnerTxs } : usr
+            )
+          );
           try {
+            const ownerRef = doc(db, 'users', cleanMob);
+            const ownerSnap = await getDocFromServer(ownerRef).catch(() => getDoc(ownerRef));
+            const cloudTxs: TransactionItem[] =
+              ownerSnap.exists() && Array.isArray(ownerSnap.data().transactions) ? ownerSnap.data().transactions : updatedOwnerTxs;
+            const mergedTxs = cloudTxs.map((t) =>
+              t.id === txId
+                ? { ...t, status: 'verified' as const, note: approvedNote, utrNumber: utr, gatewayPayoutId: payoutGatewayId }
+                : t
+            );
             await setDoc(
-              doc(db, 'users', cleanMob),
-              {
-                withdrawn: (user.withdrawn || 0) + amount,
-              },
+              ownerRef,
+              { transactions: cleanFirestoreData(mergedTxs) },
               { merge: true }
             );
           } catch (e) {
-            console.warn(e);
+            console.warn('Failed to persist QO Pay payout status in Firestore:', e);
           }
         }
 

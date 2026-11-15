@@ -8,6 +8,8 @@ import {
   getDoc,
   getDocFromServer,
   getDocs,
+  getDocsFromServer,
+  limit,
   setDoc,
   collection,
   query,
@@ -220,18 +222,87 @@ export async function markQoPayDepositFailed(orderId: string, depositId?: string
 }
 
 async function findUserByReferralCodeServer(code: string): Promise<{ docId: string; user: any } | null> {
-  const cleanCode = String(code || '').trim().toUpperCase();
-  if (!cleanCode) return null;
+  let rawClean = String(code || '').trim();
+  const linkMatch = rawClean.match(/[?&](?:invite|ref)=([^&#\s]+)/i);
+  if (linkMatch && linkMatch[1]) {
+    rawClean = decodeURIComponent(linkMatch[1]);
+  }
+  rawClean = rawClean.replace(/\s/g, '').toUpperCase();
+  if (!rawClean) return null;
+
+  const clean =
+    rawClean === 'ZOROTASK123' || rawClean === 'TV982143' || rawClean === 'TASKVIBE123'
+      ? 'ZT982143'
+      : rawClean;
+  const digits = clean.replace(/\D/g, '');
+  const candidateCodes = Array.from(
+    new Set<string>([
+      clean,
+      rawClean,
+      ...(digits.length === 6 ? [`ZT${digits}`, `TV${digits}`, digits] : []),
+      ...(clean.startsWith('ZT') || clean.startsWith('TV')
+        ? [clean.slice(2), `ZT${clean.slice(2)}`, `TV${clean.slice(2)}`]
+        : []),
+    ])
+  )
+    .filter(Boolean)
+    .slice(0, 10);
+
+  // 1. Direct lookup if referrer was stored as 10-digit mobile number
+  if (digits.length >= 10) {
+    try {
+      const mob10 = digits.slice(-10);
+      const directSnap = await getDocFromServer(doc(db, 'users', mob10)).catch(() =>
+        getDoc(doc(db, 'users', mob10))
+      );
+      if (directSnap.exists()) {
+        return { docId: mob10, user: directSnap.data() };
+      }
+    } catch (err) {
+      console.warn('[QO-Pay-Firestore] Direct mobile referral lookup warning:', err);
+    }
+  }
+
+  // 2. Indexed Firestore 'in' query across ZT/TV/6-digit candidates
   try {
-    const q = query(collection(db, 'users'), where('referralCode', '==', cleanCode));
-    const snap = await getDocs(q);
+    const q = query(collection(db, 'users'), where('referralCode', 'in', candidateCodes), limit(1));
+    const snap = await getDocsFromServer(q).catch(() => getDocs(q));
     if (!snap.empty) {
       const d = snap.docs[0];
-      return { docId: d.id, user: d.data() };
+      const data = d.data();
+      const docId = normalizeMobile(data?.mobile) || d.id;
+      return { docId, user: data };
     }
   } catch (err) {
-    console.warn('[QO-Pay-Firestore] findUserByReferralCodeServer error:', err);
+    console.warn('[QO-Pay-Firestore] findUserByReferralCodeServer indexed query error:', err);
   }
+
+  // 3. Fallback collection scan (handles whitespace/lowercase or missing referralCode backfill)
+  try {
+    const allSnap = await getDocsFromServer(collection(db, 'users')).catch(() =>
+      getDocs(collection(db, 'users'))
+    );
+    for (const d of allSnap.docs) {
+      const data = d.data();
+      const cleanMob = normalizeMobile(data?.mobile || d.id);
+      const storedCode = String(data?.referralCode || '').trim().toUpperCase();
+      const fallbackCode = cleanMob ? `ZT${cleanMob.slice(-6)}` : '';
+      if (
+        (storedCode && candidateCodes.includes(storedCode)) ||
+        (!storedCode && fallbackCode && candidateCodes.includes(fallbackCode)) ||
+        (digits.length >= 10 && cleanMob === digits.slice(-10))
+      ) {
+        if (!storedCode && cleanMob && fallbackCode) {
+          data.referralCode = fallbackCode;
+          setDoc(doc(db, 'users', cleanMob), { referralCode: fallbackCode }, { merge: true }).catch(() => {});
+        }
+        return { docId: cleanMob || d.id, user: data };
+      }
+    }
+  } catch (err) {
+    console.warn('[QO-Pay-Firestore] findUserByReferralCodeServer fallback scan error:', err);
+  }
+
   return null;
 }
 

@@ -612,7 +612,7 @@ export const RegisterScreen: React.FC = () => {
             })()}
           </div>
           <p className="text-[10px] text-slate-500 font-medium">
-            Entering an invite code awards ₹100 referral bonus &amp; VIP commissions to your inviter when you buy a VIP plan.
+            Entering an invite code awards ₹{Number(adminSettings.referralBonus) || 100} referral bonus &amp; VIP commissions to your inviter when you buy a VIP plan.
           </p>
         </div>
 

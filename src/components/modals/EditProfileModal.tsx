@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, User, Mail, Smartphone, ShieldCheck, Lock } from 'lucide-react';
 
@@ -11,14 +11,23 @@ const formatDisplayMobile = (mobile?: string) => {
 
 export const EditProfileModal: React.FC = () => {
   const { isEditProfileOpen, setIsEditProfileOpen, user, updateUserProfile } = useApp();
-  const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email);
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [upiId, setUpiId] = useState(user.upiId || '');
+
+  useEffect(() => {
+    if (isEditProfileOpen) {
+      setName(user.name || '');
+      setEmail(user.email || '');
+      setUpiId(user.upiId || '');
+    }
+  }, [isEditProfileOpen, user.name, user.email, user.upiId]);
 
   if (!isEditProfileOpen) return null;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateUserProfile(name, email, user.upiId);
+    updateUserProfile(name.trim(), email.trim(), upiId.trim() || user.upiId || '');
   };
 
   const displayMobile = formatDisplayMobile(user.mobile);
@@ -90,6 +99,20 @@ export const EditProfileModal: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 focus:outline-blue-600"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Default UPI ID (for Payouts)</span>
+            </label>
+            <input
+              type="text"
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+              placeholder="e.g. name@upi"
+              className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-mono font-semibold text-slate-800 focus:outline-blue-600"
             />
           </div>
 

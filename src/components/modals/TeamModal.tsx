@@ -1,26 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Users, Award, TrendingUp, Gift, Percent, CheckCircle2 } from 'lucide-react';
+import { buildTeamHierarchy } from '../../utils/referralUtils';
 
 export const TeamModal: React.FC = () => {
   const { isTeamModalOpen, setIsTeamModalOpen, user, registeredUsers } = useApp();
 
+  const { directTeam, tier2Team, tier3PlusTeam: tier3Team, totalMembers } = useMemo(
+    () => buildTeamHierarchy(user, registeredUsers),
+    [user.referralCode, user.mobile, registeredUsers]
+  );
+
   if (!isTeamModalOpen) return null;
 
-  const myCode = user.referralCode ? user.referralCode.trim().toUpperCase() : '';
-  const directTeam = registeredUsers.filter(
-    (u) => u.referredBy && u.referredBy.trim().toUpperCase() === myCode
-  );
-  const directCodes = directTeam.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
-  const tier2Team = registeredUsers.filter(
-    (u) => u.referredBy && directCodes.includes(u.referredBy.trim().toUpperCase())
-  );
-  const tier2Codes = tier2Team.map((u) => u.referralCode?.trim().toUpperCase()).filter(Boolean);
-  const tier3Team = registeredUsers.filter(
-    (u) => u.referredBy && tier2Codes.includes(u.referredBy.trim().toUpperCase())
-  );
-
-  const totalMembers = directTeam.length + tier2Team.length + tier3Team.length;
   const totalCommission = (user.referralEarnings || 0) + (user.teamTaskEarnings || 0);
 
   return (

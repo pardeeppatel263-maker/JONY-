@@ -93,7 +93,7 @@ export const PlanDetailScreen: React.FC = () => {
       return;
     }
 
-    // Start QO Pay cashier checkout or open UPI modal smoothly
+    // Direct QO Pay cashier checkout (no intermediate popup or cashier message)
     setIsRedirectingToUPI(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirectingToUPI(false);
@@ -101,7 +101,7 @@ export const PlanDetailScreen: React.FC = () => {
 
     try {
       const res = await startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);
-      if (!res.success || res.openedModal) {
+      if (!res.success) {
         clearTimeout(safetyTimer);
         setIsRedirectingToUPI(false);
       }

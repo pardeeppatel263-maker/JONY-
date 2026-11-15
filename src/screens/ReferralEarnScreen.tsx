@@ -205,7 +205,7 @@ export const ReferralEarnScreen: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-blue-800 leading-snug">
-                  • <b>4.5% Commission:</b> Earn 4.5% whenever your direct referral purchases any VIP plan. <br />
+                  • <b>₹100 Referral Bonus + 4.5% Commission:</b> Earn ₹100 bonus + 4.5% commission when your direct referral purchases a VIP plan. <br />
                   • <b>1.6% Daily Task Royalty:</b> Whenever your direct referral completes daily video tasks, you receive a daily 1.6% task royalty!
                 </p>
               </div>

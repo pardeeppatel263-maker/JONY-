@@ -64,28 +64,9 @@ export const RegisterScreen: React.FC = () => {
   const [asyncRefStatus, setAsyncRefStatus] = useState<{ isValid: boolean; referrerName?: string } | null>(null);
   const [isValidatingRef, setIsValidatingRef] = useState(false);
 
-  const normalizeReferralInput = (val: string): string => {
-    const trimmed = (val || '').trim();
-    if (!trimmed) return '';
-    if (trimmed.includes('invite=') || trimmed.includes('ref=')) {
-      const match = trimmed.match(/[?&](?:invite|ref)=([a-zA-Z0-9_-]+)/i);
-      if (match && match[1]) {
-        return match[1].trim().toUpperCase().replace(/\s+/g, '');
-      }
-    }
-    return trimmed.toUpperCase().replace(/\s+/g, '');
-  };
-
-  useEffect(() => {
-    if (pendingInviteCode && !referralCode) {
-      setReferralCode(normalizeReferralInput(pendingInviteCode));
-    }
-  }, [pendingInviteCode]);
-
   // Live real-time referral verification with fallback to cloud database
   useEffect(() => {
-    let cancelled = false;
-    const code = normalizeReferralInput(referralCode);
+    const code = referralCode.trim();
     if (!code) {
       setAsyncRefStatus(null);
       setIsValidatingRef(false);
@@ -97,28 +78,15 @@ export const RegisterScreen: React.FC = () => {
       setIsValidatingRef(false);
       return;
     }
-    // Clear stale async status before verifying so "Invalid Code" doesn't flash prematurely
     setAsyncRefStatus(null);
     setIsValidatingRef(true);
     const timer = setTimeout(async () => {
-      try {
-        const asyncVal = await validateReferralCodeAsync(code);
-        if (!cancelled) {
-          setAsyncRefStatus(asyncVal);
-          setIsValidatingRef(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setAsyncRefStatus({ isValid: false });
-          setIsValidatingRef(false);
-        }
-      }
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [referralCode]);
+      const asyncVal = await validateReferralCodeAsync(code);
+      setAsyncRefStatus(asyncVal);
+      setIsValidatingRef(false);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [referralCode, registeredUsers]);
 
   const cleanMobileDigits = (mobile || '').replace(/\D/g, '').slice(-10);
   const isNumberAlreadyRegistered = cleanMobileDigits.length === 10 && isPhoneAlreadyRegistered(cleanMobileDigits);
@@ -169,15 +137,8 @@ export const RegisterScreen: React.FC = () => {
       if (res?.fallbackLink) {
         setWhatsappFallbackUrl(res?.fallbackLink);
       }
-      if (res?.success || res?.deliveredByGateway) {
-        showToast(`✓ WhatsApp OTP sent to +91 ${cleanMobile}`);
-      } else if (res?.gatewayMessage || res?.message) {
-        setGatewayError(res.gatewayMessage || res.message);
-        showToast(`⚠️ ${res.gatewayMessage || res.message}`);
-      }
     } catch (err: any) {
       console.warn('WhatsApp dispatch error:', err);
-      setGatewayError('WhatsApp OTP gateway unreachable. Please check your internet and retry.');
     } finally {
       setIsSendingOtp(false);
     }
@@ -253,14 +214,13 @@ export const RegisterScreen: React.FC = () => {
         return;
       }
 
-      const cleanRef = normalizeReferralInput(referralCode);
-      if (cleanRef) {
-        let check = validateReferralCode(cleanRef);
+      if (referralCode.trim()) {
+        let check = validateReferralCode(referralCode.trim());
         if (!check.isValid) {
-          check = await validateReferralCodeAsync(cleanRef);
+          check = await validateReferralCodeAsync(referralCode.trim());
         }
         if (!check.isValid) {
-          showToast(`❌ Invalid invite code "${cleanRef}"! Please enter a valid candidate invite code or leave it blank.`);
+          showToast(`❌ Invalid invite code "${referralCode.trim()}"! Please check the code, enter your inviter's mobile number, or leave it blank.`);
           return;
         }
       }
@@ -271,7 +231,7 @@ export const RegisterScreen: React.FC = () => {
         console.warn(e);
       }
 
-      await register(fullName, mobile, email, password, cleanRef);
+      await register(fullName, mobile, email, password, referralCode.trim());
     } finally {
       setIsRegistering(false);
     }
@@ -521,11 +481,6 @@ export const RegisterScreen: React.FC = () => {
                   {otpError}
                 </p>
               )}
-              {gatewayError && !otpError && (
-                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl py-1.5 px-3 text-center font-semibold animate-in fade-in">
-                  {gatewayError}
-                </p>
-              )}
             </div>
           )}
 
@@ -628,20 +583,14 @@ export const RegisterScreen: React.FC = () => {
             <input
               type="text"
               value={referralCode}
-              onChange={(e) => setReferralCode(normalizeReferralInput(e.target.value))}
-              placeholder="Enter unique invite code (e.g. ZT982143)"
+              onChange={(e) => {
+                setAsyncRefStatus(null);
+                setReferralCode(e.target.value.toUpperCase().replace(/\s/g, ''));
+              }}
+              placeholder="Enter unique invite code (e.g. ZT982143 or mobile)"
               className="w-full py-2.5 px-3 text-sm font-bold text-amber-900 outline-none placeholder:text-slate-400 tracking-wider"
             />
             {referralCode.trim().length > 0 && (() => {
-              const syncVal = validateReferralCode(referralCode.trim());
-              if (syncVal.isValid) {
-                return (
-                  <span className="pr-3 text-xs font-bold text-emerald-600 flex items-center gap-1 shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Valid ({syncVal.referrerName})</span>
-                  </span>
-                );
-              }
               if (isValidatingRef || !asyncRefStatus) {
                 return (
                   <span className="pr-3 text-xs font-bold text-amber-600 flex items-center gap-1 shrink-0 animate-pulse">
@@ -652,7 +601,7 @@ export const RegisterScreen: React.FC = () => {
               return asyncRefStatus.isValid ? (
                 <span className="pr-3 text-xs font-bold text-emerald-600 flex items-center gap-1 shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Valid ({asyncRefStatus.referrerName})</span>
+                  <span>Valid ({asyncRefStatus.referrerName || 'Inviter'})</span>
                 </span>
               ) : (
                 <span className="pr-3 text-xs font-bold text-rose-600 flex items-center gap-1 shrink-0">
@@ -663,7 +612,7 @@ export const RegisterScreen: React.FC = () => {
             })()}
           </div>
           <p className="text-[10px] text-slate-500 font-medium">
-            Entering an invite code awards referral rewards to your inviter.
+            Entering an invite code awards ₹100 referral bonus &amp; VIP commissions to your inviter when you buy a VIP plan.
           </p>
         </div>
 

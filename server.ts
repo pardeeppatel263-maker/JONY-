@@ -1159,7 +1159,7 @@ async function startServer() {
     try {
       const { userToken, user_token, baseUrl, base_url } = req.body || {};
       const activeToken = String(userToken || user_token || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBase = String(baseUrl || base_url || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+      const activeBase = String(baseUrl || base_url || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!activeToken) {
         return res.status(400).json({
@@ -1221,7 +1221,7 @@ async function startServer() {
       } = req.body || {};
 
       const activeToken = String(userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!activeToken) {
         return res.status(400).json({
@@ -1243,9 +1243,14 @@ async function startServer() {
           ? `${req.get('x-forwarded-proto') || 'https'}://${req.get('x-forwarded-host')}`
           : `${req.protocol}://${req.get('host')}`);
       // Use path parameter callback so gateways that append ?status=... never corrupt query params
-      const isLocalCallback = typeof redirectUrl === 'string' && redirectUrl.includes('localhost');
+      const isLocalOrStaleCallback =
+        typeof redirectUrl === 'string' &&
+        (redirectUrl.includes('localhost') ||
+          redirectUrl.includes('127.0.0.1') ||
+          redirectUrl.includes('capacitor:') ||
+          redirectUrl.includes('ais-pre-fmi4s2bjfzbh4c7xdqawda'));
       const effectiveRedirectUrl =
-        redirectUrl && !isLocalCallback
+        redirectUrl && !isLocalOrStaleCallback
           ? redirectUrl
           : `${defaultHost.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(activeOrderId)}`;
       const formattedAmount = numAmount % 1 === 0 ? String(Math.round(numAmount)) : numAmount.toFixed(2);
@@ -1269,11 +1274,21 @@ async function startServer() {
       const resultObj = data?.result || data?.data || data || {};
       const paymentUrl =
         data?.payment_url ||
+        data?.paymentUrl ||
         data?.url ||
         data?.pay_url ||
+        data?.checkout_url ||
+        data?.cashier_url ||
+        data?.payment_link ||
+        data?.link ||
         resultObj.payment_url ||
+        resultObj.paymentUrl ||
         resultObj.url ||
         resultObj.pay_url ||
+        resultObj.checkout_url ||
+        resultObj.cashier_url ||
+        resultObj.payment_link ||
+        resultObj.link ||
         null;
       const deeplinks = resultObj.deeplinks || {};
       const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
@@ -1334,7 +1349,7 @@ async function startServer() {
       } = req.body || {};
 
       const activeToken = String(userToken || qopayConfig.userToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!orderId) {
         return res.status(400).json({ success: false, message: 'orderId is required' });
@@ -1556,7 +1571,7 @@ async function startServer() {
       } = req.body || {};
 
       const activeToken = String(userToken || qopayConfig.userToken || '').trim();
-      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!activeToken) {
         return res.status(400).json({
@@ -1615,7 +1630,7 @@ async function startServer() {
       } = req.body || {};
 
       const activeToken = String(userToken || qopayConfig.userToken || '').trim();
-      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim();
+      const activeBase = String(baseUrl || qopayConfig.baseUrl || 'https://qo-pay.com').trim().replace(/\/+$/, '');
 
       if (!orderId) {
         return res.status(400).json({ success: false, message: 'orderId is required' });

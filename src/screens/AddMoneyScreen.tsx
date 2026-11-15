@@ -56,21 +56,20 @@ export const AddMoneyScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout (falls back to UPI QR modal automatically if in iframe or gateway fails)
+    // Direct QO Pay cashier checkout (no intermediate popup or cashier message)
     setIsRedirecting(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirecting(false);
     }, 16500);
     try {
       const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
-      if (!res.success || res.openedModal) {
+      if (!res.success) {
         clearTimeout(safetyTimer);
         setIsRedirecting(false);
       }
     } catch {
       clearTimeout(safetyTimer);
       setIsRedirecting(false);
-      addMoneyInitiate(selectedOption.amount, selectedOption.bonus);
     }
   };
 
@@ -173,7 +172,7 @@ export const AddMoneyScreen: React.FC = () => {
           {isRedirecting ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Proceeding to Pay ₹{selectedOption.amount.toLocaleString('en-IN')}...</span>
+              <span>Proceed to Pay ₹{selectedOption.amount.toLocaleString('en-IN')}</span>
             </>
           ) : (
             <>
@@ -187,7 +186,7 @@ export const AddMoneyScreen: React.FC = () => {
         {adminSettings.manualPaymentEnabled === true && (
           <button
             type="button"
-            onClick={() => addMoneyInitiate(selectedOption.amount, selectedOption.bonus)}
+            onClick={() => addMoneyInitiate(selectedOption.amount, selectedOption.bonus, true)}
             className="w-full py-1 text-center text-[11px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
           >
             Or Pay with Manual QR & UTR

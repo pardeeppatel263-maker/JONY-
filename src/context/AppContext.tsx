@@ -122,7 +122,7 @@ interface AppContextType {
   resetUserPassword: (mobile: string, newPass: string) => Promise<boolean>;
   checkPhoneExistsInFirestore: (mobile: string) => Promise<boolean>;
   logout: () => void;
-  addMoneyInitiate: (amount: number, bonus: number) => void;
+  addMoneyInitiate: (amount: number, bonus: number, forceManualModal?: boolean) => void;
   submitUPIPaymentProof: (utrNumber: string, screenshotUrl?: string) => void;
   submitUserUtrForDeposit: (orderIdOrDepositId: string, utrNumber: string) => Promise<boolean>;
   completeUPIPayment: () => void;
@@ -2745,7 +2745,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           {
             id: `notif_${Date.now()}`,
             title: `👥 New Team Member Registered!`,
-            message: `${name.trim()} (+91 ${cleanMobile}) ne aapke invite link se register kiya. Jab ye koi VIP Plan khareedenge, tab aapko direct 4.5% commission milega!`,
+            message: `${name.trim()} (+91 ${cleanMobile}) ne aapke invite link se register kiya. Jab ye koi VIP Plan khareedenge, tab aapko ₹${Number(adminSettings.referralBonus) || 100} Referral Bonus aur 4.5% commission milega!`,
             time: 'Just now',
             read: false,
             type: 'system',
@@ -2810,7 +2810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Logout successful. Enter your phone and password to login again.');
   };
 
-  const addMoneyInitiate = (amount: number, bonus: number) => {
+  const addMoneyInitiate = (amount: number, bonus: number, forceManualModal = false) => {
     setPrefetchedQoPaySession(null);
     setPendingUPIAmount(amount);
     setPendingUPIBonus(bonus);
@@ -2822,8 +2822,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (adminSettings.qopayEnabled === true || adminSettings.paymentGatewayProvider === 'qopay') &&
       Boolean(adminSettings.qopayUserToken?.trim() || '1ff0e5b2dd0096245789f08a9df5cc1c');
 
-    // Only start direct QO Pay checkout when QO Pay is the active provider
-    if (isQoPayActiveNow && adminSettings.manualPaymentEnabled !== true) {
+    // Redirect directly to QO Pay cashier when QO Pay is active (unless explicit manual QR button clicked)
+    if (!forceManualModal && isQoPayActiveNow) {
       startDirectQoPayPayment(amount, bonus, 'add_money');
       return;
     }
@@ -2835,9 +2835,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const validateReferralCode = (code: string): { isValid: boolean; referrerName?: string } => {
     const clean = extractReferralCode(code);
     if (!clean) return { isValid: false };
-    const match = registeredUsers.find(
-      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
-    );
+    const digits = clean.replace(/\D/g, '');
+    const candidates = new Set<string>([clean]);
+    if (digits.length === 6) {
+      candidates.add(`ZT${digits}`);
+      candidates.add(`TV${digits}`);
+    } else if (digits.length >= 10) {
+      candidates.add(digits.slice(-10));
+    }
+    if (clean.startsWith('ZT') || clean.startsWith('TV')) {
+      candidates.add(clean.slice(2));
+    }
+    const match = registeredUsers.find((u) => {
+      const uCode = (u.referralCode || '').trim().toUpperCase();
+      const uMob = normalizeMobile(u.mobile);
+      return (uCode && candidates.has(uCode)) || (uMob && candidates.has(uMob));
+    });
     if (match) {
       return { isValid: true, referrerName: match.name || 'Member' };
     }
@@ -2863,12 +2876,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? 'ZT982143'
         : rawClean;
 
-    // 1. Indexed Firestore query (fastest server-backed lookup)
+    const digits = clean.replace(/\D/g, '');
+    const candidateCodes = Array.from(
+      new Set<string>([
+        clean,
+        ...(digits.length === 6 ? [`ZT${digits}`, `TV${digits}`, digits] : []),
+        ...(clean.startsWith('ZT') || clean.startsWith('TV') ? [clean.slice(2), `ZT${clean.slice(2)}`] : []),
+      ])
+    ).filter(Boolean).slice(0, 10);
+
+    // 1. Direct lookup if user entered inviter's 10-digit mobile number
+    if (digits.length >= 10) {
+      try {
+        const mob10 = digits.slice(-10);
+        const directSnap = await getDocFromServer(doc(db, 'users', mob10)).catch(() =>
+          getDoc(doc(db, 'users', mob10))
+        );
+        if (directSnap.exists()) {
+          const cloudData = directSnap.data() as RegisteredUserAccount;
+          return { user: cloudData, docId: mob10 };
+        }
+      } catch (e) {
+        console.warn('Direct mobile referral lookup warning:', e);
+      }
+    }
+
+    // 2. Indexed Firestore query (fastest server-backed lookup)
     try {
       let qSnap = await getDocsFromServer(
-        query(collection(db, 'users'), where('referralCode', '==', clean), limit(1))
+        query(collection(db, 'users'), where('referralCode', 'in', candidateCodes), limit(1))
       ).catch(() =>
-        getDocs(query(collection(db, 'users'), where('referralCode', '==', clean), limit(1)))
+        getDocs(query(collection(db, 'users'), where('referralCode', 'in', candidateCodes), limit(1)))
       );
 
       if (!qSnap.empty) {
@@ -2881,7 +2919,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Indexed referralCode query warning:', e);
     }
 
-    // 2. Fallback scan against Firestore users collection (handles lowercase/whitespace or missing referralCode backfill)
+    // 3. Fallback scan against Firestore users collection (handles lowercase/whitespace or missing referralCode backfill)
     try {
       const allSnap = await getDocsFromServer(collection(db, 'users')).catch(() =>
         getDocs(collection(db, 'users'))
@@ -2891,10 +2929,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const cleanMob = normalizeMobile(data.mobile || docSnap.id);
         const storedCode = (data.referralCode || '').trim().toUpperCase();
         const fallbackCode = cleanMob ? `ZT${cleanMob.slice(-6)}` : '';
-        if (storedCode === clean || (!storedCode && fallbackCode === clean)) {
+        if (
+          candidateCodes.includes(storedCode) ||
+          (!storedCode && candidateCodes.includes(fallbackCode)) ||
+          (digits.length >= 10 && cleanMob === digits.slice(-10))
+        ) {
           if (!storedCode && cleanMob) {
-            data.referralCode = clean;
-            setDoc(doc(db, 'users', cleanMob), { referralCode: clean }, { merge: true }).catch(() => {});
+            data.referralCode = fallbackCode || clean;
+            setDoc(doc(db, 'users', cleanMob), { referralCode: data.referralCode }, { merge: true }).catch(() => {});
           }
           return { user: data, docId: cleanMob || docSnap.id };
         }
@@ -2903,10 +2945,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Fallback users scan warning:', e);
     }
 
-    // 3. Last-resort check local memory (e.g., offline)
-    const inMem = registeredUsers.find(
-      (u) => u.referralCode && u.referralCode.trim().toUpperCase() === clean
-    );
+    // 4. Last-resort check local memory (e.g., offline)
+    const inMem = registeredUsers.find((u) => {
+      const uCode = (u.referralCode || '').trim().toUpperCase();
+      const uMob = normalizeMobile(u.mobile);
+      return (uCode && candidateCodes.includes(uCode)) || (digits.length >= 10 && uMob === digits.slice(-10));
+    });
     if (inMem) {
       return { user: inMem, docId: normalizeMobile(inMem.mobile) };
     }
@@ -4152,9 +4196,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Account is blocked by admin' };
     }
     const minWithdrawalLimit = Math.max(100, Number(adminSettingsRef.current?.minWithdrawal || 1000));
-    if (amount < minWithdrawalLimit) {
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < minWithdrawalLimit) {
       showToast(`Minimum withdrawal amount is ₹${minWithdrawalLimit.toLocaleString('en-IN')}`);
       return { success: false, message: `Minimum withdrawal amount is ₹${minWithdrawalLimit.toLocaleString('en-IN')}` };
+    }
+    if (amount % 100 !== 0) {
+      showToast('❌ Only round-figure multiples of ₹100 (e.g. ₹1,100, ₹1,200, ₹1,300) are allowed');
+      return { success: false, message: 'Only round-figure multiples of ₹100 are allowed' };
     }
     if (amount > user.balance) {
       showToast('Insufficient balance for withdrawal');
@@ -6903,60 +6951,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
     try {
-      const activeUserToken = (adminSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
-      const activeBaseUrl = (adminSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
+      const latestSettings = adminSettingsRef.current || adminSettings;
+      const activeUserToken = (latestSettings.qopayUserToken || '1ff0e5b2dd0096245789f08a9df5cc1c').trim();
+      const activeBaseUrl = (latestSettings.qopayBaseUrl || 'https://qo-pay.com').trim();
 
       const directUtr = generateDirectUtr();
       const orderId = `ORD_${directUtr}`;
       const depositId = `DEP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-
-      // Save BOTH add_money and plan_purchase QO Pay checkouts to Firestore with status 'gateway_pending'
-      // so background auto-detection can activate VIP plans or credit wallet balance the moment QO Pay
-      // marks the order SUCCESS — without cluttering Admin "Pending Review" (which shows 'in_process').
       const activeUser = userRef.current?.mobile ? userRef.current : user;
-      const draftDeposit: PaymentDeposit = {
-        id: depositId,
-        userId: activeUser.referralCode || activeUser.mobile || 'Member',
-        userName: (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : '') || 'Member',
-        userMobile: activeUser.mobile || '',
-        amount,
-        bonus,
-        depositType,
-        ...(plan?.id ? { planId: plan.id } : {}),
-        ...(plan?.level !== undefined ? { planLevel: plan.level } : {}),
-        ...(plan ? { planTitle: plan.levelTag || `Level ${plan.level}` } : {}),
-        adminUpiId: adminSettings.adminUpiId || 'qopay@upi',
-        utrNumber: directUtr,
-        submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: Date.now(),
-        status: 'gateway_pending',
-        gateway: 'qopay',
-        gatewayOrderId: orderId,
-        qopayOrderId: orderId,
-      };
-      const newDeposit: PaymentDeposit = draftDeposit;
-      pendingQoPayDepositsRef.current[depositId] = draftDeposit;
-      setPaymentDeposits((prev) => [draftDeposit, ...prev.filter((d) => d.id !== depositId)]);
-      try {
-        setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(draftDeposit)).catch((e) => {
-          console.warn('Background saving QO Pay deposit to Firestore:', e);
-        });
-      } catch (e) {
-        console.warn('Background setDoc initiation error:', e);
-      }
 
       // Construct the absolute public return callback URL for QO Pay cashier
-      // When the user inputs their UTR on QO Pay and clicks 'Submit UTR', the cashier immediately
-      // redirects the browser to this callback URL, which redirects back to ZoroTask with the order ID.
-      const publicBaseUrl =
-        (typeof window !== 'undefined' &&
-          window.location.origin &&
-          !window.location.origin.includes('localhost') &&
-          !window.location.origin.includes('capacitor:')
-          ? window.location.origin
-          : (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL)) ||
-            'https://ais-pre-fmi4s2bjfzbh4c7xdqawda-555131316104.asia-southeast1.run.app');
-      const returnCallbackUrl = `${publicBaseUrl.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(orderId)}`;
+      // When the user completes payment on QO Pay, the cashier redirects back to this callback URL.
+      const winOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      const isValidPublicOrigin =
+        Boolean(winOrigin) &&
+        /^https?:\/\//i.test(winOrigin) &&
+        !winOrigin.includes('localhost') &&
+        !winOrigin.includes('127.0.0.1') &&
+        !winOrigin.includes('capacitor:');
+      const envBaseUrl =
+        typeof import.meta !== 'undefined'
+          ? (import.meta.env?.VITE_APP_URL || import.meta.env?.APP_URL || '')
+          : '';
+      const publicBaseUrl = isValidPublicOrigin ? winOrigin : envBaseUrl;
+      const returnCallbackUrl = publicBaseUrl
+        ? `${publicBaseUrl.replace(/\/+$/, '')}/api/qopay/callback/${encodeURIComponent(orderId)}`
+        : undefined;
 
       // Single authoritative create-order call via backend proxy first (avoids duplicate order spam that drops success rate).
       // Only fall back to direct client call if backend proxy is unreachable or returns non-JSON HTML (e.g. Capacitor APK).
@@ -6979,7 +6999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               customerMobile: cleanMob,
               customerName: cleanName,
               customerEmail: cleanEmail,
-              redirectUrl: returnCallbackUrl,
+              ...(returnCallbackUrl ? { redirectUrl: returnCallbackUrl } : {}),
               remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
               remark2: depositId,
             }),
@@ -7007,7 +7027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               customerMobile: cleanMob,
               customerName: cleanName,
               customerEmail: cleanEmail,
-              redirectUrl: returnCallbackUrl,
+              redirectUrl: returnCallbackUrl || (winOrigin ? `${winOrigin}/api/qopay/callback/${encodeURIComponent(orderId)}` : undefined),
               remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
               remark2: depositId,
               baseUrl: activeBaseUrl,
@@ -7025,7 +7045,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const resolvedQr = data.qrCode || data.upiIntent || data.paymentUrl;
         const resolvedOrderId = String(data.orderId || orderId);
         const updatedDeposit: PaymentDeposit = {
-          ...newDeposit,
+          id: depositId,
+          userId: activeUser.referralCode || activeUser.mobile || 'Member',
+          userName: (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : '') || 'Member',
+          userMobile: activeUser.mobile || '',
+          amount,
+          bonus,
+          depositType,
+          ...(plan?.id ? { planId: plan.id } : {}),
+          ...(plan?.level !== undefined ? { planLevel: plan.level } : {}),
+          ...(plan ? { planTitle: plan.levelTag || `Level ${plan.level}` } : {}),
+          adminUpiId: latestSettings.adminUpiId || 'qopay@upi',
+          utrNumber: directUtr,
+          submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: Date.now(),
+          status: 'gateway_pending',
+          gateway: 'qopay',
           gatewayOrderId: resolvedOrderId,
           qopayOrderId: resolvedOrderId,
           gatewayPayUrl: data.paymentUrl,
@@ -7033,9 +7068,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           qopayPaymentUrl: data.paymentUrl,
         };
         pendingQoPayDepositsRef.current[depositId] = updatedDeposit;
-        setPaymentDeposits((prev) => prev.map((d) => (d.id === depositId ? updatedDeposit : d)));
+        setPaymentDeposits((prev) => [updatedDeposit, ...prev.filter((d) => d.id !== depositId)]);
         try {
-          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch(() => {});
+          setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch((e) => {
+            console.warn('Background saving QO Pay deposit to Firestore:', e);
+          });
         } catch {}
 
         return {
@@ -7309,6 +7346,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     depositType: 'add_money' | 'plan_purchase',
     plan?: PlanItem
   ): Promise<{ success: boolean; paymentUrl?: string; openedModal?: boolean; message?: string }> => {
+    setIsUPIModalOpen(false);
     try {
       const res = await initiateQoPayment(amount, bonus, depositType, plan);
       if (res.success && (res.paymentUrl || res.upiIntent || res.qrCode)) {
@@ -7342,7 +7380,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const directCashierUrl =
           res.paymentUrl ||
-          (typeof res.upiIntent === 'string' && /^https?:\/\//i.test(res.upiIntent) ? res.upiIntent : null) ||
+          (typeof res.upiIntent === 'string' && /^(https?:\/\/|upi:\/\/|phonepe:\/\/|paytmmp:\/\/|tez:\/\/)/i.test(res.upiIntent)
+            ? res.upiIntent
+            : null) ||
           (typeof res.qrCode === 'string' && /^https?:\/\//i.test(res.qrCode) ? res.qrCode : null);
 
         if (typeof window !== 'undefined' && directCashierUrl) {
@@ -7351,52 +7391,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return { success: true, paymentUrl: directCashierUrl };
         }
 
-        // Only if QO Pay responded without any hosted cashier URL (UPI intent/QR only), open UPIPaymentModal
-        setPrefetchedQoPaySession({
-          amount,
-          depositType,
-          success: true,
-          order: res,
-          timestamp: Date.now(),
-        });
-        setPendingUPIAmount(amount);
-        setPendingUPIBonus(bonus);
-        setPendingDepositType(depositType);
-        setPendingPlanForUPI(plan || null);
-        setIsUPIModalOpen(true);
-        return { success: true, paymentUrl: res.paymentUrl, openedModal: true };
+        const msg = res.message || 'Cashier link unavailable. Please try again.';
+        showToast(msg);
+        return { success: false, openedModal: false, message: msg };
       } else {
-        // Smooth seamless fallback for BOTH add_money AND plan_purchase:
-        // Open UPIPaymentModal with instant Dynamic QR + UPI App Pay + UTR submission without firing another doomed create-order!
-        const msg = res.message || '';
-        setPrefetchedQoPaySession({
-          amount,
-          depositType,
-          success: false,
-          message: msg,
-          timestamp: Date.now(),
-        });
-        setPendingUPIAmount(amount);
-        setPendingUPIBonus(bonus);
-        setPendingDepositType(depositType);
-        setPendingPlanForUPI(plan || null);
-        setIsUPIModalOpen(true);
-        return { success: false, openedModal: true, message: msg };
+        const msg = res.message || 'Unable to connect to payment gateway. Please try again.';
+        showToast(msg);
+        return { success: false, openedModal: false, message: msg };
       }
     } catch {
-      setPrefetchedQoPaySession({
-        amount,
-        depositType,
-        success: false,
-        message: '',
-        timestamp: Date.now(),
-      });
-      setPendingUPIAmount(amount);
-      setPendingUPIBonus(bonus);
-      setPendingDepositType(depositType);
-      setPendingPlanForUPI(plan || null);
-      setIsUPIModalOpen(true);
-      return { success: false, openedModal: true, message: '' };
+      const msg = 'Unable to connect to payment gateway. Please try again.';
+      showToast(msg);
+      return { success: false, openedModal: false, message: msg };
     }
   };
 

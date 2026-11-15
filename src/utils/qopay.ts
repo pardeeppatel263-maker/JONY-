@@ -134,11 +134,21 @@ export async function callDirectQoPayCreateOrder(
     const resultObj = data?.result || data?.data || data || {};
     const paymentUrl =
       data?.payment_url ||
+      data?.paymentUrl ||
       data?.url ||
       data?.pay_url ||
+      data?.checkout_url ||
+      data?.cashier_url ||
+      data?.payment_link ||
+      data?.link ||
       resultObj.payment_url ||
+      resultObj.paymentUrl ||
       resultObj.url ||
       resultObj.pay_url ||
+      resultObj.checkout_url ||
+      resultObj.cashier_url ||
+      resultObj.payment_link ||
+      resultObj.link ||
       null;
 
     const deeplinks = resultObj.deeplinks || {};

@@ -19,6 +19,7 @@ import {
   Loader2,
   MapPin,
   Clock,
+  PencilLine,
 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 
@@ -33,6 +34,8 @@ interface BranchLookupResult {
 export const WithdrawScreen: React.FC = () => {
   const { user, requestWithdrawal, showToast, adminSettings, registerBackHandler } = useApp();
   const [selectedAmount, setSelectedAmount] = useState<number>(1000);
+  const [isCustomAmount, setIsCustomAmount] = useState<boolean>(false);
+  const [customAmountInput, setCustomAmountInput] = useState<string>('');
   const [payoutMethod, setPayoutMethod] = useState<'upi' | 'bank'>('bank');
 
   // UPI State
@@ -76,6 +79,12 @@ export const WithdrawScreen: React.FC = () => {
   const [ifscError, setIfscError] = useState<string | null>(null);
 
   const presetAmounts = [1000, 2000, 5000, 10000, 20000];
+  const minWithdrawalLimit = Math.max(100, Number(adminSettings.minWithdrawal || 1000));
+  const isCustomInvalidNotRound =
+    isCustomAmount && selectedAmount > 0 && selectedAmount % 100 !== 0;
+  const isCustomBelowMin =
+    isCustomAmount && selectedAmount > 0 && selectedAmount < minWithdrawalLimit;
+  const isInsufficientBalance = selectedAmount > 0 && selectedAmount > user.balance;
 
   // Filter banks based on search term
   const filteredBanks = useMemo(() => {
@@ -140,13 +149,23 @@ export const WithdrawScreen: React.FC = () => {
     }
 
     const minW = Math.max(100, Number(adminSettings.minWithdrawal || 1000));
+    if (!selectedAmount || !Number.isInteger(selectedAmount) || selectedAmount <= 0) {
+      showToast('❌ Please enter a valid withdrawal amount');
+      return;
+    }
+
     if (selectedAmount < minW) {
       showToast(`❌ Minimum withdrawal amount is ₹${minW.toLocaleString('en-IN')}`);
       return;
     }
 
+    if (selectedAmount % 100 !== 0) {
+      showToast('❌ Only round-figure multiples of ₹100 (e.g. ₹1,100, ₹1,200, ₹1,300, ₹1,400) are allowed');
+      return;
+    }
+
     if (selectedAmount > user.balance) {
-      showToast('❌ Insufficient balance for this withdrawal');
+      showToast(`❌ Insufficient balance! Available balance: ₹${user.balance.toLocaleString('en-IN')}`);
       return;
     }
 
@@ -269,13 +288,16 @@ export const WithdrawScreen: React.FC = () => {
 
             <div className="grid grid-cols-3 gap-2.5">
               {presetAmounts.map((amt) => {
-                const isSelected = selectedAmount === amt;
+                const isSelected = !isCustomAmount && selectedAmount === amt;
                 return (
                   <button
                     key={amt}
                     type="button"
-                    onClick={() => setSelectedAmount(amt)}
-                    className={`py-2.5 px-3 rounded-xl border text-center transition-all cursor-pointer ${
+                    onClick={() => {
+                      setIsCustomAmount(false);
+                      setSelectedAmount(amt);
+                    }}
+                    className={`min-h-[44px] py-2.5 px-3 rounded-xl border text-center tabular-nums transition-all cursor-pointer whitespace-nowrap ${
                       isSelected
                         ? 'border-blue-600 bg-blue-50/70 text-blue-700 font-black shadow-xs ring-1 ring-blue-600'
                         : 'border-slate-200 bg-white text-slate-700 font-bold hover:border-slate-300'
@@ -285,7 +307,85 @@ export const WithdrawScreen: React.FC = () => {
                   </button>
                 );
               })}
+
+              {/* 6th Grid Slot: Custom Round-Figure Option */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomAmount(true);
+                  const parsed = parseInt(customAmountInput, 10);
+                  setSelectedAmount(Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+                }}
+                className={`min-h-[44px] py-2.5 px-3 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                  isCustomAmount
+                    ? 'border-blue-600 bg-blue-50/70 text-blue-700 font-black shadow-xs ring-1 ring-blue-600'
+                    : 'border-slate-200 bg-white text-slate-700 font-bold hover:border-slate-300'
+                }`}
+              >
+                <PencilLine className="w-3.5 h-3.5 shrink-0" />
+                <span>Custom</span>
+              </button>
             </div>
+
+            {/* Simple Custom Amount Input (No Suggestions) */}
+            {isCustomAmount && (
+              <div className="pt-2 border-t border-slate-100 space-y-2 animate-in fade-in duration-150">
+                <div
+                  className={`flex items-center rounded-xl border px-3.5 min-h-[46px] transition-all ${
+                    isInsufficientBalance || isCustomInvalidNotRound || isCustomBelowMin
+                      ? 'border-rose-400 bg-rose-50/40 focus-within:border-rose-500'
+                      : 'border-slate-200 bg-slate-50 focus-within:border-blue-600 focus-within:bg-white'
+                  }`}
+                >
+                  <span className="text-base font-black text-slate-500 mr-2 select-none">₹</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    value={customAmountInput}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/[^0-9]/g, '').slice(0, 7);
+                      setCustomAmountInput(digitsOnly);
+                      const parsed = parseInt(digitsOnly, 10);
+                      setSelectedAmount(Number.isFinite(parsed) ? parsed : 0);
+                    }}
+                    placeholder="Enter amount (e.g. 1100, 1200)"
+                    className="w-full bg-transparent text-base font-black text-slate-900 tabular-nums outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Live Balance & Round-Figure Verification Status */}
+            {isInsufficientBalance ? (
+              <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1.5 tabular-nums">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Insufficient balance! Your account only has ₹{user.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.
+                </span>
+              </p>
+            ) : isCustomInvalidNotRound ? (
+              <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Only round figure amounts allowed (₹100 multiples like 1100, 1200). 10, 20, 30, 40, 50 are not allowed.
+                </span>
+              </p>
+            ) : isCustomBelowMin ? (
+              <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1.5 tabular-nums">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Minimum withdrawal amount is ₹{minWithdrawalLimit.toLocaleString('en-IN')}.
+                </span>
+              </p>
+            ) : isCustomAmount && selectedAmount >= minWithdrawalLimit ? (
+              <p className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1.5 tabular-nums">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Balance available! Ready to withdraw ₹{selectedAmount.toLocaleString('en-IN')}.
+                </span>
+              </p>
+            ) : null}
           </div>
 
           {/* Withdrawal Method Tabs: Bank Account vs UPI */}
@@ -562,9 +662,9 @@ export const WithdrawScreen: React.FC = () => {
           <button
             type="button"
             onClick={handleWithdraw}
-            disabled={user.isBlocked}
-            className={`w-full py-3.5 px-4 font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all ${
-              user.isBlocked
+            disabled={user.isBlocked || isInsufficientBalance || isCustomInvalidNotRound || isCustomBelowMin}
+            className={`w-full py-3.5 px-4 font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all tabular-nums ${
+              user.isBlocked || isInsufficientBalance || isCustomInvalidNotRound || isCustomBelowMin
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                 : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 active:scale-98 cursor-pointer'
             }`}
@@ -572,9 +672,11 @@ export const WithdrawScreen: React.FC = () => {
             <span>
               {user.isBlocked
                 ? 'Account Blocked (Withdrawals Disabled)'
+                : isInsufficientBalance
+                ? 'Insufficient Account Balance'
                 : payoutMethod === 'bank'
-                ? 'Request Bank Withdrawal'
-                : 'Request UPI Withdrawal'}
+                ? `Request Bank Withdrawal${selectedAmount >= minWithdrawalLimit && selectedAmount % 100 === 0 ? ` (₹${selectedAmount.toLocaleString('en-IN')})` : ''}`
+                : `Request UPI Withdrawal${selectedAmount >= minWithdrawalLimit && selectedAmount % 100 === 0 ? ` (₹${selectedAmount.toLocaleString('en-IN')})` : ''}`}
             </span>
             <ArrowRight className="w-4 h-4" />
           </button>

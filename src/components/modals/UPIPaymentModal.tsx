@@ -286,15 +286,7 @@ export const UPIPaymentModal: React.FC = () => {
   const openQoPayCashierUrl = (url?: string) => {
     if (!url || typeof window === 'undefined') return;
     persistPendingQoPayReturnState();
-    let inIframe = false;
-    try {
-      inIframe = window.self !== window.top;
-    } catch {
-      inIframe = true;
-    }
-    if (!inIframe) {
-      window.location.href = url;
-    }
+    window.location.href = url;
   };
 
   // Create QO Pay order on demand

@@ -80,6 +80,7 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
   // QO Pay live diagnostics
   const [qopayTestStatus, setQopayTestStatus] = useState<string | null>(null);
   const [isTestingQopay, setIsTestingQopay] = useState(false);
+  const [isTestingQopayOrder, setIsTestingQopayOrder] = useState(false);
   const [qopayStatusOrderId, setQopayStatusOrderId] = useState('');
   const [qopayStatusResult, setQopayStatusResult] = useState<any>(null);
   const [isCheckingQopayStatus, setIsCheckingQopayStatus] = useState(false);
@@ -387,6 +388,47 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
       showToast(`Error: ${err.message}`);
     } finally {
       setIsTestingQopay(false);
+    }
+  };
+
+  const handleTestQoPayCreateOrder = async () => {
+    const activeToken = qopayUserToken.trim();
+    if (!activeToken) {
+      showToast('❌ Please enter your QO Pay User Token first');
+      return;
+    }
+    setIsTestingQopayOrder(true);
+    setQopayTestStatus('Testing QO Pay Cashier (/api/create-order) with ₹100...');
+    try {
+      const testOrderId = `ORD_ADMINTEST_${Date.now()}`;
+      const res = await fetch('/api/qopay/payin/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userToken: activeToken,
+          baseUrl: qopayBaseUrl.trim() || 'https://qo-pay.com',
+          amount: 100,
+          orderId: testOrderId,
+          customerMobile: '9876543210',
+          customerName: 'Admin Check',
+          customerEmail: 'admin@zorotask.com',
+          remark1: 'Admin Gateway Check',
+          remark2: testOrderId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.paymentUrl) {
+        setQopayTestStatus(`✓ Cashier Ready! paymentUrl: ${data.paymentUrl}`);
+        showToast('✓ QO Pay Cashier link generated successfully!');
+      } else {
+        setQopayTestStatus(`❌ QO Pay Cashier Blocked/Error (HTTP ${res.status}): ${data.message || JSON.stringify(data)}`);
+        showToast(`❌ ${data.message || 'Cashier create-order failed'}`);
+      }
+    } catch (err: any) {
+      setQopayTestStatus(`❌ QO Pay Cashier test failed: ${err.message}`);
+      showToast(`Error: ${err.message}`);
+    } finally {
+      setIsTestingQopayOrder(false);
     }
   };
 
@@ -1128,20 +1170,31 @@ export const PaymentGatewaysManager: React.FC<PaymentGatewaysManagerProps> = ({
 
             {/* QO Pay Live Tools */}
             <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
                   <Server className="w-4 h-4" />
                   <span>QO Pay Live Diagnostics &amp; Status Check</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={handleTestQoPayConnection}
-                  disabled={isTestingQopay}
-                  className="px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isTestingQopay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  <span>Test API Connection</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestQoPayConnection}
+                    disabled={isTestingQopay || isTestingQopayOrder}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isTestingQopay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    <span>Test API Connection</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestQoPayCreateOrder}
+                    disabled={isTestingQopayOrder || isTestingQopay}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isTestingQopayOrder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                    <span>Test Cashier Link</span>
+                  </button>
+                </div>
               </div>
 
               {qopayTestStatus && (

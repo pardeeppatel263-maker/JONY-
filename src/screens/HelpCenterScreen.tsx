@@ -127,7 +127,7 @@ export const HelpCenterScreen: React.FC = () => {
     },
     {
       q: 'How does the Referral program work?',
-      a: 'Share your unique referral code or link. When your friend signs up and completes their first task, you both receive a ₹100 bonus instantly.',
+      a: 'Share your unique referral code or link. When your invited friend buys any VIP plan, you receive a ₹100 referral bonus plus 4.5% plan commission directly in your wallet!',
     },
     {
       q: 'What is the minimum withdrawal limit?',

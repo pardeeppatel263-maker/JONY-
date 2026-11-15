@@ -97,7 +97,7 @@ export const PlanDetailScreen: React.FC = () => {
     setIsRedirectingToUPI(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirectingToUPI(false);
-    }, 16500);
+    }, 26000);
 
     try {
       const res = await startDirectQoPayPayment(plan.price, plan.bonus || 0, 'plan_purchase', plan);

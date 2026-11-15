@@ -7034,18 +7034,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : undefined;
 
       // Single authoritative create-order call via backend proxy first (avoids duplicate order spam that drops success rate).
-      // Only fall back to direct client call if backend proxy is unreachable or returns non-JSON HTML (e.g. Capacitor APK).
+      // Fall back to direct client call whenever backend proxy is unreachable, returns HTML/404, or fails transiently.
       const executeOrderCreation = async (): Promise<any> => {
-        let serverRespondedJson = false;
         let lastResponse: any = null;
+        let isExplicitConfigError = false;
         const cleanMob = String(activeUser.mobile || '9876543210').replace(/\D/g, '').slice(-10) || '9876543210';
-        const cleanName = (activeUser.name && activeUser.name !== 'Member' ? activeUser.name : 'ZoroTask Member').trim();
-        const cleanEmail = (activeUser.email || 'member@zorotask.com').trim();
+        const cleanName = ((activeUser.name && activeUser.name !== 'Member' ? activeUser.name : 'ZoroTask Member') || 'ZoroTask Member').trim();
+        const cleanEmail = (activeUser.email || 'member@zorotask.com').trim() || 'member@zorotask.com';
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
         try {
           const res = await fetch(getApiUrl('/api/qopay/payin/create'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
               userToken: activeUserToken,
               baseUrl: activeBaseUrl,
@@ -7068,23 +7071,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
               remark2: depositId,
             }),
-            signal: AbortSignal.timeout(15500),
           });
           const rawText = await res.text();
           if (rawText && !rawText.trim().startsWith('<')) {
-            const parsed = JSON.parse(rawText);
-            serverRespondedJson = true;
-            lastResponse = parsed;
-            if (parsed.success && (parsed.paymentUrl || parsed.upiIntent || parsed.qrCode)) {
-              return parsed;
-            }
+            try {
+              const parsed = JSON.parse(rawText);
+              lastResponse = parsed;
+              if (parsed.success && (parsed.paymentUrl || parsed.upiIntent || parsed.qrCode)) {
+                return parsed;
+              }
+              const errLower = String(parsed?.message || '').toLowerCase();
+              isExplicitConfigError =
+                errLower.includes('invalid api token') ||
+                errLower.includes('invalid token') ||
+                errLower.includes('minimum');
+            } catch {}
           }
         } catch (err) {
           console.warn('[QO-Pay] Backend create-order unreachable/timed out, trying direct:', err);
+        } finally {
+          clearTimeout(timeoutId);
         }
 
-        if (!serverRespondedJson) {
+        if (!isExplicitConfigError) {
           try {
+            const directRedirectUrl =
+              returnCallbackUrl ||
+              (winOrigin ? `${winOrigin.replace(/\/+$/, '')}/?qopay_order=${encodeURIComponent(orderId)}&returned=true` : undefined);
             const directRes = await callDirectQoPayCreateOrder({
               userToken: activeUserToken,
               amount,
@@ -7092,16 +7105,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               customerMobile: cleanMob,
               customerName: cleanName,
               customerEmail: cleanEmail,
-              redirectUrl: returnCallbackUrl || (winOrigin ? `${winOrigin}/api/qopay/callback/${encodeURIComponent(orderId)}` : undefined),
+              redirectUrl: directRedirectUrl,
               remark1: depositType === 'plan_purchase' ? `VIP Plan ${plan?.level || 1}` : 'Wallet Deposit',
               remark2: depositId,
               baseUrl: activeBaseUrl,
             });
-            return directRes;
-          } catch {}
+            if (directRes?.success && (directRes.paymentUrl || directRes.upiIntent || directRes.qrCode)) {
+              return directRes;
+            }
+            if (directRes?.message) {
+              return directRes;
+            }
+          } catch (directErr: any) {
+            if (!lastResponse?.message && directErr?.message) {
+              lastResponse = { success: false, message: directErr.message };
+            }
+          }
         }
 
-        return lastResponse || { success: false, message: '' };
+        return lastResponse || { success: false, message: 'Unable to connect to payment gateway. Please try again.' };
       };
 
       const data = await executeOrderCreation();
@@ -7160,9 +7182,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const cleanMsg =
           typeof data?.message === 'string' &&
           !data.message.startsWith('<') &&
-          !data.message.includes('<html') &&
-          !data.message.toLowerCase().includes('empty') &&
-          !data.message.toLowerCase().includes('order response')
+          !data.message.includes('<html')
             ? data.message
             : '';
         return {
@@ -7170,8 +7190,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: cleanMsg,
         };
       }
-    } catch {
-      return { success: false, message: '' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || '' };
     }
   };
 

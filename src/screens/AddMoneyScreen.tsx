@@ -60,7 +60,7 @@ export const AddMoneyScreen: React.FC = () => {
     setIsRedirecting(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirecting(false);
-    }, 16500);
+    }, 26000);
     try {
       const res = await startDirectQoPayPayment(selectedOption.amount, selectedOption.bonus, 'add_money');
       if (!res.success) {

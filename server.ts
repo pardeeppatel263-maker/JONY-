@@ -1286,8 +1286,11 @@ async function startServer() {
       };
 
       const endpoint = `${activeBase}/api/create-order`;
-      // Allow up to 14s since qo-pay.com can take >5s to respond
-      const { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 14000);
+      // Allow up to 11s per attempt and retry once if gateway returns transient 5xx/empty/timeout
+      let { status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 11000);
+      if (!data?.status && !(data?.payment_url || data?.paymentUrl || data?.result?.payment_url) && httpStatus >= 500) {
+        ({ status: httpStatus, data } = await callQoPayApi(endpoint, payload, 'POST', 10000));
+      }
 
       const resultObj = data?.result || data?.data || data || {};
       const paymentUrl =
@@ -1345,23 +1348,26 @@ async function startServer() {
       }
 
       if (data?.status === true || Boolean(paymentUrl)) {
-        // Persist pending deposit to Firestore BEFORE responding so navigating away never drops the record
-        await persistPendingQoPayDeposit({
-          depositId: activeDepositId,
-          orderId: resolvedOrderId,
-          userMobile: String(userMobile || customerMobile || ''),
-          userName: String(userName || customerName || 'Member'),
-          userReferralCode: userReferralCode ? String(userReferralCode) : undefined,
-          amount: numAmount,
-          bonus: Number(bonus) || 0,
-          depositType: depositType === 'plan_purchase' ? 'plan_purchase' : 'add_money',
-          planId,
-          planLevel: planLevel !== undefined ? Number(planLevel) : undefined,
-          planTitle,
-          utrNumber,
-          paymentUrl: paymentUrl || undefined,
-          upiIntent: upiIntent || undefined,
-        });
+        // Persist pending deposit to Firestore (race with 1.5s so slow Firestore never delays cashier redirect)
+        await Promise.race([
+          persistPendingQoPayDeposit({
+            depositId: activeDepositId,
+            orderId: resolvedOrderId,
+            userMobile: String(userMobile || customerMobile || ''),
+            userName: String(userName || customerName || 'Member'),
+            userReferralCode: userReferralCode ? String(userReferralCode) : undefined,
+            amount: numAmount,
+            bonus: Number(bonus) || 0,
+            depositType: depositType === 'plan_purchase' ? 'plan_purchase' : 'add_money',
+            planId,
+            planLevel: planLevel !== undefined ? Number(planLevel) : undefined,
+            planTitle,
+            utrNumber,
+            paymentUrl: paymentUrl || undefined,
+            upiIntent: upiIntent || undefined,
+          }),
+          new Promise((r) => setTimeout(r, 1500)),
+        ]);
 
         return res.json({
           success: true,

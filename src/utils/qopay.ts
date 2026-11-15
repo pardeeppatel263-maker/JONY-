@@ -52,10 +52,18 @@ export interface QoPayStatusResult {
   raw?: any;
 }
 
+function createTimeoutFetchSignal(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(id),
+  };
+}
+
 /**
  * Direct Client-Side call to create QO Pay order
- * Bypasses backend server completely to ensure 100% reliable operation
- * inside Android APK WebView and local environments.
+ * Uses CORS-simple form-urlencoded first (zero preflight in WebViews/browsers) with JSON fallback.
  */
 export async function callDirectQoPayCreateOrder(
   params: QoPayCreateOrderParams
@@ -95,95 +103,122 @@ export async function callDirectQoPayCreateOrder(
 
   const endpoint = `${cleanBase}/api/create-order`;
   const formattedAmount = numAmount % 1 === 0 ? String(Math.round(numAmount)) : numAmount.toFixed(2);
-  const payload = {
+  const payload: Record<string, string> = {
     user_token: activeToken,
     amount: formattedAmount,
     order_id: orderId,
     customer_mobile: String(customerMobile).replace(/\D/g, '').slice(-10) || '9876543210',
-    customer_name: String(customerName || 'ZoroTask Member').trim(),
-    customer_email: String(customerEmail || 'member@zorotask.com').trim(),
+    customer_name: String(customerName || 'ZoroTask Member').trim() || 'ZoroTask Member',
+    customer_email: String(customerEmail || 'member@zorotask.com').trim() || 'member@zorotask.com',
     redirect_url: redirectUrl,
-    remark1: String(remark1 || 'ZoroTask Deposit').trim(),
-    remark2: String(remark2 || orderId).trim(),
+    remark1: String(remark1 || 'ZoroTask Deposit').trim() || 'ZoroTask Deposit',
+    remark2: String(remark2 || orderId).trim() || orderId,
   };
 
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(12000),
-    });
-
-    const rawText = await res.text();
-    let data: any = {};
+  const attemptCreate = async (mode: 'form' | 'json'): Promise<{ parsed?: any; errorMsg?: string }> => {
+    const t = createTimeoutFetchSignal(12000);
     try {
-      data = JSON.parse(rawText);
-    } catch {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        ...(mode === 'json'
+          ? {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(payload),
+            }
+          : {
+              // URLSearchParams uses application/x-www-form-urlencoded (CORS-simple request, no preflight)
+              body: new URLSearchParams(payload),
+            }),
+        signal: t.signal,
+      });
+
+      const rawText = await res.text();
+      if (!rawText || !rawText.trim()) {
+        return { errorMsg: `QO Pay returned empty response (HTTP ${res.status})` };
+      }
+      try {
+        const data = JSON.parse(rawText);
+        return { parsed: data };
+      } catch {
+        return { errorMsg: `Invalid gateway response (HTTP ${res.status})` };
+      }
+    } catch (err: any) {
       return {
-        success: false,
-        orderId,
-        message: 'Invalid gateway response received from QO Pay.',
-        raw: rawText,
+        errorMsg:
+          err?.name === 'AbortError'
+            ? 'Direct connection to QO Pay gateway timed out.'
+            : (err?.message || 'Unable to reach QO Pay gateway directly.'),
       };
+    } finally {
+      t.clear();
     }
+  };
 
-    const resultObj = data?.result || data?.data || data || {};
-    const paymentUrl =
-      data?.payment_url ||
-      data?.paymentUrl ||
-      data?.url ||
-      data?.pay_url ||
-      data?.checkout_url ||
-      data?.cashier_url ||
-      data?.payment_link ||
-      data?.link ||
-      resultObj.payment_url ||
-      resultObj.paymentUrl ||
-      resultObj.url ||
-      resultObj.pay_url ||
-      resultObj.checkout_url ||
-      resultObj.cashier_url ||
-      resultObj.payment_link ||
-      resultObj.link ||
-      null;
-
-    const deeplinks = resultObj.deeplinks || {};
-    const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
-    const qrCode = upiIntent;
-
-    if (data?.status === true || Boolean(paymentUrl)) {
-      return {
-        success: true,
-        orderId,
-        paymentUrl,
-        upiIntent,
-        qrCode,
-        collectUpi: resultObj.collect_upi || '',
-        collectName: resultObj.collect_name || 'ZoroTask Member',
-        deeplink: upiIntent,
-        deeplinks,
-        message: data?.message || 'QO Pay order initialized successfully',
-        raw: data,
-      };
+  let attempt = await attemptCreate('form');
+  if (!attempt.parsed) {
+    const jsonAttempt = await attemptCreate('json');
+    if (jsonAttempt.parsed || !attempt.errorMsg) {
+      attempt = jsonAttempt;
     }
+  }
 
+  if (!attempt.parsed) {
     return {
       success: false,
       orderId,
-      message: data?.message || 'QO Pay failed to generate order. Please verify your token.',
-      raw: data,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      orderId,
-      message: err.message || 'Direct connection to QO Pay gateway timed out.',
+      message: attempt.errorMsg || 'Unable to connect to QO Pay gateway.',
     };
   }
+
+  const data = attempt.parsed;
+  const resultObj = data?.result || data?.data || data || {};
+  const paymentUrl =
+    data?.payment_url ||
+    data?.paymentUrl ||
+    data?.url ||
+    data?.pay_url ||
+    data?.checkout_url ||
+    data?.cashier_url ||
+    data?.payment_link ||
+    data?.link ||
+    resultObj.payment_url ||
+    resultObj.paymentUrl ||
+    resultObj.url ||
+    resultObj.pay_url ||
+    resultObj.checkout_url ||
+    resultObj.cashier_url ||
+    resultObj.payment_link ||
+    resultObj.link ||
+    null;
+
+  const deeplinks = resultObj.deeplinks || {};
+  const upiIntent = deeplinks.upi || resultObj.upi_intent || resultObj.upi || paymentUrl;
+  const qrCode = upiIntent;
+
+  if (data?.status === true || Boolean(paymentUrl)) {
+    return {
+      success: true,
+      orderId,
+      paymentUrl,
+      upiIntent,
+      qrCode,
+      collectUpi: resultObj.collect_upi || '',
+      collectName: resultObj.collect_name || 'ZoroTask Member',
+      deeplink: upiIntent,
+      deeplinks,
+      message: data?.message || 'QO Pay order initialized successfully',
+      raw: data,
+    };
+  }
+
+  return {
+    success: false,
+    orderId,
+    message: data?.message || 'QO Pay failed to generate order. Please verify your token.',
+    raw: data,
+  };
 }
 
 /**
@@ -211,13 +246,11 @@ export async function callDirectQoPayStatusCheck(
     activeToken
   )}&order_id=${encodeURIComponent(orderId)}`;
 
+  const t = createTimeoutFetchSignal(12000);
   try {
     const res = await fetch(queryUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-      signal: AbortSignal.timeout(12000),
+      signal: t.signal,
     });
 
     const rawText = await res.text();
@@ -281,6 +314,8 @@ export async function callDirectQoPayStatusCheck(
       status: 'PENDING',
       message: err.message || 'Status check connection error',
     };
+  } finally {
+    t.clear();
   }
 }
 
@@ -300,6 +335,7 @@ export async function callDirectQoPayPayout(
   const cleanBase = (baseUrl || 'https://qo-pay.com').replace(/\/+$/, '');
   const activeToken = String(userToken || '').trim();
 
+  const t = createTimeoutFetchSignal(18000);
   try {
     const res = await fetch(`${cleanBase}/api/create-payout`, {
       method: 'POST',
@@ -316,7 +352,7 @@ export async function callDirectQoPayPayout(
         beneficiary_name: String(beneficiaryName || 'Customer').trim(),
         remark: String(remark || 'Withdrawal Disbursed').trim(),
       }),
-      signal: AbortSignal.timeout(18000),
+      signal: t.signal,
     });
 
     const rawText = await res.text();
@@ -340,5 +376,7 @@ export async function callDirectQoPayPayout(
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Payout connection timed out' };
+  } finally {
+    t.clear();
   }
 }

@@ -15,6 +15,8 @@ import {
   AlertCircle,
   Clock,
   Loader2,
+  RefreshCw,
+  MessageSquare,
 } from 'lucide-react';
 import { PhonePeIcon, GPayIcon, PaytmIcon, BhimIcon, UpiIcon } from '../components/PaymentIcons';
 
@@ -40,6 +42,7 @@ export const PlanDetailScreen: React.FC = () => {
   );
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRedirectingToUPI, setIsRedirectingToUPI] = useState(false);
+  const [cashierUnavailable, setCashierUnavailable] = useState(false);
 
   const isAlreadyPurchased = (user.purchasedPlanIds || []).includes(plan?.id) && (plan?.level ?? 0) > 0;
   const pendingDeposit = paymentDeposits.find(
@@ -93,7 +96,8 @@ export const PlanDetailScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout (no intermediate popup or cashier message)
+    // Direct QO Pay cashier checkout (never fall back to manual payment if cashier fails)
+    setCashierUnavailable(false);
     setIsRedirectingToUPI(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirectingToUPI(false);
@@ -104,10 +108,12 @@ export const PlanDetailScreen: React.FC = () => {
       if (!res.success) {
         clearTimeout(safetyTimer);
         setIsRedirectingToUPI(false);
+        setCashierUnavailable(true);
       }
     } catch {
       clearTimeout(safetyTimer);
       setIsRedirectingToUPI(false);
+      setCashierUnavailable(true);
     }
   };
 
@@ -507,8 +513,43 @@ export const PlanDetailScreen: React.FC = () => {
                 </div>
               )}
 
-              {/* ONLY visible if Admin explicitly enables Manual Payment in Admin Panel */}
-              {adminSettings.manualPaymentEnabled === true && (
+              {cashierUnavailable && isQoPayActive && (
+                <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-black text-amber-950">
+                        QO Pay Cashier Unavailable
+                      </h4>
+                      <p className="text-[11px] font-semibold text-amber-900 leading-snug">
+                        Try again after some time or contact support.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUPIPay}
+                      disabled={isRedirectingToUPI}
+                      className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Try Again</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('help_center')}
+                      className="py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Contact Support</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ONLY visible when QO Pay is OFF and Admin explicitly enables Manual Payment */}
+              {!isQoPayActive && adminSettings.manualPaymentEnabled === true && (
                 <button
                   type="button"
                   onClick={() => buyPlanWithUPI(plan, true)}

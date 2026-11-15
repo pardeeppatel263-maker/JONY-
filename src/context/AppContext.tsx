@@ -7590,16 +7590,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return { success: true, paymentUrl: directCashierUrl };
         }
 
-        const msg = res.message || 'Cashier link unavailable. Please try again.';
+        const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
+        console.warn('[QO-Pay] Cashier URL unavailable:', res.message);
         showToast(msg);
         return { success: false, openedModal: false, message: msg };
       } else {
-        const msg = res.message || 'Unable to connect to payment gateway. Please try again.';
+        const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
+        console.warn('[QO-Pay] Create order failed:', res.message);
         showToast(msg);
         return { success: false, openedModal: false, message: msg };
       }
     } catch (err: any) {
-      const msg = err?.message || 'Unable to connect to payment gateway. Please try again.';
+      const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
+      console.error('[QO-Pay] startDirectQoPayPayment error:', err);
       showToast(msg);
       return { success: false, openedModal: false, message: msg };
     }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AppHeader } from '../components/AppHeader';
-import { ShieldCheck, ArrowRight, Zap, Loader2 } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Zap, Loader2, AlertCircle, RefreshCw, MessageSquare } from 'lucide-react';
 
 interface AmountOption {
   amount: number;
@@ -10,7 +10,7 @@ interface AmountOption {
 }
 
 export const AddMoneyScreen: React.FC = () => {
-  const { addMoneyInitiate, startDirectQoPayPayment, adminSettings } = useApp();
+  const { addMoneyInitiate, startDirectQoPayPayment, adminSettings, navigate } = useApp();
 
   const defaultOptions: AmountOption[] = [
     { amount: 100, bonus: 15 },
@@ -35,6 +35,7 @@ export const AddMoneyScreen: React.FC = () => {
   const defaultSelected = options.find((o) => o.popular) || options[0] || defaultOptions[3];
   const [selectedOption, setSelectedOption] = useState<AmountOption>(defaultSelected);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [cashierUnavailable, setCashierUnavailable] = useState(false);
 
   React.useEffect(() => {
     setSelectedOption((curr) => {
@@ -56,7 +57,8 @@ export const AddMoneyScreen: React.FC = () => {
       return;
     }
 
-    // Direct QO Pay cashier checkout (no intermediate popup or cashier message)
+    // Direct QO Pay cashier checkout (never fall back to manual payment if cashier fails)
+    setCashierUnavailable(false);
     setIsRedirecting(true);
     const safetyTimer = setTimeout(() => {
       setIsRedirecting(false);
@@ -66,10 +68,12 @@ export const AddMoneyScreen: React.FC = () => {
       if (!res.success) {
         clearTimeout(safetyTimer);
         setIsRedirecting(false);
+        setCashierUnavailable(true);
       }
     } catch {
       clearTimeout(safetyTimer);
       setIsRedirecting(false);
+      setCashierUnavailable(true);
     }
   };
 
@@ -120,7 +124,10 @@ export const AddMoneyScreen: React.FC = () => {
                 return (
                   <button
                     key={opt.amount}
-                    onClick={() => setSelectedOption(opt)}
+                    onClick={() => {
+                      setSelectedOption(opt);
+                      setCashierUnavailable(false);
+                    }}
                     className={`relative p-2.5 rounded-xl border text-center transition-all ${
                       isSelected
                         ? 'border-blue-600 bg-blue-50/70 shadow-sm ring-1 ring-blue-600'
@@ -159,6 +166,42 @@ export const AddMoneyScreen: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* QO Pay Cashier Unavailable Notice (No Manual Fallback) */}
+          {cashierUnavailable && isQoPayActive && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-black text-amber-950">
+                    QO Pay Cashier Unavailable
+                  </h4>
+                  <p className="text-[11px] font-semibold text-amber-900 leading-snug">
+                    Try again after some time or contact support.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleProceed}
+                  disabled={isRedirecting}
+                  className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Try Again</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('help_center')}
+                  className="py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Contact Support</span>
+                </button>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
@@ -182,8 +225,8 @@ export const AddMoneyScreen: React.FC = () => {
           )}
         </button>
 
-        {/* ONLY visible if Admin explicitly enables Manual Payment in Admin Panel */}
-        {adminSettings.manualPaymentEnabled === true && (
+        {/* ONLY visible when QO Pay is OFF and Admin explicitly enables Manual Payment */}
+        {!isQoPayActive && adminSettings.manualPaymentEnabled === true && (
           <button
             type="button"
             onClick={() => addMoneyInitiate(selectedOption.amount, selectedOption.bonus, true)}

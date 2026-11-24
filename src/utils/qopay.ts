@@ -109,7 +109,7 @@ export async function callDirectQoPayCreateOrder(
     return {
       success: false,
       orderId,
-      message: 'QO Pay User Token is missing. Please enter your valid token in Admin Panel.',
+      message: 'Payment gateway token is missing. Please configure it in Admin Panel.',
     };
   }
 
@@ -117,7 +117,7 @@ export async function callDirectQoPayCreateOrder(
     return {
       success: false,
       orderId,
-      message: 'QO Pay requires a minimum recharge of ₹100. Please enter ₹100 or more, or use Manual QR mode.',
+      message: 'Minimum recharge amount is ₹100. Please enter ₹100 or more, or use Manual QR mode.',
     };
   }
 
@@ -155,7 +155,7 @@ export async function callDirectQoPayCreateOrder(
 
       const rawText = await res.text();
       if (!rawText || !rawText.trim()) {
-        return { errorMsg: `QO Pay returned empty response (HTTP ${res.status})` };
+        return { errorMsg: `Payment gateway returned empty response (HTTP ${res.status})` };
       }
       try {
         const data = JSON.parse(rawText);
@@ -167,8 +167,8 @@ export async function callDirectQoPayCreateOrder(
       return {
         errorMsg:
           err?.name === 'AbortError'
-            ? 'Direct connection to QO Pay gateway timed out.'
-            : (err?.message || 'Unable to reach QO Pay gateway directly.'),
+            ? 'Direct connection to payment gateway timed out.'
+            : (err?.message || 'Unable to reach payment gateway directly.'),
       };
     } finally {
       t.clear();
@@ -204,7 +204,7 @@ export async function callDirectQoPayCreateOrder(
     return {
       success: false,
       orderId,
-      message: attempt.errorMsg || 'Unable to connect to QO Pay gateway.',
+      message: attempt.errorMsg || 'Unable to connect to payment gateway.',
     };
   }
 
@@ -244,16 +244,19 @@ export async function callDirectQoPayCreateOrder(
       collectName: resultObj.collect_name || 'ZoroTask Member',
       deeplink: upiIntent,
       deeplinks,
-      message: data?.message || 'QO Pay order initialized successfully',
+      message: data?.message || 'Payment order initialized successfully',
       raw: data,
     };
   }
+
+  const sanitizeMsg = (m?: string | null) =>
+    typeof m === 'string' ? m.replace(/qo[\s-]?pay(\.com)?/gi, 'Payment Gateway') : '';
 
   return {
     success: false,
     orderId,
     isLowSuccessRateHold: isQoPayLowSuccessRateMessage(data?.message),
-    message: data?.message || 'QO Pay failed to generate order. Please verify your token.',
+    message: sanitizeMsg(data?.message) || 'Failed to generate payment order. Please try again.',
     raw: data,
   };
 }
@@ -299,7 +302,7 @@ export async function callDirectQoPayStatusCheck(
         success: false,
         isPaid: false,
         status: 'PENDING',
-        message: 'Could not parse QO Pay status response',
+        message: 'Could not parse payment status response',
         raw: rawText,
       };
     }
@@ -397,7 +400,7 @@ export async function callDirectQoPayPayout(
     try {
       data = JSON.parse(rawText);
     } catch {
-      return { success: false, message: 'Invalid response from QO Pay Payout API' };
+      return { success: false, message: 'Invalid response from Payment Payout API' };
     }
 
     const resultObj = data?.result || data?.data || data || {};

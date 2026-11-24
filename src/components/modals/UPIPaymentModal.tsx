@@ -374,13 +374,13 @@ export const UPIPaymentModal: React.FC = () => {
         const check = await checkQoPayStatus(qopayOrder.depositId, qopayOrder.orderId);
         if (check.isPaid) {
           setQopaySuccess(true);
-          showToast('🎉 Payment Confirmed via QO Pay Gateway! Balance Credited.');
+          showToast('🎉 Payment Confirmed! Balance Credited.');
           setTimeout(() => {
             setIsUPIModalOpen(false);
           }, 1800);
         }
       } catch (err) {
-        console.warn('QO Pay auto-polling error:', err);
+        console.warn('Payment auto-polling error:', err);
       }
     }, 3500);
 
@@ -394,10 +394,10 @@ export const UPIPaymentModal: React.FC = () => {
       const check = await checkQoPayStatus(qopayOrder.depositId, qopayOrder.orderId);
       if (check.isPaid) {
         setQopaySuccess(true);
-        showToast('✓ Payment confirmed by QO Pay! Credited to your wallet.');
+        showToast('✓ Payment confirmed! Credited to your wallet.');
         setTimeout(() => setIsUPIModalOpen(false), 1500);
       } else {
-        showToast(`QO Pay Status: ${check.message || 'Waiting for payment confirmation'}`);
+        showToast(`Payment Status: ${check.message || 'Waiting for payment confirmation'}`);
       }
     } catch (err: any) {
       showToast(`Status check error: ${err.message}`);
@@ -752,7 +752,7 @@ export const UPIPaymentModal: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <div className="bg-white px-2 py-0.5 rounded-md text-[11px] font-black text-slate-900 tracking-wider shadow-xs flex items-center gap-1">
               <Zap className="w-3.5 h-3.5 fill-indigo-600 text-indigo-600" />
-              <span>{paymentMode === 'qopay' ? 'QO Pay' : paymentMode === 'drampay' ? 'DramPay' : 'Fast UPI'}</span>
+              <span>{paymentMode === 'qopay' ? 'Instant Pay' : paymentMode === 'drampay' ? 'DramPay' : 'Fast UPI'}</span>
             </div>
             <div>
               <h3 className="text-xs font-bold leading-tight">
@@ -789,7 +789,7 @@ export const UPIPaymentModal: React.FC = () => {
               }`}
             >
               <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
-              <span>⚡ QO Pay</span>
+              <span>⚡ Instant Pay</span>
               <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.2 rounded">LIVE</span>
             </button>
           )}
@@ -867,7 +867,7 @@ export const UPIPaymentModal: React.FC = () => {
               <div className="p-8 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center justify-center space-y-2">
                 <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
                 <span className="text-xs font-bold text-slate-800">
-                  Connecting to QO Pay Gateway (https://qo-pay.com)...
+                  Connecting to Payment Gateway...
                 </span>
                 <span className="text-[10px] text-slate-400">
                   Generating dynamic UPI session &amp; QR code
@@ -886,14 +886,14 @@ export const UPIPaymentModal: React.FC = () => {
               </div>
             )}
 
-            {/* NOTICE WHEN QO PAY CASHIER FAILS TO OPEN — NO MANUAL FALLBACK + AUTO-DETECT */}
+            {/* NOTICE WHEN PAYMENT CASHIER FAILS TO OPEN — NO MANUAL FALLBACK + AUTO-DETECT */}
             {(qopayError || (!qopayLoading && !qopaySuccess && !qopayOrder)) && !qopayLoading && !qopaySuccess && (
               <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 text-left space-y-3">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div className="space-y-1 flex-1">
                     <h4 className="text-xs font-black text-amber-950">
-                      QO Pay Cashier Unavailable
+                      Payment Cashier Unavailable
                     </h4>
                     <p className="text-[11px] text-amber-900 font-semibold leading-snug">
                       Try again after some time or contact support.
@@ -947,15 +947,15 @@ export const UPIPaymentModal: React.FC = () => {
 
               return (
               <div className="space-y-3">
-                {/* PROMINENT DIRECT QO PAY CASHIER PAGE CTA WHEN AVAILABLE */}
+                {/* PROMINENT DIRECT PAYMENT CASHIER PAGE CTA WHEN AVAILABLE */}
                 {qopayOrder?.paymentUrl && (
                   <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 border-2 border-indigo-200 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
                     <div className="flex items-center justify-center gap-1.5 text-[10px] font-black text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-full border border-emerald-300 w-fit mx-auto">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      <span>QO Pay Live Cashier Ready • Instant Auto-Credit</span>
+                      <span>Live Payment Cashier Ready • Instant Auto-Credit</span>
                     </div>
                     <p className="text-[11px] text-slate-600 font-medium leading-snug">
-                      Complete your UPI / QR / PhonePe / GPay / Paytm payment safely on QO Pay&apos;s official cashier page.
+                      Complete your UPI / QR / PhonePe / GPay / Paytm payment safely on our official cashier page.
                     </p>
                     <a
                       href={qopayOrder.paymentUrl}
@@ -965,7 +965,7 @@ export const UPIPaymentModal: React.FC = () => {
                       className="w-full py-3.5 px-3 bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 hover:from-indigo-800 hover:to-purple-800 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md shadow-indigo-500/30 active:scale-98 no-underline"
                     >
                       <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>Open QO Pay Cashier Page</span>
+                      <span>Open Payment Cashier Page</span>
                       <ExternalLink className="w-4 h-4 text-white" />
                     </a>
                     <div className="flex items-center justify-center gap-1.5 pt-0.5">
@@ -978,13 +978,13 @@ export const UPIPaymentModal: React.FC = () => {
                   </div>
                 )}
 
-                {/* QR Code Container (Only when real UPI QR exists or QO Pay cashier URL is unavailable) */}
+                {/* QR Code Container (Only when real UPI QR exists or cashier URL is unavailable) */}
                 {!hasHostedCashierOnly && (
                   <div className="bg-white border-2 border-dashed border-indigo-300 rounded-2xl p-3 flex flex-col items-center justify-center space-y-2 relative shadow-xs">
                     <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-inner flex flex-col items-center justify-center relative">
                       <img
                         src={activeQrCodeSrc}
-                        alt="QO Pay Dynamic UPI QR Code"
+                        alt="Dynamic UPI QR Code"
                         className="w-44 h-44 object-contain rounded"
                         loading="eager"
                       />
@@ -994,7 +994,7 @@ export const UPIPaymentModal: React.FC = () => {
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                       <span>
                         {qopayOrder
-                          ? 'Live QO Pay Auto-Verification Active'
+                          ? 'Live Payment Auto-Verification Active'
                           : 'Instant Dynamic UPI QR Code • Any UPI App'}
                       </span>
                     </div>

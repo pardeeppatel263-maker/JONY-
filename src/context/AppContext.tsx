@@ -1419,8 +1419,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   triggerConfetti();
                   showToast(
                     dep.depositType === 'plan_purchase'
-                      ? `🎉 QO Pay Confirmed! VIP Level ${dep.planLevel || 1} Plan Activated automatically!`
-                      : `🎉 QO Pay Confirmed! ₹${Number(dep.amount || 0).toLocaleString('en-IN')} added to your wallet!`
+                      ? `🎉 Payment Confirmed! VIP Level ${dep.planLevel || 1} Plan Activated automatically!`
+                      : `🎉 Payment Confirmed! ₹${Number(dep.amount || 0).toLocaleString('en-IN')} added to your wallet!`
                   );
                 }
               }
@@ -3886,7 +3886,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const resolvedSource =
           approvalSource ||
           (deposit.gateway === 'qopay'
-            ? 'Verified Automatically via QO Pay Gateway'
+            ? 'Verified Automatically via Payment Gateway'
             : deposit.gateway === 'drampay'
             ? 'Verified Automatically via DramPay Gateway'
             : 'Approved by Admin Panel');
@@ -3996,7 +3996,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             note: `${
               approvalSource ||
               (deposit.gateway === 'qopay'
-                ? 'Verified Automatically via QO Pay Gateway'
+                ? 'Verified Automatically via Payment Gateway'
                 : deposit.gateway === 'drampay'
                 ? 'Verified Automatically via DramPay Gateway'
                 : 'Approved by Admin Panel')
@@ -7196,13 +7196,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (adminSettings.qopayEnabled === false && adminSettings.paymentGatewayProvider !== 'qopay') {
       return {
         success: false,
-        message: 'QO Pay payment gateway is currently turned OFF by admin.',
+        message: 'Payment gateway is currently turned OFF by admin.',
       };
     }
     if (amount < 100) {
       return {
         success: false,
-        message: 'QO Pay Gateway requires a minimum amount of ₹100. Please select ₹100 or higher, or use Manual QR mode.',
+        message: 'Payment Gateway requires a minimum amount of ₹100. Please select ₹100 or higher, or use Manual QR mode.',
       };
     }
     try {
@@ -7352,7 +7352,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...(plan?.id ? { planId: plan.id } : {}),
           ...(plan?.level !== undefined ? { planLevel: plan.level } : {}),
           ...(plan ? { planTitle: plan.levelTag || `Level ${plan.level}` } : {}),
-          adminUpiId: latestSettings.adminUpiId || 'qopay@upi',
+          adminUpiId: latestSettings.adminUpiId || 'payment@upi',
           utrNumber: directUtr,
           submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
           timestamp: Date.now(),
@@ -7369,7 +7369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           await Promise.race([
             setDoc(doc(db, 'deposits', depositId), cleanFirestoreData(updatedDeposit), { merge: true }).catch((e) => {
-              console.warn('Background saving QO Pay deposit to Firestore:', e);
+              console.warn('Background saving deposit to Firestore:', e);
             }),
             new Promise((r) => setTimeout(r, 1500)),
           ]);
@@ -7386,7 +7386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           collectName: data.collectName || '',
           deeplinks: data.deeplinks,
           depositId,
-          message: data.message || 'QO Pay order initialized successfully',
+          message: data.message || 'Payment order initialized successfully',
         };
       } else {
         const cleanMsg =
@@ -7547,7 +7547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: 'SUCCESS',
             utr,
             creditedByServer: true,
-            message: 'Payment confirmed via QO Pay and credited!',
+            message: 'Payment confirmed and credited!',
           };
         }
 
@@ -7566,7 +7566,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   ...(fallbackMeta.planId ? { planId: fallbackMeta.planId } : {}),
                   ...(fallbackMeta.planLevel !== undefined ? { planLevel: fallbackMeta.planLevel } : {}),
                   ...(fallbackMeta.planTitle ? { planTitle: fallbackMeta.planTitle } : {}),
-                  adminUpiId: currentSettings.adminUpiId || 'qopay@upi',
+                  adminUpiId: currentSettings.adminUpiId || 'payment@upi',
                   utrNumber: utr,
                   userSubmittedUtr: utr,
                   submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
@@ -7587,7 +7587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             : undefined;
           delete pendingQoPayDepositsRef.current[depositId];
-          await approvePaymentDeposit(depositId, pendingOverride, 'Verified Automatically via QO Pay Gateway');
+          await approvePaymentDeposit(depositId, pendingOverride, 'Verified Automatically via Payment Gateway');
           try {
             if (savedLocalOrder) {
               localStorage.removeItem('taskvibe_pending_qopay_order');
@@ -7602,7 +7602,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: 'SUCCESS',
             utr,
             creditedByServer: false,
-            message: 'Payment confirmed via QO Pay and credited!',
+            message: 'Payment confirmed and credited!',
           };
         }
         return {
@@ -7625,13 +7625,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setPaymentDeposits((prev) =>
             prev.map((d) =>
               d.id === depositId
-                ? { ...d, status: 'rejected', rejectionReason: `QO Pay status: ${normStatus}` }
+                ? { ...d, status: 'rejected', rejectionReason: `Payment status: ${normStatus}` }
                 : d
             )
           );
           setDoc(
             doc(db, 'deposits', depositId),
-            { status: 'rejected', rejectionReason: `QO Pay status: ${normStatus}` },
+            { status: 'rejected', rejectionReason: `Payment status: ${normStatus}` },
             { merge: true }
           ).catch(() => {});
         }
@@ -7656,8 +7656,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     details: { upiId?: string; account?: string; ifsc?: string; name?: string; mobile?: string }
   ): Promise<{ success: boolean; message: string; utr?: string; data?: any }> => {
     if (adminSettings.qopayEnabled === false || adminSettings.qopayAutoPayoutEnabled === false) {
-      showToast('❌ QO Pay Automated Payout is currently turned OFF by admin');
-      return { success: false, message: 'QO Pay automated payout is turned OFF by admin' };
+      showToast('❌ Automated Payout is currently turned OFF by admin');
+      return { success: false, message: 'Automated payout is turned OFF by admin' };
     }
     try {
       const payoutOrderId = `PO_QO_${Date.now()}`;
@@ -7714,7 +7714,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success) {
         const utr = data.utr || data.data?.utr || `QO_PO_${Date.now()}`;
         const payoutGatewayId = data.payoutId || payoutOrderId;
-        const approvedNote = `Disbursed via QO Pay Payout API (UTR: ${utr}, PayoutID: ${payoutGatewayId})`;
+        const approvedNote = `Disbursed via Automated Payout (UTR: ${utr}, PayoutID: ${payoutGatewayId})`;
 
         setTransactions((prev) =>
           prev.map((t) =>
@@ -7758,13 +7758,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        showToast(`⚡ ₹${amount} withdrawal successfully disbursed via QO Pay! UTR: ${utr}`);
+        showToast(`⚡ ₹${amount} withdrawal successfully disbursed! UTR: ${utr}`);
         return { success: true, message: 'Payout disbursed successfully', utr, data };
       } else {
-        return { success: false, message: data.message || 'QO Pay payout request failed' };
+        return { success: false, message: data.message || 'Payout request failed' };
       }
     } catch (err: any) {
-      return { success: false, message: err.message || 'Network error executing QO Pay payout' };
+      return { success: false, message: err.message || 'Network error executing payout' };
     }
   };
 
@@ -7827,7 +7827,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           cancelQoPayAutoRetry();
           setIsUPIModalOpen(false);
           if (isSilent) {
-            showToast('✓ QO Pay active! Opening cashier page...');
+            showToast('✓ Payment cashier active! Opening cashier page...');
           }
           window.location.href = directCashierUrl;
           return { success: true, paymentUrl: directCashierUrl };
@@ -7852,8 +7852,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reason: res.message || prev.reason || '',
       }));
 
-      const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
-      console.warn('[QO-Pay] Cashier unavailable:', res.message, { holdDetected });
+      const msg = 'Payment cashier unavailable. Please try again after some time or contact support.';
+      console.warn('[Payment] Cashier unavailable:', res.message, { holdDetected });
       if (!isSilent) {
         showToast(msg);
       }
@@ -7875,8 +7875,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         plan,
         reason: err?.message || prev.reason || '',
       }));
-      const msg = 'QO Pay cashier unavailable. Please try again after some time or contact support.';
-      console.error('[QO-Pay] startDirectQoPayPayment error:', err);
+      const msg = 'Payment cashier unavailable. Please try again after some time or contact support.';
+      console.error('[Payment] startDirectQoPayPayment error:', err);
       if (!isSilent) {
         showToast(msg);
       }
@@ -8029,8 +8029,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         triggerConfetti();
         showToast(
           matchingDep.depositType === 'plan_purchase'
-            ? `🎉 QO Pay Payment Success! VIP Level ${matchingDep.planLevel || pendingOrder?.planLevel || 1} Plan Activated!`
-            : `🎉 QO Pay Payment Success! ₹${matchingDep.amount || pendingOrder?.amount || ''} credited to your wallet!`
+            ? `🎉 Payment Success! VIP Level ${matchingDep.planLevel || pendingOrder?.planLevel || 1} Plan Activated!`
+            : `🎉 Payment Success! ₹${matchingDep.amount || pendingOrder?.amount || ''} credited to your wallet!`
         );
         navigate(matchingDep.depositType === 'plan_purchase' ? 'member_plans' : 'record');
       }
@@ -8115,7 +8115,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (isCancelledOrFailed) {
-          showToast('❌ Payment cancelled or failed on QO Pay.');
+          showToast('❌ Payment cancelled or failed.');
         } else if (isExplicitCallbackReturn) {
           showToast('⏳ Payment is confirming — wallet/plan will activate automatically in a moment.');
         }
@@ -8177,7 +8177,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           planId: pendingOrder?.planId,
           planLevel: pendingOrder?.planLevel,
           planTitle: pendingOrder?.planTitle,
-          adminUpiId: adminSettingsRef.current.adminUpiId || 'qopay@upi',
+          adminUpiId: adminSettingsRef.current.adminUpiId || 'payment@upi',
           utrNumber: finalUtr,
           userSubmittedUtr: userEnteredUtr || undefined,
           submittedAt: nowTime,
@@ -8195,7 +8195,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (isPaidNow && adminSettingsRef.current.qopayAutoApprove !== false) {
         if (!creditedByServer) {
-          await approvePaymentDeposit(depositId, ensuredDeposit, 'Verified Automatically via QO Pay Gateway');
+          await approvePaymentDeposit(depositId, ensuredDeposit, 'Verified Automatically via Payment Gateway');
         }
         try {
           localStorage.removeItem('taskvibe_pending_qopay_order');
@@ -8205,8 +8205,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         triggerConfetti();
         showToast(
           depositType === 'plan_purchase'
-            ? `🎉 QO Pay Payment Success! VIP Level ${pendingOrder?.planLevel || ensuredDeposit?.planLevel || 1} Plan Activated!`
-            : `🎉 QO Pay Payment Success! ₹${amount || ''} credited to your wallet!`
+            ? `🎉 Payment Success! VIP Level ${pendingOrder?.planLevel || ensuredDeposit?.planLevel || 1} Plan Activated!`
+            : `🎉 Payment Success! ₹${amount || ''} credited to your wallet!`
         );
         navigate(depositType === 'plan_purchase' ? 'member_plans' : 'record');
         return;
@@ -8367,8 +8367,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             triggerConfetti();
             showToast(
               item.depositType === 'plan_purchase'
-                ? `🎉 QO Pay Confirmed! VIP Level ${item.planLevel || 1} Plan Activated automatically!`
-                : `🎉 QO Pay Confirmed! ₹${item.amount.toLocaleString('en-IN')} added to your wallet automatically!`
+                ? `🎉 Payment Confirmed! VIP Level ${item.planLevel || 1} Plan Activated automatically!`
+                : `🎉 Payment Confirmed! ₹${item.amount.toLocaleString('en-IN')} added to your wallet automatically!`
             );
           }
         }

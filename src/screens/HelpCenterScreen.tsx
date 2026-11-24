@@ -18,12 +18,15 @@ import {
   AlertCircle,
   Upload,
   Crown,
+  PlayCircle,
+  Download,
+  Share2,
 } from 'lucide-react';
 import { SupportTicket } from '../types';
 
 export const HelpCenterScreen: React.FC = () => {
-  const { showToast, adminSettings, supportTickets, createSupportTicket, user } = useApp();
-  const [expandedSection, setExpandedSection] = useState<'ticket' | 'faq' | 'contact' | 'terms' | 'privacy' | 'about' | null>('ticket');
+  const { showToast, adminSettings, supportTickets, createSupportTicket, user, copyText } = useApp();
+  const [expandedSection, setExpandedSection] = useState<'video' | 'ticket' | 'faq' | 'contact' | 'terms' | 'privacy' | 'about' | null>('ticket');
 
   // Support Ticket Form State
   const [ticketCategory, setTicketCategory] = useState<SupportTicket['category']>('payment');
@@ -145,6 +148,73 @@ export const HelpCenterScreen: React.FC = () => {
       {/* SCROLLABLE MIDDLE CONTENT */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <main className="p-4 space-y-3.5 max-w-md mx-auto pb-6">
+          {/* App Video Tutorial Guide Section */}
+          <div className="bg-white rounded-2xl border border-indigo-200/90 shadow-xs overflow-hidden">
+            <button
+              onClick={() => setExpandedSection(expandedSection === 'video' ? null : 'video')}
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-indigo-50/40 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <PlayCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-800">App Kaise Use Kare? (Video Guide)</h3>
+                    <span className="text-[9px] font-black bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-full">
+                      3:18
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">Hindi Video Guide: Register, VIP Plans, Missions, Refer &amp; Withdraw</p>
+                </div>
+              </div>
+              {expandedSection === 'video' ? (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {expandedSection === 'video' && (
+              <div className="p-3.5 pt-0 space-y-3 border-t border-slate-100 animate-in fade-in">
+                <div className="mt-3 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-sm aspect-[9/16] max-h-[420px] mx-auto flex items-center justify-center">
+                  <video
+                    src="/ZoroTask-User-Guide.mp4"
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href="/ZoroTask-User-Guide.mp4"
+                    download="ZoroTask-User-Guide.mp4"
+                    onClick={() => showToast('✓ Downloading User Guide Video...')}
+                    className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition no-underline"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Video</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const videoUrl =
+                        typeof window !== 'undefined'
+                          ? `${window.location.origin}/ZoroTask-User-Guide.mp4`
+                          : '/ZoroTask-User-Guide.mp4';
+                      copyText(videoUrl, 'Video Guide Link');
+                    }}
+                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Copy Video Link</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Support Ticket Section */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             <button

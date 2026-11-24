@@ -521,7 +521,7 @@ export const PlanDetailScreen: React.FC = () => {
                     <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div className="space-y-1 flex-1">
                       <h4 className="text-xs font-black text-amber-950">
-                        QO Pay Cashier Unavailable
+                        Payment Cashier Unavailable
                       </h4>
                       <p className="text-[11px] font-semibold text-amber-900 leading-snug">
                         Try again after some time or contact support.
@@ -531,7 +531,7 @@ export const PlanDetailScreen: React.FC = () => {
                           <Loader2 className="w-3 h-3 animate-spin text-indigo-600 shrink-0" />
                           <span>
                             {qopayAutoRetryState.checkingNow
-                              ? 'Checking QO Pay cashier availability...'
+                              ? 'Checking payment cashier availability...'
                               : qopayAutoRetryState.isLowSuccessRateHold
                               ? `Low success rate hold detected • Auto-opening cashier in ${qopayAutoRetryState.nextCheckInSec}s once cleared`
                               : `Auto-checking gateway in ${qopayAutoRetryState.nextCheckInSec}s to open cashier automatically`}

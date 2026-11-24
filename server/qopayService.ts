@@ -139,7 +139,7 @@ export async function persistPendingQoPayDeposit(input: PendingQoPayDepositInput
       ...(input.planId ? { planId: input.planId } : {}),
       ...(input.planLevel !== undefined ? { planLevel: Number(input.planLevel) } : {}),
       ...(input.planTitle ? { planTitle: input.planTitle } : {}),
-      adminUpiId: 'qopay@upi',
+      adminUpiId: 'payment@upi',
       utrNumber: input.utrNumber || formatDisplayUtr(input.orderId.replace(/^ORD_/i, '')),
       submittedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       timestamp: Date.now(),
@@ -213,7 +213,7 @@ export async function markQoPayDepositFailed(orderId: string, depositId?: string
     if (!found || found.status !== 'gateway_pending') return;
     await setDoc(
       doc(db, 'deposits', found.id),
-      { status: 'rejected', rejectionReason: `QO Pay status: ${reasonStatus}` },
+      { status: 'rejected', rejectionReason: `Payment status: ${reasonStatus}` },
       { merge: true }
     );
   } catch (err) {
@@ -741,7 +741,7 @@ export async function fulfillQoPayOrder(params: FulfillQoPayParams): Promise<Ful
       const approvedTitle = isPlan
         ? `VIP Level ${finalLevel} (Approved & Active)`
         : `Wallet Deposit (Approved +₹${resolvedDepositBonus} Bonus)`;
-      const approvedNote = `Verified Automatically via QO Pay Gateway on ${new Date().toLocaleDateString('en-IN')}`;
+      const approvedNote = `Verified Automatically via Payment Gateway on ${new Date().toLocaleDateString('en-IN')}`;
 
       let foundTx = false;
       const updatedTxs = currentTxs.map((t) => {
@@ -861,7 +861,7 @@ export async function fulfillQoPayOrder(params: FulfillQoPayParams): Promise<Ful
     return {
       success: false,
       credited: false,
-      message: err?.message || 'Failed to fulfill QO Pay order',
+      message: err?.message || 'Failed to fulfill payment order',
     };
   } finally {
     inFlightFulfills.delete(lockKey);

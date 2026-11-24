@@ -1128,14 +1128,14 @@ async function startServer() {
           status: false,
           code: 500,
           message: err.name === 'TimeoutError'
-            ? 'Connection to QO Pay gateway timed out (15s)'
-            : (err.message || 'Error connecting to QO Pay Gateway'),
+            ? 'Connection to Payment Gateway timed out (15s)'
+            : (err.message || 'Error connecting to Payment Gateway'),
         },
       };
     }
   }
 
-  // 1. Get current QO Pay Config
+  // 1. Get current Gateway Config
   app.get('/api/qopay/config', (_req, res) => {
     return res.json({
       success: true,
@@ -1145,7 +1145,7 @@ async function startServer() {
     });
   });
 
-  // 2. Set QO Pay Config dynamically from Admin Panel
+  // 2. Set Gateway Config dynamically from Admin Panel
   app.post('/api/qopay/config', (req, res) => {
     const { userToken, baseUrl } = req.body || {};
     if (userToken !== undefined) qopayConfig.userToken = String(userToken).trim();
@@ -1156,7 +1156,7 @@ async function startServer() {
       success: true,
       configured: Boolean(qopayConfig.userToken),
       baseUrl: qopayConfig.baseUrl,
-      message: 'QO Pay runtime configuration updated successfully',
+      message: 'Payment Gateway runtime configuration updated successfully',
     });
   });
 
@@ -1211,7 +1211,7 @@ async function startServer() {
       if (!activeToken) {
         return res.status(400).json({
           success: false,
-          message: 'QO Pay User Token is required to test gateway connectivity',
+          message: 'Payment Gateway User Token is required to test connectivity',
         });
       }
 
@@ -1242,8 +1242,8 @@ async function startServer() {
         message: isInvalidToken
           ? data?.message || 'Invalid API token'
           : rawMsg.includes('order not found')
-          ? 'Token authenticated & QO Pay gateway reachable'
-          : data?.message || 'Token authenticated with QO Pay',
+          ? 'Token authenticated & Payment Gateway reachable'
+          : data?.message || 'Token authenticated with Payment Gateway',
         data,
       });
     } catch (err: any) {
@@ -1283,7 +1283,7 @@ async function startServer() {
       if (!activeToken) {
         return res.status(400).json({
           success: false,
-          message: 'QO Pay user_token is not configured. Please configure user_token in Admin Panel.',
+          message: 'Payment Gateway user_token is not configured. Please configure user_token in Admin Panel.',
         });
       }
 
@@ -1427,7 +1427,7 @@ async function startServer() {
           qrCode: qrCodeString,
           collectUpi: resultObj.collect_upi || '',
           collectName: resultObj.collect_name || 'ZoroTask Member',
-          message: data?.message || 'QO Pay order created successfully',
+          message: data?.message || 'Payment order created successfully',
           data,
         });
       }
@@ -1445,7 +1445,9 @@ async function startServer() {
       return res.status(httpStatus >= 400 ? httpStatus : 400).json({
         success: false,
         isLowSuccessRateHold: holdDetected,
-        message: data?.message || 'Failed to create QO Pay order',
+        message: data?.message
+          ? String(data.message).replace(/qo[\s-]?pay(\.com)?/gi, 'Payment Gateway')
+          : 'Failed to create payment order',
         data,
       });
     } catch (err: any) {
@@ -1808,7 +1810,7 @@ async function startServer() {
       if (!activeToken) {
         return res.status(400).json({
           success: false,
-          message: 'QO Pay user_token is not configured for Payouts.',
+          message: 'Payment Gateway user_token is not configured for Payouts.',
         });
       }
 
